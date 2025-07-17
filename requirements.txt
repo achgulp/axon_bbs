@@ -1,0 +1,23 @@
+# axon_bbs/requirements.txt
+
+# axon_bbs/requirements.txt
+
+# --- Core Django Framework ---
+django
+djangorestframework
+djangorestframework-simplejwt
+argon2-cffi
+django-cors-headers
+
+# --- Decentralized Protocol Support ---
+pysocks
+cryptography
+pynacl
+websockets
+ipfshttpclient
+pynostr  # Switched to pynostr for reliable posting
+
+# --- Connection Handlers ---
+pyaudio
+meshtastic
+numpy
