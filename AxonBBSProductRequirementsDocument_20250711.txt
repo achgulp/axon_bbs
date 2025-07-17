@@ -1,0 +1,158 @@
+# Axon BBS Product Requirements Document (PRD)
+
+**Product Name:** Axon BBS  
+**Version:** 4.0.9  
+**Date:** July 11, 2025  
+
+## Overview
+
+Axon BBS is a modern, decentralized, anonymous bulletin board system (BBS) inspired by the classic 90s BBS era. It leverages the Nostr protocol for message distribution and IPFS for persistent storage, ensuring censorship resistance and anonymity. The system is built using Django for the backend and React for the frontend, with a focus on user privacy and security.  
+
+Recent updates include switching to the `nostr_sdk` library for improved Nostr event handling and signing, key generation using secp256k1 curve, added debug logging for signing, and version increments for bug fixes. Tags for boards have been kept as ["t", board_name] but can be made unique (e.g., "axon-general") to avoid public noise.
+
+## Key Features
+
+1. **User Registration and Authentication**  
+   - Users can register with a username and password.  
+   - Passwords are hashed and salted for security.  
+   - Upon registration, a unique salt is generated and stored.  
+   - JWT authentication for API endpoints.  
+
+2. **Nostr Identity Management**  
+   - Each user has a Nostr identity (public/private key pair) generated upon registration using secp256k1 (via `nostr_sdk.Keys.generate()`).  
+   - Private keys are encrypted with a key derived from the user's password and stored securely.  
+   - Users can manage multiple identities (future expansion).  
+
+3. **Message Boards**  
+   - Multiple message boards (e.g., "general", "tech", "politics").  
+   - Boards have names, descriptions, and required access levels.  
+
+4. **Posting Messages**  
+   - Users can post messages to boards with subject and body.  
+   - Messages are signed with the user's Nostr private key using `nostr_sdk`.  
+   - Posted as Nostr events with kind 1 (text note), tagged with the board name (e.g., ["t", "general"]).  
+   - Published to Nostr relays via WebSocket connections over Tor.  
+   - Debug logging added for event signing (logs ID and signature).  
+
+5. **Reading Messages**  
+   - Frontend subscribes to Nostr relays for events tagged with the board name.  
+   - Displays messages in a flat view (threaded in future).  
+   - Shows subject, body, poster pubkey (truncated), and timestamp.  
+
+6. **Anonymity and Privacy**  
+   - All network communications (Nostr, IPFS) routed through Tor.  
+   - No IP logging or personal data storage beyond hashed credentials.  
+   - Users access the system via Tor browser or onion service (future).  
+
+7. **Persistence with IPFS**  
+   - Message content pinned to IPFS for long-term availability.  
+   - Nostr events reference IPFS CIDs for content.  
+
+8. **Administration**  
+   - Admin interface to manage boards and users (Django admin).  
+
+## Technical Requirements
+
+- Backend: Django 5.2.4, Python 3.13  
+- Frontend: React 18+, Tailwind CSS  
+- Databases: SQLite (development), PostgreSQL (production)  
+- Libraries: `nostr_sdk` for Nostr integration (replaced previous `nostr` lib), py-ipfs-http-client for IPFS, pysocks for Tor proxy.  
+- Deployment: Docker containers for backend, frontend, Tor proxy, IPFS node.  
+
+## User Roles
+
+- **Anonymous Visitor:** Can view public boards (if any).  
+- **Registered User:** Can post and read on accessible boards. Access level: 10 (default).  
+- **Moderator:** Can delete messages, manage board access (future implementation). Access level: 50.  
+- **Admin:** Full access to manage users, boards, system settings via Django admin. Superuser status.  
+
+## Non-Functional Requirements
+
+- Security: All communications over Tor, encrypted storage of keys using Fernet.  
+- Scalability: Designed for small to medium user base; Nostr/IPFS handle distribution.  
+- Usability: Retro 90s BBS aesthetic with modern UI/UX.  
+- Reliability: Graceful handling of relay disconnections, IPFS pinning retries.  
+- Debugging: Added logging for key generation, signing, and publishing.  
+
+## Future Enhancements
+
+- Threaded discussions (Nostr replies).  
+- User profiles on Nostr.  
+- File uploads to IPFS.  
+- Mobile app integration.  
+- Custom relays or integrated Nostr relay.  
+- Unique tags for boards (e.g., "axon-general") to filter out public Nostr noise.  
+
+## Project Structure
+
+axon_bbs/  
+├── manage.py  
+├── axon_project/  
+│   ├── __init__.py  
+│   ├── settings.py  
+│   ├── urls.py  
+│   ├── asgi.py  
+│   ├── wsgi.py  
+├── core/  
+│   ├── __init__.py  
+│   ├── admin.py  
+│   ├── apps.py  
+│   ├── models.py  
+│   ├── migrations/  
+│   ├── services/  
+│       ├── __init__.py  
+│       ├── encryption_utils.py  
+│       ├── identity_service.py  
+│       ├── nostr_service.py  
+│       ├── tor_service.py  
+│       ├── ipfs_service.py  
+│       ├── service_manager.py  
+├── api/  
+│   ├── __init__.py  
+│   ├── urls.py  
+│   ├── views.py  
+│   ├── serializers.py  
+├── frontend/  
+│   ├── public/  
+│   ├── src/  
+│       ├── components/  
+│           ├── Login.js  
+│           ├── Register.js  
+│           ├── BoardList.js  
+│           ├── MessageList.js  
+│       ├── App.js  
+│       ├── index.js  
+│       ├── apiClient.js  
+│   ├── package.json  
+├── data/  
+│   ├── user_data/  
+├── requirements.txt  
+├── README.md  
+├── .gitignore  
+├── Dockerfile  
+├── docker-compose.yml  
+
+## Acceptance Criteria
+
+- User can register, login, post to a board, and see their message appear.  
+- Messages are signed and published to Nostr (verified via logs).  
+- Frontend displays messages from Nostr subscription.  
+- All network traffic routed through Tor.  
+- Private keys securely encrypted and decrypted for signing.  
+
+## Risks and Mitigations
+
+- Tor connectivity issues: Fallback to direct connections for development.  
+- Nostr relay downtime: Use multiple relays.  
+- IPFS pinning failures: Retry logic in service.  
+- Security audits for key management.  
+- Library compatibility: Use `nostr_sdk` for reliable signing; test in isolation.  
+
+## Timeline
+
+- Week 1: Setup Django project, user auth, identity service.  
+- Week 2: Nostr and Tor integration.  
+- Week 3: Frontend development.  
+- Week 4: IPFS integration, testing, deployment.  
+
+This PRD serves as the blueprint for developing Axon BBS, ensuring alignment with the vision of a secure, decentralized, anonymous communication platform.
