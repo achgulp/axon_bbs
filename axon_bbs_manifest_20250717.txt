@@ -1,0 +1,2628 @@
+--- CODE MANIFEST FOR 'axon_bbs' PROJECT ---
+
+### File: axon_bbs/final_nostr_publish.py
+```
+# axon_bbs/final_nostr_publish.py
+
+import asyncio
+import json
+from websockets.legacy.client import connect
+from python_socks.async_.asyncio import Proxy
+
+# Use the already-installed pynostr library for crypto and event formatting
+from pynostr.key import PrivateKey
+from pynostr.event import Event
+
+# --- Configuration ---
+PROXY_HOST = '127.0.0.1'
+PROXY_PORT = 9999
+RELAY_URI = 'wss://relay.damus.io'
+NOTE_CONTENT = "Hello Nostr! This message was sent using the correct hybrid method."
+
+async def main():
+    # 1. Create keys and event using pynostr (already installed)
+    private_key = PrivateKey()
+    print(f"Using new private key: {private_key.bech32()}")
+    event = Event(content=NOTE_CONTENT)
+    event.sign(private_key.hex()) # pynostr handles all the complex signing logic
+
+    # 2. Connect to the relay through the SOCKS proxy (our working method)
+    print(f"\nConnecting to {RELAY_URI} via proxy...")
+    proxy = Proxy.from_url(f'socks5://{PROXY_HOST}:{PROXY_PORT}')
+    sock = await proxy.connect(dest_host=RELAY_URI.split('//')[1], dest_port=443)
+
+    # 3. Establish the WebSocket connection and publish the event
+    try:
+        async with connect(
+            RELAY_URI,
+            sock=sock,
+            server_hostname=RELAY_URI.split('//')[1]
+        ) as websocket:
+            print("Connection successful!")
+            # pynostr has a method to format the event for publishing
+            message = json.dumps(["EVENT", event.to_dict()])
+            print(f"Sending event...")
+            await websocket.send(message)
+            response = await asyncio.wait_for(websocket.recv(), timeout=10.0)
+            print(f"Received response from relay: {response}")
+            return True
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return False
+
+if __name__ == "__main__":
+    if asyncio.run(main()):
+        print("\nSUCCESS: Nostr event published.")
+    else:
+        print("\nFAILURE: Could not publish Nostr event.")
+
+```
+
+### File: axon_bbs/manage.py
+```
+# axon_bbs/manage.py
+#!/usr/bin/env python
+# axon_bbs/manage.py
+"""Django's command-line utility for administrative tasks."""
+import os
+import sys
+
+# --- Application Version ---
+APP_VERSION = "4.2.2"
+
+def main():
+    """Run administrative tasks."""
+    if os.environ.get('RUN_MAIN') != 'true':
+        print(f"--- Axon BBS Management Utility v{APP_VERSION} ---")
+    
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'axon_project.settings')
+    try:
+        from django.core.management import execute_from_command_line
+    except ImportError as exc:
+        raise ImportError(
+            "Couldn't import Django. Are you sure it's installed and "
+            "available on your PYTHONPATH environment variable? Did you "
+            "forget to activate a virtual environment?"
+        ) from exc
+
+    # Custom message for runserver command
+    if 'runserver' in sys.argv and os.environ.get('RUN_MAIN') == 'true':  # Only in the child process
+        print("Starting development server at http://127.0.0.1:8000/")
+        print("Admin site available at http://127.0.0.1:8000/admin/")
+
+    execute_from_command_line(sys.argv)
+
+
+if __name__ == '__main__':
+    main()
+
+```
+
+### File: axon_bbs/minimal_test.py
+```
+# axon_bbs/minimal_test.py
+
+import socks
+import socket
+
+print("Configuring SOCKS proxy with remote DNS...")
+try:
+    socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9999, rdns=True)
+    socket.socket = socks.socksocket
+    print("Proxy configured.")
+except Exception as e:
+    print(f"Failed to configure proxy: {e}")
+    exit()
+
+target_host = "relay.damus.io"
+target_port = 443
+
+print(f"\nAttempting to create a connection to {target_host}:{target_port}...")
+
+try:
+    # This command attempts a direct socket connection
+    socket.create_connection((target_host, target_port), timeout=10)
+    print("\nSUCCESS: Connection was successful!")
+    print("This means PySocks and your proxy are working correctly.")
+except Exception as e:
+    print(f"\nFAILURE: Connection failed.")
+    print(f"Error: {e}")
+
+```
+
+### File: axon_bbs/nostr_subscribe_and_publish.py
+```
+# axon_bbs/nostr_subscribe_and_publish.py
+
+import asyncio
+import json
+import uuid
+from websockets.legacy.client import connect
+from python_socks.async_.asyncio import Proxy
+
+# Use the already-installed pynostr library for crypto and event formatting
+from pynostr.key import PrivateKey
+from pynostr.event import Event
+
+# --- Configuration ---
+PROXY_HOST = '127.0.0.1'
+PROXY_PORT = 9050 # Changed to 9050 to connect to the local Tor service
+RELAY_URI = 'wss://relay.damus.io'
+NOTE_CONTENT = "Hello Nostr! This message is sent from Python -> Tor -> SOCKS Proxy."
+
+async def listen_for_events(websocket):
+    """
+    A task that runs in the background, continuously listening for messages
+    from the relay and printing them.
+    """
+    async for message in websocket:
+        try:
+            data = json.loads(message)
+            msg_type = data[0]
+            if msg_type == "EVENT":
+                sub_id = data[1]
+                event_id = data[2].get('id', 'N/A')
+                content = data[2].get('content', '')
+                print(f"\n<-- [EVENT] received on sub '{sub_id}':")
+                print(f"    Content: {content[:100]}...")
+                print(f"    Event ID: {event_id}")
+
+            elif msg_type == "OK":
+                event_id = data[1]
+                was_accepted = data[2]
+                print(f"\n<-- [OK] relay confirmation for event {event_id}. Accepted: {was_accepted}")
+
+            elif msg_type == "EOSE":
+                sub_id = data[1]
+                print(f"\n<-- [EOSE] End of Stored Events for sub '{sub_id}'.")
+
+        except Exception as e:
+            print(f"Error processing message: {e}")
+
+
+async def main():
+    # 1. Create Nostr keys
+    private_key = PrivateKey()
+    print(f"Using new private key: {private_key.bech32()}")
+
+    # 2. Connect to the relay through your local Tor SOCKS proxy
+    print(f"\nConnecting to {RELAY_URI} via local Tor proxy (port 9050)...")
+    proxy = Proxy.from_url(f'socks5://{PROXY_HOST}:{PROXY_PORT}')
+    sock = await proxy.connect(dest_host=RELAY_URI.split('//')[1], dest_port=443)
+
+    try:
+        async with connect(RELAY_URI, sock=sock, server_hostname=RELAY_URI.split('//')[1]) as websocket:
+            print("\nConnection successful! Python -> Tor -> SOCKS proxy chain is active.")
+
+            # Start the background task to listen for all incoming messages
+            listener_task = asyncio.create_task(listen_for_events(websocket))
+
+            # 3. Subscribe to the 'general' channel
+            general_sub_id = "general-feed"
+            general_filter = {"kinds": [1], "limit": 5}
+            await websocket.send(json.dumps(["REQ", general_sub_id, general_filter]))
+            print(f"\n--> [REQ] Sent subscription for general channel.")
+            await asyncio.sleep(3)
+
+            # 4. Create and publish our own event
+            print("\n----------------------------------------------------")
+            print("Now, publishing our own event...")
+            event = Event(content=NOTE_CONTENT)
+            event.sign(private_key.hex())
+            await websocket.send(json.dumps(["EVENT", event.to_dict()]))
+            print(f"--> [EVENT] Sent our new note with ID: {event.id}")
+            print("----------------------------------------------------")
+            await asyncio.sleep(3)
+
+            # 5. Re-pull our specific event by its ID
+            repull_sub_id = "repull-our-note"
+            repull_filter = {"ids": [event.id]}
+            await websocket.send(json.dumps(["REQ", repull_sub_id, repull_filter]))
+            print(f"\n--> [REQ] Sent new subscription to re-pull our specific event.")
+            await asyncio.sleep(10)
+
+            # 7. Clean up
+            listener_task.cancel()
+            print("\nDone listening. Closing connection.")
+            return True
+
+    except Exception as e:
+        print(f"An error occurred in main(): {e}")
+        return False
+
+
+if __name__ == "__main__":
+    if asyncio.run(main()):
+        print("\nSUCCESS: Script finished.")
+    else:
+        print("\nFAILURE: Script ended with an error.")
+
+```
+
+### File: axon_bbs/nostr_test.py
+```
+# axon_bbs/nostr_test.py
+
+import socks
+import socket
+# Force all Python networking to go through the SOCKS proxy
+# rdns=True tells PySocks to let the proxy handle the DNS lookup
+socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9999, rdns=True)
+socket.socket = socks.socksocket
+
+# The rest of your script remains the same
+import ssl
+import time
+from pynostr.key import PrivateKey
+from pynostr.relay_manager import RelayManager
+from pynostr.event import Event
+
+# 1. Generate a new private key for the test
+private_key = PrivateKey()
+public_key = private_key.public_key
+print(f"Using new private key: {private_key.bech32()}")
+print(f"Corresponding public key: {public_key.bech32()}")
+
+# 2. Connect to Nostr relays
+relay_manager = RelayManager()
+relay_manager.add_relay("wss://relay.damus.io")
+relay_manager.add_relay("wss://nostr-pub.wellorder.net")
+
+print("\nAttempting to open connections...")
+# NOTE: Using CERT_NONE is insecure and for testing only
+relay_manager.open_connections({"cert_reqs": ssl.CERT_NONE})
+time.sleep(2) # Allow time for connections to open
+
+print("Connections established, creating event...")
+
+# 3. Create and sign the event (a simple text note)
+event = Event(content="Hello Nostr from a Python script!")
+event.sign(private_key.hex())
+
+# 4. Publish the event to the relays
+print("Publishing event...")
+relay_manager.publish_event(event)
+print("Event published!")
+
+# 5. Close connections
+time.sleep(1) # Allow time for publishing
+relay_manager.close_connections()
+print("Connections closed.")
+
+```
+
+### File: axon_bbs/websocket_proxy_test.py
+```
+# axon_bbs/websocket_proxy_test.py
+
+import asyncio
+from python_socks.async_.asyncio import Proxy
+import websockets
+
+# Proxy and target details
+PROXY_HOST = '127.0.0.1'
+PROXY_PORT = 9999
+TARGET_URI = 'wss://relay.damus.io'
+
+async def main():
+    print(f"Connecting to proxy at {PROXY_HOST}:{PROXY_PORT}...")
+    proxy = Proxy.from_url(f'socks5://{PROXY_HOST}:{PROXY_PORT}')
+
+    sock = await proxy.connect(dest_host=TARGET_URI.split('//')[1], dest_port=443)
+    print("Proxy connection successful.")
+
+    print(f"Attempting WebSocket handshake with {TARGET_URI}...")
+    try:
+        async with websockets.connect(
+            TARGET_URI,
+            sock=sock,
+            server_hostname=TARGET_URI.split('//')[1] # Important for TLS
+        ) as websocket:
+
+            print("WebSocket connection successful!")
+
+            # Correct way to send a ping and wait for the pong
+            print("Sending a ping and waiting for pong...")
+            await websocket.ping()
+            print("Pong received!")
+
+            return True
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return False
+
+if __name__ == "__main__":
+    if asyncio.run(main()):
+        print("\nSUCCESS: A proxied WebSocket connection was established.")
+    else:
+        print("\nFAILURE: Could not establish a proxied WebSocket connection.")
+
+```
+
+### File: axon_bbs/api/__init__.py
+```
+# axon_bbs/api/__init__.py
+
+
+```
+
+### File: axon_bbs/api/permissions.py
+```
+# axon_bbs/api/permissions.py
+from rest_framework import permissions
+
+class HasBoardAccess(permissions.BasePermission):
+    """
+    Custom permission to only allow users with the correct
+    access level to see a message board.
+    
+    (This is a placeholder for a real permission system)
+    """
+    def has_object_permission(self, request, view, obj):
+        # For now, we'll allow any authenticated user to see any board.
+        # A real implementation would check obj.required_access_level
+        # against the request.user.access_level.
+        return request.user and request.user.is_authenticated
+
+class HasFileAreaViewAccess(permissions.BasePermission):
+    """
+    Custom permission for viewing files in a FileArea.
+    (Placeholder)
+    """
+    def has_object_permission(self, request, view, obj):
+        # Similar to boards, allow any authenticated user for now.
+        return request.user and request.user.is_authenticated
+
+class HasFileAreaUploadAccess(permissions.BasePermission):
+    """
+    Custom permission for uploading files to a FileArea.
+    (Placeholder)
+    """
+    def has_object_permission(self, request, view, obj):
+        # Similar to boards, allow any authenticated user for now.
+        return request.user and request.user.is_authenticated
+
+
+```
+
+### File: axon_bbs/api/serializers.py
+```
+# axon_bbs/api/serializers.py
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from django.conf import settings
+from core.models import MessageBoard, Message
+from core.services.identity_service import IdentityService
+from core.services.encryption_utils import derive_key_from_password, generate_salt
+import os
+import logging
+
+logger = logging.getLogger(__name__)
+User = get_user_model()
+
+class UserSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the User model. Now also handles creation of the
+    user's Nostr identity on registration.
+    """
+    password = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ('username', 'password')
+
+    def create(self, validated_data):
+        """
+        Overrides the default create method to add identity creation.
+        """
+        # 1. Create the standard Django user
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            password=validated_data['password'],
+        )
+        logger.info(f"Created new Django user: {user.username}")
+
+        try:
+            # 2. Prepare for identity creation
+            # Create a unique, encrypted file for the user's Nostr keys
+            user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
+            os.makedirs(user_data_dir, exist_ok=True)
+            
+            # Generate and save a unique salt for this user
+            salt = generate_salt()
+            with open(os.path.join(user_data_dir, 'salt.bin'), 'wb') as f:
+                f.write(salt)
+
+            # Derive an encryption key from their password
+            encryption_key = derive_key_from_password(validated_data['password'], salt)
+
+            # 3. Create the user's identity service and generate keys
+            identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
+            identity_service = IdentityService(
+                storage_path=identity_storage_path,
+                encryption_key=encryption_key
+            )
+            identity_service.generate_and_add_nostr_identity(name="default")
+            logger.info(f"Successfully created initial Nostr identity for {user.username}")
+
+        except Exception as e:
+            # If identity creation fails, we should roll back the user creation
+            # to prevent orphaned user accounts.
+            logger.error(f"Failed to create identity for {user.username}. Rolling back user creation. Error: {e}")
+            user.delete()
+            # Re-raise the exception so the view returns a 500 error
+            raise e
+
+        return user
+
+
+class MessageBoardSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MessageBoard
+        fields = ('id', 'name', 'description')
+
+class MessageSerializer(serializers.ModelSerializer):
+    author_username = serializers.ReadOnlyField(source='author.username')
+
+    class Meta:
+        model = Message
+        fields = ('id', 'subject', 'body', 'author_username', 'posted_at')
+        read_only_fields = ('id', 'author_username', 'posted_at')
+
+
+```
+
+### File: axon_bbs/api/urls.py
+```
+# axon_bbs/api/urls.py
+from django.urls import path
+from .views import (
+    RegisterView,
+    MessageBoardListView,
+    PostNostrMessageView
+)
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
+
+urlpatterns = [
+    path('register/', RegisterView.as_view(), name='register'),
+    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('boards/', MessageBoardListView.as_view(), name='board-list'),
+    path('messages/post/', PostNostrMessageView.as_view(), name='post-message'),
+]
+
+
+```
+
+### File: axon_bbs/api/views.py
+```
+# axon_bbs/api/views.py
+from rest_framework import generics, permissions, status, views
+from rest_framework.response import Response
+from django.contrib.auth import get_user_model
+from django.conf import settings
+import os
+import logging
+import asyncio
+from pynostr.key import PrivateKey
+from pynostr.event import Event
+
+from .serializers import UserSerializer, MessageBoardSerializer
+from core.models import MessageBoard
+from core.services.identity_service import IdentityService
+from core.services.encryption_utils import derive_key_from_password
+from core.services.service_manager import service_manager
+
+logger = logging.getLogger(__name__)
+User = get_user_model()
+
+class RegisterView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    permission_classes = (permissions.AllowAny,)
+    serializer_class = UserSerializer
+
+class MessageBoardListView(generics.ListAPIView):
+    queryset = MessageBoard.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = MessageBoardSerializer
+
+class PostNostrMessageView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        password = request.data.get('password')
+        subject = request.data.get('subject')
+        body = request.data.get('body')
+        board_name = request.data.get('board_name', 'general')
+
+        if not all([password, subject, body]):
+            return Response({"error": "Password, subject, and body are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # 1. Unlock Identity Service
+            user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
+            salt_path = os.path.join(user_data_dir, 'salt.bin')
+            with open(salt_path, 'rb') as f:
+                salt = f.read()
+            encryption_key = derive_key_from_password(password, salt)
+            identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
+            identity_service = IdentityService(identity_storage_path, encryption_key)
+            
+            nostr_identity = identity_service.get_identity_by_name("default")
+            if not nostr_identity:
+                return Response({"error": "No default Nostr identity found for user."}, status=status.HTTP_404_NOT_FOUND)
+
+            private_key_hex = nostr_identity['private_key']
+            
+            # 2. Construct and sign the event using pynostr
+            private_key = PrivateKey.from_hex(private_key_hex)
+            event = Event(
+                content=f"Subject: {subject}\n\n{body}",
+                tags=[["t", board_name]]
+            )
+            event.sign(private_key.hex())
+            
+            # Add logging to debug event
+            logger.info(f"Event created: id={event.id}, pubkey={event.pubkey}, sig={event.sig}, kind={event.kind}, created_at={event.created_at}, content='{event.content[:50]}...', tags={event.tags}")
+
+            # 3. Publish the event
+            if service_manager.nostr_service and service_manager.loop:
+                future = asyncio.run_coroutine_threadsafe(
+                    service_manager.nostr_service.publish_event(event),
+                    service_manager.loop
+                )
+                # Wait for the coroutine to complete
+                try:
+                    future.result()
+                    logger.info(f"Event {event.id} published by user {user.username}")
+                    return Response({"status": "message_published", "event_id": event.id}, status=status.HTTP_200_OK)
+                except Exception as pub_err:
+                    logger.error(f"Failed to publish event: {pub_err}", exc_info=True)
+                    return Response({"error": f"Failed to publish event: {str(pub_err)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                logger.error("Cannot publish event, NostrService or its event loop is not available.")
+                return Response({"error": "Cannot connect to the Nostr network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        except Exception as e:
+            logger.error(f"Failed to post Nostr message for {user.username}: {e}", exc_info=True)
+            return Response({"error": "Failed to post message. Please check your password or system logs."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+```
+
+### File: axon_bbs/api/tests/__init__.py
+```
+# axon_bbs/api/tests/__init__.py
+
+
+```
+
+### File: axon_bbs/api/tests/test_views.py
+```
+# axon_bbs/api/tests/test_views.py
+
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase
+from django.contrib.auth import get_user_model
+from core.models import MessageBoard, Message, FileArea, UploadedFile, PrivateMessage
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+User = get_user_model()
+
+# -----------------------------------------------------------------------------
+# Test Cases for User Auth API Views
+# -----------------------------------------------------------------------------
+
+class UserAuthAPITest(APITestCase):
+    """
+    Test suite for the User Registration and Login API views.
+    """
+    def setUp(self):
+        self.register_url = reverse('user-register')
+        self.login_url = reverse('user-login')
+        self.profile_url = reverse('user-profile')
+        self.user_data = {
+            'username': 'testuser',
+            'password': 'testpassword123',
+            'email': 'test@example.com'
+        }
+        self.user = User.objects.create_user(**self.user_data)
+
+    def test_user_registration(self):
+        new_user_data = {'username': 'newuser', 'password': 'newpassword123', 'email': 'new@example.com'}
+        response = self.client.post(self.register_url, new_user_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(User.objects.filter(username='newuser').exists())
+
+    def test_user_login(self):
+        response = self.client.post(self.login_url, self.user_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
+
+# -----------------------------------------------------------------------------
+# Test Cases for Message Board API Views
+# -----------------------------------------------------------------------------
+
+class MessageBoardAPITest(APITestCase):
+    """
+    Test suite for the Message Board and Message API views.
+    """
+    def setUp(self):
+        self.user = User.objects.create_user(username='testuser', password='password', sl=10)
+        self.public_board = MessageBoard.objects.create(name='Public', required_sl=10)
+        self.client.force_authenticate(user=self.user)
+
+    def test_post_message_to_board(self):
+        url = reverse('message-list-create', kwargs={'board_id': self.public_board.id})
+        post_data = {'title': 'New Post', 'body': 'This is a new message.'}
+        response = self.client.post(url, post_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(Message.objects.filter(title='New Post').exists())
+
+# -----------------------------------------------------------------------------
+# Test Cases for File System API Views
+# -----------------------------------------------------------------------------
+
+class FileSystemAPITest(APITestCase):
+    """
+    Test suite for the File Area and File Upload API views.
+    """
+    def setUp(self):
+        self.user = User.objects.create_user(username='testuser', password='password', sl=20)
+        self.public_area = FileArea.objects.create(name='Public Files', required_sl_view=10, required_sl_upload=20)
+        self.client.force_authenticate(user=self.user)
+
+    def test_file_upload_success(self):
+        url = reverse('file-list-upload', kwargs={'area_id': self.public_area.id})
+        dummy_file = SimpleUploadedFile("testfile.txt", b"file_content", content_type="text/plain")
+        upload_data = {'description': 'A test file', 'file_content': dummy_file}
+        response = self.client.post(url, upload_data, format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(UploadedFile.objects.filter(filename='testfile.txt').exists())
+
+# -----------------------------------------------------------------------------
+# Test Cases for Private Mail API Views
+# -----------------------------------------------------------------------------
+
+class PrivateMailAPITest(APITestCase):
+    """
+    Test suite for the Private Mail API views.
+    """
+    def setUp(self):
+        self.user1 = User.objects.create_user(username='user1', password='password')
+        self.user2 = User.objects.create_user(username='user2', password='password')
+        
+        # Authenticate as user1 by default
+        self.client.force_authenticate(user=self.user1)
+
+        # URL for listing/creating mail
+        self.mail_url = reverse('private-message-list-create')
+
+    def test_send_private_message(self):
+        """
+        Ensure a user can send a private message to another user.
+        """
+        mail_data = {
+            'recipient': 'user2',
+            'title': 'Hello!',
+            'body': 'This is a test private message.'
+        }
+        response = self.client.post(self.mail_url, mail_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        # Verify the message exists in the database
+        self.assertTrue(PrivateMessage.objects.filter(sender=self.user1, recipient=self.user2).exists())
+
+    def test_list_inbox(self):
+        """
+        Ensure a user can list messages in their inbox.
+        """
+        # user1 sends a message to user2
+        PrivateMessage.objects.create(sender=self.user1, recipient=self.user2, title='Hi', body='...')
+        
+        # Authenticate as user2 to check their inbox
+        self.client.force_authenticate(user=self.user2)
+        response = self.client.get(self.mail_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], 'Hi')
+
+    def test_list_sent_box(self):
+        """
+        Ensure a user can list messages in their sent box.
+        """
+        # user1 sends a message to user2
+        PrivateMessage.objects.create(sender=self.user1, recipient=self.user2, title='Hi', body='...')
+        
+        # As user1, check the sent box
+        response = self.client.get(self.mail_url + '?box=sent')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], 'Hi')
+
+    def test_read_message_marks_as_read(self):
+        """
+        Ensure viewing a message detail marks it as read for the recipient.
+        """
+        message = PrivateMessage.objects.create(sender=self.user1, recipient=self.user2, title='Unread', body='...')
+        self.assertIsNone(message.read_at)
+
+        # Authenticate as the recipient (user2)
+        self.client.force_authenticate(user=self.user2)
+        
+        # URL for the specific message
+        detail_url = reverse('private-message-detail', kwargs={'pk': message.id})
+        response = self.client.get(detail_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Refresh the message from the database and check the read_at field
+        message.refresh_from_db()
+        self.assertIsNotNone(message.read_at)
+
+
+
+```
+
+### File: axon_bbs/axon_project/__init__.py
+```
+# axon_bbs/axon_project/__init__.py
+
+
+```
+
+### File: axon_bbs/axon_project/asgi.py
+```
+
+
+```
+
+### File: axon_bbs/axon_project/settings.py
+```
+# axon_bbs/axon_project/settings.py
+from pathlib import Path
+import os
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+SECRET_KEY = 'django-insecure-a#c884w!$z#%q)t_f$z&!#8+@58!#n4t!#c8+q)t_f$z&!#'
+
+DEBUG = True
+
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+
+# --- Application definition ---
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    # Third-party apps
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'corsheaders',
+    # Local apps
+    'core.apps.CoreConfig',
+    'api',
+]
+
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    # Add the required middleware for the admin panel
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
+]
+
+ROOT_URLCONF = 'axon_project.urls'
+
+# Add the required TEMPLATES configuration for the admin panel
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = 'axon_project.wsgi.application'
+
+# --- Database ---
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'data/axon_bbs.sqlite3',
+    }
+}
+
+# --- Password validation ---
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+]
+
+# --- Internationalization ---
+LANGUAGE_CODE = 'en-us'
+TIME_ZONE = 'UTC'
+USE_I18N = True
+USE_TZ = True
+
+# --- Static and Media files ---
+STATIC_URL = 'static/'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# --- Other Settings ---
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+AUTH_USER_MODEL = 'core.User'
+
+# --- CORS Configuration ---
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+]
+
+# --- REST Framework Configuration ---
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    )
+}
+
+# --- Axon BBS Service Configuration ---
+TOR_SOCKS_HOST = "127.0.0.1"
+TOR_SOCKS_PORT = 9050
+
+```
+
+### File: axon_bbs/axon_project/urls.py
+```
+# axon_bbs/axon_project/urls.py
+"""
+URL configuration for axon_project project.
+
+The `urlpatterns` list routes URLs to views. For more information please see:
+    https://docs.djangoproject.com/en/5.0/topics/http/urls/
+"""
+from django.contrib import admin
+from django.urls import path, include
+# --- Import settings and static for media files ---
+from django.conf import settings
+from django.conf.urls.static import static
+
+urlpatterns = [
+    # Route for the Django admin interface
+    path('admin/', admin.site.urls),
+    
+    # Route for our application's API
+    path('api/', include('api.urls')),
+]
+
+# --- Add this block to serve media files in development ---
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+
+```
+
+### File: axon_bbs/axon_project/wsgi.py
+```
+# axon_bbs/axon_project/wsgi.py
+"""
+WSGI config for axon_project project.
+
+It exposes the WSGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/5.0/howto/deployment/wsgi/
+"""
+
+import os
+
+from django.core.wsgi import get_wsgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'axon_project.settings')
+
+application = get_wsgi_application()
+
+
+```
+
+### File: axon_bbs/core/__init__.py
+```
+# axon_bbs/core/__init__.py
+
+
+```
+
+### File: axon_bbs/core/admin.py
+```
+# axon_bbs/core/admin.py
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from .models import User, MessageBoard, Message, FileArea, UploadedFile, PrivateMessage
+
+@admin.register(User)
+class UserAdmin(BaseUserAdmin):
+    # Use the correct field name 'access_level'
+    list_display = ('username', 'email', 'access_level', 'is_staff')
+    fieldsets = BaseUserAdmin.fieldsets + (
+        ('BBS Info', {'fields': ('access_level',)}),
+    )
+
+@admin.register(MessageBoard)
+class MessageBoardAdmin(admin.ModelAdmin):
+    # Use the correct field name 'required_access_level'
+    list_display = ('name', 'description', 'required_access_level')
+    list_filter = ('required_access_level',)
+
+@admin.register(Message)
+class MessageAdmin(admin.ModelAdmin):
+    # Use the correct field name 'subject' instead of 'title'
+    list_display = ('subject', 'author', 'board', 'posted_at')
+    list_filter = ('board', 'author')
+    date_hierarchy = 'posted_at'
+
+@admin.register(FileArea)
+class FileAreaAdmin(admin.ModelAdmin):
+    # Use the correct field names 'view_access_level' and 'upload_access_level'
+    list_display = ('name', 'description', 'view_access_level', 'upload_access_level')
+
+@admin.register(UploadedFile)
+class UploadedFileAdmin(admin.ModelAdmin):
+    # Use the correct field names 'file' and 'upload_date'
+    list_display = ('file', 'uploader', 'area', 'upload_date')
+    list_filter = ('area', 'uploader')
+    date_hierarchy = 'upload_date'
+
+@admin.register(PrivateMessage)
+class PrivateMessageAdmin(admin.ModelAdmin):
+    # Use the correct field names 'subject' and 'is_read'
+    list_display = ('subject', 'sender', 'recipient', 'sent_at', 'is_read')
+    list_filter = ('sender', 'recipient', 'is_read')
+    date_hierarchy = 'sent_at'
+
+
+```
+
+### File: axon_bbs/core/apps.py
+```
+# axon_bbs/core/apps.py
+from django.apps import AppConfig
+import logging
+import os
+
+logger = logging.getLogger(__name__)
+
+class CoreConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'core'
+
+    def ready(self):
+        """
+        This method is called by Django when the application is ready.
+        It's the perfect place to initialize our global services.
+        """
+        if os.environ.get('RUN_MAIN') == 'true':  # Only run in the child process
+            logger.info("Core app is ready. Initializing global services...")
+            from .services.service_manager import service_manager
+            
+            # Initialize all services defined in the ServiceManager
+            service_manager.initialize_services()
+
+```
+
+### File: axon_bbs/core/models.py
+```
+# axon_bbs/core/models.py
+from django.db import models
+from django.contrib.auth.models import AbstractUser
+from django.conf import settings
+
+class User(AbstractUser):
+    """
+    Custom user model that extends Django's default AbstractUser.
+    This is the central model for all registered users of the BBS.
+    """
+    access_level = models.PositiveIntegerField(default=10, help_text="User's security access level.")
+
+    # --- FIX FOR CLASHING REVERSE ACCESSORS ---
+    groups = models.ManyToManyField(
+        'auth.Group',
+        verbose_name='groups',
+        blank=True,
+        help_text='The groups this user belongs to. A user will get all permissions granted to each of their groups.',
+        related_name="core_user_set",
+        related_query_name="user",
+    )
+    user_permissions = models.ManyToManyField(
+        'auth.Permission',
+        verbose_name='user permissions',
+        blank=True,
+        help_text='Specific permissions for this user.',
+        related_name="core_user_set",
+        related_query_name="user",
+    )
+
+    def __str__(self):
+        return self.username
+
+class MessageBoard(models.Model):
+    """Represents a single message board or forum."""
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    required_access_level = models.PositiveIntegerField(default=10)
+
+    def __str__(self):
+        return self.name
+
+class Message(models.Model):
+    """Represents a single post within a MessageBoard."""
+    board = models.ForeignKey(MessageBoard, on_delete=models.CASCADE, related_name='messages')
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    subject = models.CharField(max_length=255)
+    body = models.TextField()
+    posted_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"'{self.subject}' by {self.author.username}"
+
+class FileArea(models.Model):
+    """Represents a directory or area for file uploads."""
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    view_access_level = models.PositiveIntegerField(default=10)
+    upload_access_level = models.PositiveIntegerField(default=20)
+
+    def __str__(self):
+        return self.name
+
+class UploadedFile(models.Model):
+    """Represents a single file uploaded by a user."""
+    area = models.ForeignKey(FileArea, on_delete=models.CASCADE, related_name='files')
+    uploader = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    file = models.FileField(upload_to='uploads/')
+    description = models.CharField(max_length=255, blank=True)
+    upload_date = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.file.name
+
+class PrivateMessage(models.Model):
+    """Represents a private mail message between two users."""
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sent_mail')
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail')
+    subject = models.CharField(max_length=255)
+    body = models.TextField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"From {self.sender} to {self.recipient}: '{self.subject}'"
+
+
+```
+
+### File: axon_bbs/core/migrations/0001_initial.py
+```
+# Generated by Django 5.2.4 on 2025-07-08 03:04
+
+import django.contrib.auth.models
+import django.contrib.auth.validators
+import django.db.models.deletion
+import django.utils.timezone
+from django.conf import settings
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+        ('auth', '0012_alter_user_first_name_max_length'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='FileArea',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=100)),
+                ('description', models.TextField(blank=True)),
+                ('view_access_level', models.PositiveIntegerField(default=10)),
+                ('upload_access_level', models.PositiveIntegerField(default=20)),
+            ],
+        ),
+        migrations.CreateModel(
+            name='MessageBoard',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=100)),
+                ('description', models.TextField(blank=True)),
+                ('required_access_level', models.PositiveIntegerField(default=10)),
+            ],
+        ),
+        migrations.CreateModel(
+            name='User',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('password', models.CharField(max_length=128, verbose_name='password')),
+                ('last_login', models.DateTimeField(blank=True, null=True, verbose_name='last login')),
+                ('is_superuser', models.BooleanField(default=False, help_text='Designates that this user has all permissions without explicitly assigning them.', verbose_name='superuser status')),
+                ('username', models.CharField(error_messages={'unique': 'A user with that username already exists.'}, help_text='Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only.', max_length=150, unique=True, validators=[django.contrib.auth.validators.UnicodeUsernameValidator()], verbose_name='username')),
+                ('first_name', models.CharField(blank=True, max_length=150, verbose_name='first name')),
+                ('last_name', models.CharField(blank=True, max_length=150, verbose_name='last name')),
+                ('email', models.EmailField(blank=True, max_length=254, verbose_name='email address')),
+                ('is_staff', models.BooleanField(default=False, help_text='Designates whether the user can log into this admin site.', verbose_name='staff status')),
+                ('is_active', models.BooleanField(default=True, help_text='Designates whether this user should be treated as active. Unselect this instead of deleting accounts.', verbose_name='active')),
+                ('date_joined', models.DateTimeField(default=django.utils.timezone.now, verbose_name='date joined')),
+                ('access_level', models.PositiveIntegerField(default=10, help_text="User's security access level.")),
+                ('groups', models.ManyToManyField(blank=True, help_text='The groups this user belongs to. A user will get all permissions granted to each of their groups.', related_name='core_user_set', related_query_name='user', to='auth.group', verbose_name='groups')),
+                ('user_permissions', models.ManyToManyField(blank=True, help_text='Specific permissions for this user.', related_name='core_user_set', related_query_name='user', to='auth.permission', verbose_name='user permissions')),
+            ],
+            options={
+                'verbose_name': 'user',
+                'verbose_name_plural': 'users',
+                'abstract': False,
+            },
+            managers=[
+                ('objects', django.contrib.auth.models.UserManager()),
+            ],
+        ),
+        migrations.CreateModel(
+            name='Message',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('subject', models.CharField(max_length=255)),
+                ('body', models.TextField()),
+                ('posted_at', models.DateTimeField(auto_now_add=True)),
+                ('author', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+                ('board', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='messages', to='core.messageboard')),
+            ],
+        ),
+        migrations.CreateModel(
+            name='PrivateMessage',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('subject', models.CharField(max_length=255)),
+                ('body', models.TextField()),
+                ('sent_at', models.DateTimeField(auto_now_add=True)),
+                ('is_read', models.BooleanField(default=False)),
+                ('recipient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='received_mail', to=settings.AUTH_USER_MODEL)),
+                ('sender', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='sent_mail', to=settings.AUTH_USER_MODEL)),
+            ],
+        ),
+        migrations.CreateModel(
+            name='UploadedFile',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('file', models.FileField(upload_to='uploads/')),
+                ('description', models.CharField(blank=True, max_length=255)),
+                ('upload_date', models.DateTimeField(auto_now_add=True)),
+                ('area', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='files', to='core.filearea')),
+                ('uploader', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+            ],
+        ),
+    ]
+
+
+```
+
+### File: axon_bbs/core/migrations/__init__.py
+```
+
+
+```
+
+### File: axon_bbs/core/services/__init__.py
+```
+# axon_bbs/core/services/__init__.py
+# This file can be empty.
+# Its presence tells Python that the 'services' directory is a package.
+
+
+```
+
+### File: axon_bbs/core/services/encryption_utils.py
+```
+# axon_bbs/core/services/encryption_utils.py
+import os
+import logging
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import base64
+
+logger = logging.getLogger(__name__)
+
+def generate_salt(size: int = 16) -> bytes:
+    """
+    Generates a cryptographically secure salt.
+    """
+    return os.urandom(size)
+
+def derive_key_from_password(password: str, salt: bytes, iterations: int = 100000) -> bytes:
+    """
+    Derives a secure encryption key from a user's password and a salt
+    using PBKDF2HMAC.
+    """
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=iterations,
+    )
+    # The key must be base64-encoded to be used by Fernet
+    return base64.urlsafe_b64encode(kdf.derive(password.encode()))
+
+def encrypt_data(data: str, key: bytes) -> bytes:
+    """
+    Encrypts a string using a Fernet key.
+    """
+    f = Fernet(key)
+    return f.encrypt(data.encode())
+
+def decrypt_data(encrypted_data: bytes, key: bytes) -> str:
+    """
+    Decrypts data using a Fernet key.
+    Returns the decrypted data as a string.
+    """
+    f = Fernet(key)
+    decrypted_bytes = f.decrypt(encrypted_data)
+    return decrypted_bytes.decode()
+
+
+```
+
+### File: axon_bbs/core/services/identity_service.py
+```
+# axon_bbs/core/services/identity_service.py
+import json
+import os
+import logging
+from typing import Dict, Any, List, Optional
+import uuid
+from datetime import datetime
+# We will create this encryption utility next
+from .encryption_utils import encrypt_data, decrypt_data
+from pynostr.key import PrivateKey  # Use pynostr for compatible keys
+
+logger = logging.getLogger(__name__)
+
+class IdentityService:
+    """
+    Manages user Nostr key pairs with encrypted storage.
+    Adapted from the IdentityManager in the 'offtherails' project.
+    Each user on the BBS will have their own instance of this service,
+    unlocked with their password.
+    """
+    def __init__(self, storage_path: str, encryption_key: bytes):
+        """
+        Initializes the service for a specific user.
+        :param storage_path: The full path to the user's encrypted identity file.
+        :param encryption_key: The key derived from the user's password to encrypt/decrypt the file.
+        """
+        self.storage_file = storage_path
+        self.encryption_key = encryption_key
+        self.identities: List[Dict[str, Any]] = []
+        self._load_identities()
+        logger.info(f"IdentityService instance created for storage file: {storage_path}")
+
+    def _load_identities(self) -> None:
+        """
+        Loads and decrypts identities from the user's storage file.
+        """
+        if os.path.exists(self.storage_file):
+            try:
+                with open(self.storage_file, "rb") as f:
+                    encrypted_data = f.read()
+                if not encrypted_data:
+                    self.identities = []
+                    return
+                decrypted_data = decrypt_data(encrypted_data, self.encryption_key)
+                self.identities = json.loads(decrypted_data)
+            except Exception as e:
+                logger.error(f"Failed to load identities from {self.storage_file}: {e}", exc_info=True)
+                # If decryption fails (e.g., wrong password), treat as no identities
+                self.identities = []
+        else:
+            self.identities = []
+            # Don't save immediately, wait for an action.
+
+    def _save_identities(self) -> None:
+        """
+        Encrypts and saves the user's current identities to their storage file.
+        """
+        try:
+            os.makedirs(os.path.dirname(self.storage_file), exist_ok=True)
+            identities_json = json.dumps(self.identities, indent=4)
+            encrypted_data = encrypt_data(identities_json, self.encryption_key)
+            with open(self.storage_file, "wb") as f:
+                f.write(encrypted_data)
+            logger.debug(f"Saved identities to {self.storage_file}")
+        except Exception as e:
+            logger.error(f"Failed to save identities to {self.storage_file}: {e}", exc_info=True)
+
+    def generate_and_add_nostr_identity(self, name: str = "default") -> Dict[str, Any]:
+        """
+        Generates a new Nostr key pair and adds it as an identity.
+        """
+        try:
+            private_key = PrivateKey()
+            public_key_hex = private_key.public_key.hex()
+            private_key_hex = private_key.hex()
+            identity = {
+                "id": str(uuid.uuid4()),
+                "name": name,
+                "type": "nostr",
+                "public_key": public_key_hex,
+                "private_key": private_key_hex, # This will be encrypted on save
+                "created_at": datetime.now().isoformat()
+            }
+            self.identities.append(identity)
+            self._save_identities()
+            logger.info(f"Generated Nostr identity '{name}': {public_key_hex[:8]}...")
+            return identity
+        except Exception as e:
+            logger.error(f"Failed to generate Nostr identity: {e}", exc_info=True)
+            raise
+
+    def get_all_nostr_identities(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all Nostr identities for the user.
+        """
+        return [id_ for id_ in self.identities if id_.get("type") == "nostr"]
+
+    def get_identity_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a specific identity by its name.
+        """
+        for identity in self.identities:
+            if identity.get("name") == name:
+                return identity
+        return None
+
+    def remove_identity(self, identity_id: str) -> bool:
+        """
+        Removes an identity by its unique ID.
+        """
+        initial_count = len(self.identities)
+        self.identities = [id_ for id_ in self.identities if id_.get("id") != identity_id]
+        if len(self.identities) < initial_count:
+            self._save_identities()
+            logger.info(f"Removed identity: {identity_id}")
+            return True
+        return False
+
+```
+
+### File: axon_bbs/core/services/nostr_service.py
+```
+# axon_bbs/core/services/nostr_service.py
+import logging
+import json
+import websockets
+import asyncio
+from typing import Any, Dict, Callable, Awaitable
+from pynostr.event import Event  # Use pynostr.Event for consistency
+from .tor_service import TorService
+
+logger = logging.getLogger(__name__)
+
+class NostrService:
+    def __init__(self, relay_url: str, tor_service: TorService):
+        self.relay_url = relay_url
+        self.tor_service = tor_service
+        self.websocket = None
+        self.is_connected = False
+        self.subscriptions: Dict[str, Dict[str, Any]] = {}
+        self.on_event_callback: Callable[[Dict[str, Any]], Awaitable[None]] = self.default_event_handler
+        logger.info(f"NostrService initialized for relay: {self.relay_url}")
+
+    async def default_event_handler(self, event: Dict[str, Any]):
+        logger.debug(f"Received Nostr event (no handler attached): {event.get('id')}")
+
+    async def connect(self):
+        if self.is_connected:
+            logger.warning(f"Already connected to {self.relay_url}. Skipping.")
+            return
+        try:
+            self.websocket = await self.tor_service.connect_websocket(self.relay_url)
+            self.is_connected = True
+            logger.info(f"Successfully connected to Nostr relay: {self.relay_url}")
+            asyncio.create_task(self._listen_for_messages())
+        except Exception as e:
+            logger.error(f"Failed to connect to Nostr relay {self.relay_url}: {e}", exc_info=True)
+            self.is_connected = False
+
+    async def _listen_for_messages(self):
+        if not self.websocket: return
+        try:
+            async for message in self.websocket:
+                try:
+                    event_data = json.loads(message)
+                    if event_data[0] == "EVENT":
+                        await self.on_event_callback(event_data[2])
+                    elif event_data[0] == "NOTICE":
+                        logger.warning(f"Received NOTICE from {self.relay_url}: {event_data[1]}")
+                    elif event_data[0] == "OK":
+                        logger.info(f"Received OK from {self.relay_url}: {event_data[1:]}")
+                    elif event_data[0] == "EOSE":
+                        logger.debug(f"Received EOSE from {self.relay_url}: {event_data[1]}")
+                except Exception as e:
+                    logger.error(f"Error processing message from relay: {e}", exc_info=True)
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning(f"Connection to {self.relay_url} closed: {e}")
+            self.is_connected = False
+        except Exception as e:
+            logger.error(f"An unexpected error occurred in the listening loop: {e}", exc_info=True)
+            self.is_connected = False
+
+    async def publish_event(self, event: Event):
+        """
+        Publishes a signed Nostr event to the relay.
+        """
+        if not self.is_connected or not self.websocket:
+            logger.error("Cannot publish event, not connected to relay.")
+            return
+
+        try:
+            request = ["EVENT", event.to_dict()]
+            await self.websocket.send(json.dumps(request))
+            logger.info(f"Published event {event.id} to {self.relay_url}")
+        except Exception as e:
+            logger.error(f"Failed to publish event {event.id}: {e}", exc_info=True)
+
+    async def disconnect(self):
+        if self.websocket:
+            await self.websocket.close()
+            self.is_connected = False
+            logger.info(f"Disconnected from {self.relay_url}")
+
+```
+
+### File: axon_bbs/core/services/service_manager.py
+```
+# axon_bbs/core/services/service_manager.py
+import logging
+from django.conf import settings
+from .tor_service import TorService
+from .nostr_service import NostrService
+import asyncio
+import threading
+
+logger = logging.getLogger(__name__)
+
+class ServiceManager:
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ServiceManager, cls).__new__(cls)
+            cls._instance.tor_service = None
+            cls._instance.nostr_service = None
+            cls._instance.loop = None # <-- Attribute to hold the loop
+        return cls._instance
+
+    def _run_async_services(self):
+        """A target for our background thread to run the asyncio event loop."""
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        
+        # Schedule the connection to run in the loop
+        self.loop.create_task(self.nostr_service.connect())
+        
+        # Run the event loop forever
+        self.loop.run_forever()
+
+    def initialize_services(self):
+        """
+        Initializes all the core network services.
+        """
+        if not self.tor_service:
+            print("--> Attempting to connect to Tor network...")
+            tor_host = getattr(settings, "TOR_SOCKS_HOST", "127.0.0.1")
+            tor_port = getattr(settings, "TOR_SOCKS_PORT", 9050)
+            self.tor_service = TorService(host=tor_host, port=tor_port)
+            if not self.tor_service.activate_proxy():
+                print("[!] CRITICAL: Failed to activate Tor proxy. Connections will NOT be anonymized.")
+            else:
+                print("--> Tor proxy activated successfully.")
+        
+        if not self.nostr_service:
+            print("--> Initializing Nostr service...")
+            relay_url = getattr(settings, "NOSTR_RELAY_URL", "wss://relay.damus.io")
+            self.nostr_service = NostrService(relay_url=relay_url, tor_service=self.tor_service)
+            
+            thread = threading.Thread(target=self._run_async_services, daemon=True)
+            thread.start()
+            print(f"--> Nostr connection thread started for {relay_url}.")
+
+service_manager = ServiceManager()
+
+
+```
+
+### File: axon_bbs/core/services/socket_utils.py
+```
+# axon_bbs/core/services/socket_utils.py
+import socket
+
+# Save a reference to the original, standard socket object before it's
+# potentially patched by a library like PySocks.
+original_socket_socket = socket.socket
+
+
+```
+
+### File: axon_bbs/core/services/tor_service.py
+```
+# axon_bbs/core/services/tor_service.py
+import socket
+import logging
+import websockets
+import asyncio
+from python_socks.async_.asyncio import Proxy
+from .socket_utils import original_socket_socket
+
+logger = logging.getLogger(__name__)
+
+class TorService:
+    def __init__(self, host: str, port: int):
+        self._socks_host = host
+        self._socks_port = port
+        self._is_active = True  # Assume active since we use per-connection proxy
+        logger.info(f"TorService initialized for proxy at {self._socks_host}:{self._socks_port}")
+
+    def activate_proxy(self) -> bool:
+        # No global patch needed; we'll use per-connection proxy
+        return True
+
+    def deactivate_proxy(self) -> None:
+        pass
+
+    def is_active(self) -> bool:
+        return self._is_active
+
+    async def connect_websocket(self, uri: str, **kwargs):
+        """
+        Connects to a WebSocket URI using the Tor proxy.
+        Uses python_socks.Proxy for remote hostname resolution.
+        """
+        host = uri.split('//')[1].split('/')[0]  # Extract hostname from URI
+        port = 443 if uri.startswith('wss://') else 80
+
+        proxy = Proxy.from_url(f'socks5://{self._socks_host}:{self._socks_port}')
+        try:
+            sock = await proxy.connect(dest_host=host, dest_port=port)
+            return await websockets.connect(uri, sock=sock, server_hostname=host, **kwargs)
+        except Exception as e:
+            logger.error(f"Failed to connect via proxy: {e}", exc_info=True)
+            raise
+
+```
+
+### File: axon_bbs/core/tests/__init__.py
+```
+# axon_bbs/core/tests/__init__.py
+
+
+```
+
+### File: axon_bbs/core/tests/test_models.py
+```
+# axon_bbs/core/tests/test_models.py
+
+from django.test import TestCase
+from django.contrib.auth import get_user_model
+
+# Get the custom User model we defined
+User = get_user_model()
+
+# -----------------------------------------------------------------------------
+# Test Cases for Core Models
+# -----------------------------------------------------------------------------
+
+class UserModelTest(TestCase):
+    """
+    Test suite for the custom User model.
+    """
+
+    def setUp(self):
+        """
+        Set up the test environment. This method is run before each test.
+        We create a standard user instance here.
+        """
+        self.user = User.objects.create_user(
+            username='testuser',
+            password='testpassword123',
+            email='test@example.com'
+        )
+
+    def test_user_creation(self):
+        """
+        Test that a user can be created successfully.
+        """
+        self.assertEqual(self.user.username, 'testuser')
+        self.assertEqual(self.user.email, 'test@example.com')
+        self.assertTrue(self.user.check_password('testpassword123'))
+        self.assertFalse(self.user.is_staff)
+        self.assertFalse(self.user.is_superuser)
+
+    def test_user_default_bbs_values(self):
+        """
+        Test that the custom BBS-specific fields are set to their
+        correct default values upon user creation.
+        """
+        self.assertEqual(self.user.sl, 10)
+        self.assertEqual(self.user.dsl, 10)
+        self.assertEqual(self.user.uploads, 0)
+        self.assertEqual(self.user.downloads, 0)
+        self.assertEqual(self.user.uk, 0.0)
+        self.assertEqual(self.user.dk, 0.0)
+        self.assertEqual(self.user.msg_post, 0)
+        self.assertEqual(self.user.email_sent, 0)
+        self.assertEqual(self.user.time_today, 60)
+        self.assertEqual(self.user.time_bank, 0)
+        self.assertTrue(self.user.has_ansi)
+        self.assertTrue(self.user.has_color)
+        self.assertFalse(self.user.is_expert_menu)
+
+    def test_string_representation(self):
+        """
+        Test the __str__ method of the User model.
+        """
+        self.assertEqual(str(self.user), 'testuser')
+
+# --- We will add test cases for MessageBoard, Message, etc., here later ---
+
+
+```
+
+### File: axon_bbs/frontend/public/index.html
+```
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Axon BBS - A Modern Bulletin Board System"
+    />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <title>Axon BBS</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
+
+
+```
+
+### File: axon_bbs/frontend/src/App.js
+```
+// axon_bbs/frontend/src/App.js
+import React, { useState, useEffect } from 'react';
+import apiClient from './apiClient';
+// import AnsiViewer from './components/AnsiViewer';  // Comment out or remove if not used
+import LoginScreen from './components/LoginScreen';
+import RegisterScreen from './components/RegisterScreen';
+import MessageList from './components/MessageList';
+
+// --- Helper Components ---
+const Header = ({ text }) => <div className="text-4xl font-bold text-white mb-6 pb-2 border-b-2 border-gray-600">{text}</div>;
+const Button = ({ onClick, children, className = 'bg-blue-600 hover:bg-blue-700' }) => (
+    <button onClick={onClick} className={`${className} text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out w-full mb-2`}>
+        {children}
+    </button>
+);
+const BackButton = ({ onClick }) => <button onClick={onClick} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out w-full mt-4">Back</button>;
+
+// --- API-Driven Components ---
+const MessageBoardList = ({ onSelectBoard, onBack }) => {
+  const [boards, setBoards] = useState([]);
+  useEffect(() => {
+    apiClient.get('/api/boards/').then(response => setBoards(response.data));
+  }, []);
+  return (
+    <div>
+      <Header text="Message Boards" />
+      {boards.map(board => <Button key={board.id} onClick={() => onSelectBoard(board.id, board.name)}>{board.name}</Button>)}
+      <BackButton onClick={onBack} />
+    </div>
+  );
+};
+
+const FileAreaList = ({ onBack }) => {
+    return (
+        <div>
+            <Header text="File Areas" />
+            <p className="text-gray-400 mb-4">File area functionality is not yet implemented.</p>
+            <BackButton onClick={onBack} />
+        </div>
+    );
+};
+
+// --- Main App Component ---
+function App() {
+    const [token, setToken] = useState(localStorage.getItem('token'));
+    const [authView, setAuthView] = useState('login');
+    const [view, setView] = useState('main');
+    const [selectedBoard, setSelectedBoard] = useState({ id: null, name: '' });
+
+    const setAuthToken = (newToken) => {
+        if (newToken) {
+            localStorage.setItem('token', newToken);
+        } else {
+            localStorage.removeItem('token');
+        }
+        // The apiClient now handles headers automatically, so this line is removed.
+        setToken(newToken);
+    };
+
+    useEffect(() => {
+        const storedToken = localStorage.getItem('token');
+        if (storedToken) {
+            setToken(storedToken);
+        }
+    }, []);
+
+    const handleLogout = () => {
+        setAuthToken(null);
+        setView('main');
+    };
+    
+    const handleSelectBoard = (boardId, boardName) => {
+        setSelectedBoard({ id: boardId, name: boardName });
+    };
+
+    if (!token) {
+        if (authView === 'login') {
+            return <LoginScreen onLogin={setAuthToken} onNavigateToRegister={() => setAuthView('register')} />;
+        } else {
+            return <RegisterScreen onRegisterSuccess={() => setAuthView('login')} onNavigateToLogin={() => setAuthView('login')} />;
+        }
+    }
+
+    const renderBbsContent = () => {
+        if (selectedBoard.id) {
+            return (
+                <div>
+                    <Header text={`Board: ${selectedBoard.name}`} />
+                    <MessageList boardId={selectedBoard.id} boardName={selectedBoard.name} />
+                    <BackButton onClick={() => setSelectedBoard({ id: null, name: '' })} />
+                </div>
+            );
+        }
+
+        switch(view) {
+            case 'messages':
+                return <MessageBoardList onSelectBoard={handleSelectBoard} onBack={() => setView('main')} />;
+            case 'files':
+                return <FileAreaList onBack={() => setView('main')} />;
+            default: // 'main' menu
+                return (
+                    <div>
+                        <Header text="Main Menu" />
+                        <Button onClick={() => setView('messages')}>Message Boards</Button>
+                        <Button onClick={() => setView('files')}>File Areas</Button>
+                        <Button onClick={() => setView('mail')}>Private Mail</Button>
+                        <Button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 mt-4">
+                            Logout
+                        </Button>
+                    </div>
+                );
+        }
+    };
+    
+    return (
+        <div className="bg-gray-900 text-gray-300 min-h-screen p-8">
+            <div className="max-w-2xl mx-auto">
+                <h1 className="text-5xl font-bold text-white text-center mb-12">Axon BBS</h1>
+                {renderBbsContent()}
+            </div>
+        </div>
+    );
+}
+
+export default App;
+
+```
+
+### File: axon_bbs/frontend/src/apiClient.js
+```
+// axon_bbs/frontend/src/apiClient.js
+import axios from 'axios';
+
+// Create an instance of axios for our API
+const apiClient = axios.create({
+  baseURL: 'http://127.0.0.1:8000',
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// --- Interceptor to dynamically add the token to every request ---
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+export default apiClient;
+
+
+```
+
+### File: axon_bbs/frontend/src/index.js
+```
+// axon_bbs/frontend/src/index.js
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import './index.css';
+import App from './App';
+import reportWebVitals from './reportWebVitals';
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+// If you want to start measuring performance in your app, pass a function
+// to log results (for example: reportWebVitals(console.log))
+// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
+reportWebVitals();
+
+
+```
+
+### File: axon_bbs/frontend/src/reportWebVitals.js
+```
+// axon_bbs/frontend/src/reportWebVitals.js
+const reportWebVitals = onPerfEntry => {
+  if (onPerfEntry && onPerfEntry instanceof Function) {
+    import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
+      getCLS(onPerfEntry);
+      getFID(onPerfEntry);
+      getFCP(onPerfEntry);
+      getLCP(onPerfEntry);
+      getTTFB(onPerfEntry);
+    });
+  }
+};
+
+export default reportWebVitals;
+
+
+```
+
+### File: axon_bbs/frontend/src/components/AnsiViewer.js
+```
+// axon_bbs/frontend/src/components/AnsiViewer.js
+import React from 'react';
+import Convert from 'ansi-to-html';
+
+const AnsiViewer = ({ content, onClose }) => {
+  // Configure the ANSI to HTML converter
+  const convert = new Convert({
+    fg: '#E2E8F0', // Default text color from your theme
+    bg: '#1A202C', // Default background color from your theme
+    newline: true, // Use <br/> for newlines
+    escapeXML: true,
+  });
+
+  // Convert the raw ANSI content to HTML
+  const htmlContent = convert.toHtml(content);
+
+  return (
+    // A simple modal overlay to display the content
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      zIndex: 1000,
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+    }} onClick={onClose}>
+      <div
+        style={{
+          backgroundColor: '#1A202C',
+          color: '#E2E8F0',
+          fontFamily: 'monospace',
+          padding: '20px',
+          borderRadius: '8px',
+          maxWidth: '90%',
+          maxHeight: '90%',
+          overflow: 'auto',
+          border: '1px solid #4A5568'
+        }}
+        // Prevent clicks inside the viewer from closing it
+        onClick={(e) => e.stopPropagation()}
+      >
+        <pre dangerouslySetInnerHTML={{ __html: htmlContent }} />
+      </div>
+    </div>
+  );
+};
+
+export default AnsiViewer;
+
+
+```
+
+### File: axon_bbs/frontend/src/components/LoginScreen.js
+```
+// axon_bbs/frontend/src/components/LoginScreen.js
+import React, { useState } from 'react';
+import apiClient from '../apiClient';
+
+const LoginScreen = ({ onLogin, onNavigateToRegister }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    try {
+      const response = await apiClient.post('/api/token/', {
+        username,
+        password,
+      });
+      onLogin(response.data.access);
+    } catch (err) {
+      setError('Invalid username or password.');
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="max-w-md mx-auto mt-10 p-8 bg-gray-800 rounded-lg">
+      <div className="text-4xl font-bold text-white mb-6 pb-2 border-b-2 border-gray-600">Login</div>
+      <form onSubmit={handleLogin}>
+        <div className="mb-4">
+          <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="username">
+            Username
+          </label>
+          <input
+            className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:shadow-outline"
+            id="username"
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+        </div>
+        <div className="mb-6">
+          <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="password">
+            Password
+          </label>
+          <input
+            className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 mb-3 leading-tight focus:outline-none focus:shadow-outline"
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
+        <div className="flex flex-col items-center justify-between">
+          <button
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full"
+            type="submit"
+          >
+            Sign In
+          </button>
+          <button
+            onClick={onNavigateToRegister}
+            className="inline-block align-baseline font-bold text-sm text-blue-400 hover:text-blue-500 mt-4"
+            type="button"
+          >
+            Don't have an account? Register
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+export default LoginScreen;
+
+
+```
+
+### File: axon_bbs/frontend/src/components/MessageList.js
+```
+// axon_bbs/frontend/src/components/MessageList.js
+import React, { useState, useEffect, useRef } from 'react';
+import apiClient from '../apiClient';
+
+const MessageList = ({ boardId, boardName }) => {
+  const [messages, setMessages] = useState([]);
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [showPostForm, setShowPostForm] = useState(false);
+  const nostrSocket = useRef(null);
+
+  useEffect(() => {
+    const relayUrl = 'wss://relay.damus.io';
+    nostrSocket.current = new WebSocket(relayUrl);
+
+    nostrSocket.current.onopen = () => {
+      console.log(`Connected to Nostr relay: {relayUrl}`);
+      const subId = `sub-board-${boardId}-${Date.now()}`;
+      const filters = {
+        kinds: [1],
+        '#t': [boardName],
+        limit: 20,
+      };
+      const request = ["REQ", subId, filters];
+      nostrSocket.current.send(JSON.stringify(request));
+    };
+
+    nostrSocket.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data[0] === 'EVENT') {
+        const nostrEvent = data[2];
+        setMessages(prev => {
+            if (prev.some(msg => msg.id === nostrEvent.id)) {
+                return prev;
+            }
+            return [nostrEvent, ...prev].sort((a, b) => b.created_at - a.created_at);
+        });
+      }
+    };
+
+    nostrSocket.current.onerror = (err) => {
+      console.error("Nostr WebSocket error:", err);
+    };
+
+    return () => {
+      if (nostrSocket.current) {
+        nostrSocket.current.close();
+      }
+    };
+  }, [boardId, boardName]);
+
+  const handlePostMessage = async (e) => {
+    e.preventDefault();
+    setError('');
+    try {
+      await apiClient.post('/api/messages/post/', {
+        subject,
+        body,
+        password,
+        board_name: boardName
+      });
+      setSubject('');
+      setBody('');
+      setPassword('');
+      setShowPostForm(false);
+    } catch (err) {
+      setError('Could not post message. Check password and try again.');
+      console.error(err);
+    }
+  };
+
+  return (
+    <div>
+      {!showPostForm && (
+        <button
+          onClick={() => setShowPostForm(true)}
+          className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded w-full mb-4"
+        >
+          Post New Message
+        </button>
+      )}
+
+      {showPostForm && (
+        <div className="bg-gray-800 p-4 rounded mb-6">
+          <form onSubmit={handlePostMessage}>
+            <input
+              type="text"
+              placeholder="Subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              required
+              className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:shadow-outline mb-4"
+            />
+            <textarea
+              placeholder="Your message..."
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              required
+              rows="4"
+              className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:shadow-outline mb-4"
+            />
+            <input
+              type="password"
+              placeholder="Enter your password to sign"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:shadow-outline mb-4"
+            />
+            {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
+            <div className="flex justify-end gap-4">
+              <button
+                type="button"
+                onClick={() => setShowPostForm(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+              >
+                Submit
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {messages.length === 0 && (
+            <p className="text-gray-400 text-center">Listening for messages on this board...</p>
+        )}
+        {messages.map(msg => {
+          const contentParts = msg.content.split('\n\n');
+          const subject = contentParts.length > 1 ? contentParts[0].replace('Subject: ', '') : 'No Subject';
+          const body = contentParts.length > 1 ? contentParts.slice(1).join('\n\n') : msg.content;
+
+          return (
+            <div key={msg.id} className="bg-gray-800 p-4 rounded">
+              <h3 className="text-xl font-bold text-white mb-1">{subject}</h3>
+              <p className="text-sm text-gray-400 mb-2">by {msg.pubkey.substring(0, 8)}... on {new Date(msg.created_at * 1000).toLocaleString()}</p>
+              <p className="text-gray-300 whitespace-pre-wrap">{body}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+export default MessageList;
+
+```
+
+### File: axon_bbs/frontend/src/components/RegisterScreen.js
+```
+// axon_bbs/frontend/src/components/RegisterScreen.js
+import React, { useState } from 'react';
+import apiClient from '../apiClient';
+
+const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
+  const [error, setError] = useState('');
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (password !== password2) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    try {
+      await apiClient.post('/api/register/', {
+        username,
+        password,
+      });
+      // On successful registration, automatically navigate to the login screen
+      onRegisterSuccess();
+    } catch (err) {
+      if (err.response && err.response.data && err.response.data.username) {
+        setError(err.response.data.username[0]);
+      } else {
+        setError('An unexpected error occurred during registration.');
+      }
+      console.error(err);
+    }
+  };
+
+  return (
+    <div className="max-w-md mx-auto mt-10 p-8 bg-gray-800 rounded-lg">
+      <div className="text-4xl font-bold text-white mb-6 pb-2 border-b-2 border-gray-600">Register</div>
+      <form onSubmit={handleRegister}>
+        <div className="mb-4">
+          <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="username">
+            Username
+          </label>
+          <input
+            className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:shadow-outline"
+            id="username"
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="password">
+            Password
+          </label>
+          <input
+            className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:shadow-outline"
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        <div className="mb-6">
+          <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="password2">
+            Confirm Password
+          </label>
+          <input
+            className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 mb-3 leading-tight focus:outline-none focus:shadow-outline"
+            id="password2"
+            type="password"
+            value={password2}
+            onChange={(e) => setPassword2(e.target.value)}
+            required
+          />
+        </div>
+        {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
+        <div className="flex flex-col items-center justify-between">
+          <button
+            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full"
+            type="submit"
+          >
+            Register
+          </button>
+          <button
+            onClick={onNavigateToLogin}
+            className="inline-block align-baseline font-bold text-sm text-blue-400 hover:text-blue-500 mt-4"
+            type="button"
+          >
+            Already have an account? Login
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+export default RegisterScreen;
+
+
+```
+
+### File: axon_bbs/handlers/__init__.py
+```
+# axon_bbs/handlers/__init__.py
+
+
+```
+
+### File: axon_bbs/handlers/audio_modem_handler.py
+```
+# axon_bbs/handlers/audio_modem_handler.py
+import pyaudio
+import numpy as np
+import time
+import os
+import django
+
+# -----------------------------------------------------------------------------
+# Django Setup
+# -----------------------------------------------------------------------------
+def setup_django_env():
+    """Initializes the Django environment to allow access to the models."""
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'axon_project.settings')
+    django.setup()
+    print("Django environment configured for Audio Modem Handler.")
+
+# -----------------------------------------------------------------------------
+# Audio Protocol Constants (AFSK - Audio Frequency-Shift Keying)
+# -----------------------------------------------------------------------------
+# These are placeholder values for a simple AFSK protocol.
+# A real implementation like Gibberlink would be more complex.
+CHUNK = 1024  # Samples per frame
+FORMAT = pyaudio.paInt16  # Audio format
+CHANNELS = 1  # Mono
+RATE = 44100  # Samples per second
+MARK_FREQ = 1200  # Frequency for a '1' bit
+SPACE_FREQ = 2200 # Frequency for a '0' bit
+BAUD_RATE = 300   # Bits per second
+SAMPLES_PER_BIT = RATE // BAUD_RATE
+
+# -----------------------------------------------------------------------------
+# Core Audio Processing Logic
+# -----------------------------------------------------------------------------
+
+def demodulate(audio_chunk):
+    """
+    A conceptual function to demodulate an audio chunk.
+    This is a highly simplified example. A real implementation would need
+    to perform more sophisticated frequency analysis (e.g., with an FFT
+    or a Goertzel algorithm) to reliably detect the mark/space tones.
+    """
+    # Calculate the average frequency of the chunk
+    # NOTE: This is NOT a robust way to do FSK demodulation.
+    # It's a placeholder to illustrate the concept.
+    fft_data = np.fft.fft(audio_chunk)
+    freqs = np.fft.fftfreq(len(fft_data))
+    peak_freq_index = np.argmax(np.abs(fft_data))
+    dominant_freq = abs(freqs[peak_freq_index] * RATE)
+
+    # Simple decision logic
+    if abs(dominant_freq - MARK_FREQ) < abs(dominant_freq - SPACE_FREQ):
+        return '1'
+    else:
+        return '0'
+
+def modulate(bit_string):
+    """
+    Generates an audio signal representing the given bit string.
+    This function is a placeholder for future 'send' functionality.
+    """
+    # This part of the handler would generate MARK and SPACE tones
+    # to send data back to the caller.
+    print(f"[MODULATE] Would generate audio for: {bit_string}")
+    return None # Placeholder
+
+# -----------------------------------------------------------------------------
+# Main Handler Execution
+# -----------------------------------------------------------------------------
+
+def run_modem_handler():
+    """Initializes PyAudio and processes the incoming audio stream."""
+    setup_django_env()
+    # from core.services import handle_terminal_input  # Example import
+
+    p = pyaudio.PyAudio()
+
+    try:
+        stream = p.open(format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        input=True,
+                        frames_per_buffer=CHUNK)
+    except OSError as e:
+        print("\n" + "="*60)
+        print("COULD NOT OPEN AUDIO DEVICE.")
+        print(f"PyAudio error: {e}")
+        print("Please ensure an input device (microphone or line-in) is connected and configured.")
+        print("="*60 + "\n")
+        return
+
+    print("\n[*] Audio Modem Handler Initialized.")
+    print(f"[*] Listening on audio input at {RATE} Hz. Press Ctrl+C to exit.")
+
+    frames = []
+    bit_buffer = ""
+    try:
+        while True:
+            data = stream.read(CHUNK)
+            audio_as_int = np.frombuffer(data, dtype=np.int16)
+            
+            # This is where the demodulation would happen
+            # For now, we'll just print that we're receiving data
+            # A real implementation would aggregate chunks to form bits,
+            # then bytes, then pass them to a terminal session handler.
+
+            print(f"Received audio chunk of {len(audio_as_int)} samples.", end='\r')
+
+    except KeyboardInterrupt:
+        print("\n[!] Shutting down audio modem handler.")
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+if __name__ == "__main__":
+    run_modem_handler()
+
+
+```
+
+### File: axon_bbs/handlers/meshtastic_handler.py
+```
+# axon_bbs/handlers/meshtastic_handler.py
+
+import os
+import sys
+import django
+import time
+import meshtastic
+import meshtastic.serial_interface
+
+# -----------------------------------------------------------------------------
+# Django Environment Setup
+# -----------------------------------------------------------------------------
+def setup_django_env():
+    """
+    Initializes the Django environment so this standalone script can access
+    the Django models and services from the main project.
+    """
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    sys.path.append(project_root)
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'axon_project.settings')
+    django.setup()
+    print("Django environment initialized successfully.")
+
+# -----------------------------------------------------------------------------
+# Meshtastic Command Processor
+# -----------------------------------------------------------------------------
+
+class CommandProcessor:
+    """
+    Processes commands received from the Meshtastic network.
+    """
+    def __init__(self, mesh_interface):
+        self.interface = mesh_interface
+        # Import core models after Django is set up
+        from core.models import User, Message, MessageBoard
+        self.User = User
+        self.Message = Message
+        self.MessageBoard = MessageBoard
+
+    def process_packet(self, packet, interface):
+        """
+        This is the callback function that gets called for each received packet.
+        """
+        if packet.get('decoded') and packet['decoded'].get('portnum') == 'TEXT_MESSAGE_APP':
+            sender_id = packet['fromId']
+            message_text = packet['decoded']['text']
+
+            print(f"Received from {sender_id}: '{message_text}'")
+
+            # Simple command parsing: !bbs <command> <args>
+            if message_text.lower().startswith('!bbs '):
+                parts = message_text.split(' ', 3)
+                if len(parts) >= 2:
+                    command = parts[1].lower()
+                    
+                    # --- Authenticate User ---
+                    # In a real system, you'd map sender_id to a BBS user.
+                    # For now, we'll use a hardcoded test user.
+                    try:
+                        user = self.User.objects.get(username='meshtastic_user')
+                    except self.User.DoesNotExist:
+                        self.send_reply("Error: 'meshtastic_user' not found in BBS.", sender_id)
+                        return
+
+                    # --- Process Commands ---
+                    if command == 'post' and len(parts) == 4:
+                        board_name = parts[2]
+                        post_content = parts[3]
+                        self.handle_post(user, board_name, post_content, sender_id)
+                    elif command == 'boards':
+                        self.handle_list_boards(user, sender_id)
+                    else:
+                        self.send_reply(f"Unknown command: '{command}'", sender_id)
+                else:
+                    self.send_reply("Invalid command format. Use: !bbs <command> [args]", sender_id)
+
+    def handle_post(self, user, board_name, content, reply_to_id):
+        """Handles posting a message to a board."""
+        try:
+            board = self.MessageBoard.objects.get(name__iexact=board_name)
+            if user.sl >= board.required_sl:
+                # Create the message in the BBS database
+                Message.objects.create(
+                    board=board,
+                    author=user,
+                    title=f"Post from {user.username}",
+                    body=content
+                )
+                self.send_reply(f"Message posted to '{board.name}'.", reply_to_id)
+            else:
+                self.send_reply(f"Access denied to board '{board.name}'.", reply_to_id)
+        except self.MessageBoard.DoesNotExist:
+            self.send_reply(f"Error: Board '{board_name}' not found.", reply_to_id)
+
+    def handle_list_boards(self, user, reply_to_id):
+        """Handles listing available message boards."""
+        boards = self.MessageBoard.objects.filter(required_sl__lte=user.sl)
+        if boards:
+            board_list = ", ".join([b.name for b in boards])
+            self.send_reply(f"Boards: {board_list}", reply_to_id)
+        else:
+            self.send_reply("No accessible boards found.", reply_to_id)
+
+    def send_reply(self, text, destination_id):
+        """Sends a reply back to the user over the mesh."""
+        print(f"Replying to {destination_id}: {text}")
+        self.interface.sendText(text, destinationId=destination_id)
+
+# -----------------------------------------------------------------------------
+# Main Execution Block
+# -----------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    print("Starting Axon BBS Meshtastic Handler...")
+    setup_django_env()
+
+    try:
+        # Initialize the connection to the Meshtastic device
+        interface = meshtastic.serial_interface.SerialInterface()
+        print("Connected to Meshtastic device.")
+        
+        # Instantiate the command processor
+        processor = CommandProcessor(interface)
+
+        # Register the callback function
+        meshtastic.pub.subscribe(processor.process_packet, "meshtastic.receive")
+        
+        print("Listening for messages... Press Ctrl+C to exit.")
+        while True:
+            time.sleep(1)
+
+    except meshtastic.MeshtasticException as e:
+        print(f"Meshtastic error: {e}")
+        print("Could not connect to Meshtastic device. Is it plugged in?")
+    except KeyboardInterrupt:
+        print("\nShutting down handler.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+    finally:
+        if 'interface' in locals() and interface:
+            interface.close()
+
+
+
+```
+
+### File: axon_bbs/handlers/tests/__init__.py
+```
+# axon_bbs/handlers/tests/__init__.py
+
+
+```
+
+
+--- END OF MANIFEST ---
