@@ -5,6 +5,8 @@ from django.conf import settings
 import uuid
 from django.utils import timezone
 from datetime import timedelta
+from django.core.exceptions import ValidationError
+import json
 
 def get_default_expires_at():
     """Returns a default expiration time 30 days from now."""
@@ -67,6 +69,15 @@ class MessageBoard(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     required_access_level = models.PositiveIntegerField(default=10)
+    relays = models.JSONField(default=list, blank=True, help_text="List of up to 6 Nostr relay URLs for this board (e.g., ['wss://relay.example.com']).")
+
+    def clean(self):
+        """Validate the relays field."""
+        if len(self.relays) > 6:
+            raise ValidationError("A message board can have at most 6 relays.")
+        for relay in self.relays:
+            if not isinstance(relay, str) or not relay.startswith('wss://'):
+                raise ValidationError("Each relay must be a valid wss:// URL.")
 
     def __str__(self):
         return self.name

@@ -35,8 +35,11 @@ class TorService:
 
         proxy = Proxy.from_url(f'socks5://{self._socks_host}:{self._socks_port}')
         try:
-            sock = await proxy.connect(dest_host=host, dest_port=port)
-            return await websockets.connect(uri, sock=sock, server_hostname=host, **kwargs)
+            sock = await proxy.connect(dest_host=host, dest_port=port, timeout=60)  # Increased connect timeout
+            return await websockets.connect(uri, sock=sock, server_hostname=host, open_timeout=120, **kwargs)  # Increased open_timeout
+        except asyncio.TimeoutError as e:
+            logger.error(f"Timeout connecting to {uri} via proxy: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Failed to connect via proxy: {e}", exc_info=True)
+            logger.error(f"Failed to connect to {uri} via proxy: {e}", exc_info=True)
             raise

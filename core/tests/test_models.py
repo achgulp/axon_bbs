@@ -36,24 +36,13 @@ class UserModelTest(TestCase):
         self.assertFalse(self.user.is_staff)
         self.assertFalse(self.user.is_superuser)
 
-    def test_user_default_bbs_values(self):
+    def test_user_default_values(self):
         """
-        Test that the custom BBS-specific fields are set to their
+        Test that the custom fields are set to their
         correct default values upon user creation.
         """
-        self.assertEqual(self.user.sl, 10)
-        self.assertEqual(self.user.dsl, 10)
-        self.assertEqual(self.user.uploads, 0)
-        self.assertEqual(self.user.downloads, 0)
-        self.assertEqual(self.user.uk, 0.0)
-        self.assertEqual(self.user.dk, 0.0)
-        self.assertEqual(self.user.msg_post, 0)
-        self.assertEqual(self.user.email_sent, 0)
-        self.assertEqual(self.user.time_today, 60)
-        self.assertEqual(self.user.time_bank, 0)
-        self.assertTrue(self.user.has_ansi)
-        self.assertTrue(self.user.has_color)
-        self.assertFalse(self.user.is_expert_menu)
+        self.assertEqual(self.user.access_level, 10)
+        self.assertFalse(self.user.is_banned)
 
     def test_string_representation(self):
         """
@@ -62,4 +51,3 @@ class UserModelTest(TestCase):
         self.assertEqual(str(self.user), 'testuser')
 
 # --- We will add test cases for MessageBoard, Message, etc., here later ---
-

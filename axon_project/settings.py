@@ -110,3 +110,10 @@ REST_FRAMEWORK = {
 # --- Axon BBS Service Configuration ---
 TOR_SOCKS_HOST = "127.0.0.1"
 TOR_SOCKS_PORT = 9050
+
+# --- Nostr Configuration ---
+# List of relay URLs to connect to (configurable for multi-relay support)
+NOSTR_RELAY_URLS = [
+    "wss://relay.damus.io",
+    "wss://nostr-pub.wellorder.net",  # Add more as needed
+]
