@@ -45,12 +45,12 @@ class ServiceManager:
 
         if not self.nostr_service:
             print("--> Initializing Nostr service...")
-            # Use a default relay if not specified in settings
-            relay_url = getattr(settings, "NOSTR_RELAY_URL", "wss://relay.damus.io")
-            self.nostr_service = NostrService(relay_url=relay_url, tor_service=self.tor_service)
+            # Now uses a list of relay URLs
+            relay_urls = getattr(settings, "NOSTR_RELAY_URLS", ["wss://relay.damus.io"])
+            self.nostr_service = NostrService(relay_urls=relay_urls, tor_service=self.tor_service)
 
             thread = threading.Thread(target=self._run_async_services, daemon=True)
             thread.start()
-            print(f"--> Nostr connection thread started for {relay_url}.")
+            print(f"--> Nostr connection thread started for relays: {', '.join(relay_urls)}.")
 
 service_manager = ServiceManager()

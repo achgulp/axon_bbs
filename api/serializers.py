@@ -68,9 +68,19 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class MessageBoardSerializer(serializers.ModelSerializer):
+    relays = serializers.JSONField(required=False)  # Allow editing relays per board
+
     class Meta:
         model = MessageBoard
-        fields = ('id', 'name', 'description')
+        fields = ('id', 'name', 'description', 'relays')
+
+    def validate_relays(self, value):
+        if len(value) > 6:
+            raise serializers.ValidationError("A message board can have at most 6 relays.")
+        for relay in value:
+            if not isinstance(relay, str) or not relay.startswith('wss://'):
+                raise serializers.ValidationError("Each relay must be a valid wss:// URL.")
+        return value
 
 class MessageSerializer(serializers.ModelSerializer):
     author_username = serializers.ReadOnlyField(source='author.username')
@@ -79,4 +89,3 @@ class MessageSerializer(serializers.ModelSerializer):
         model = Message
         fields = ('id', 'subject', 'body', 'author_username', 'posted_at')
         read_only_fields = ('id', 'author_username', 'posted_at')
-

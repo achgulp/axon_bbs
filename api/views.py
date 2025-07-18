@@ -97,6 +97,13 @@ class PostNostrMessageView(views.APIView):
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
+            # Fetch the board to get its specific relays
+            try:
+                board = MessageBoard.objects.get(name=board_name)
+                relays = board.relays if board.relays else settings.NOSTR_RELAY_URLS
+            except MessageBoard.DoesNotExist:
+                return Response({"error": f"Board '{board_name}' not found."}, status=status.HTTP_404_NOT_FOUND)
+
             # Construct the message content
             message_content = {
                 "subject": subject,
@@ -113,22 +120,25 @@ class PostNostrMessageView(views.APIView):
             
             logger.info(f"Event created with session key: id={event.id}")
 
-            # Publish the event
+            # Publish the event to the board's relays (or global fallback)
             if service_manager.nostr_service and service_manager.loop:
                 future = asyncio.run_coroutine_threadsafe(
-                    service_manager.nostr_service.publish_event(event),
+                    service_manager.nostr_service.publish_event(event, relays=relays),
                     service_manager.loop
                 )
-                future.result() # Wait for the publish to complete
-                logger.info(f"Event {event.id} published by user {user.username}")
-                return Response({"status": "message_published", "event_id": event.id}, status=status.HTTP_200_OK)
+                publish_success = future.result()  # Now returns True/False
+                if publish_success:
+                    logger.info(f"Event {event.id} published by user {user.username} to relays: {', '.join(relays)}")
+                    return Response({"status": "message_published", "event_id": event.id, "relays": relays}, status=status.HTTP_200_OK)
+                else:
+                    return Response({"error": "Could not post message to any relays. Check logs for details."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             else:
                 logger.error("Cannot publish event, NostrService or its event loop is not available.")
                 return Response({"error": "Cannot connect to the Nostr network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         except Exception as e:
             logger.error(f"Failed to post Nostr message for {user.username}: {e}", exc_info=True)
-            return Response({"error": "Failed to post message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": "Could not post message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class IgnoreUserView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
