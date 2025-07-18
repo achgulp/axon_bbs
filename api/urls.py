@@ -3,10 +3,12 @@ from django.urls import path
 from .views import (
     RegisterView,
     MessageBoardListView,
-    PostNostrMessageView,
-    IgnoreUserView,
-    BanUserView,
+    MessageListView,
+    PostMessageView,
+    IgnorePubkeyView,
+    BanPubkeyView,
     UnlockIdentityView,
+    ImportIdentityView,
     LogoutView
 )
 from rest_framework_simplejwt.views import (
@@ -23,10 +25,12 @@ urlpatterns = [
     
     # Identity
     path('identity/unlock/', UnlockIdentityView.as_view(), name='unlock-identity'),
+    path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
 
     # Content & Moderation
     path('boards/', MessageBoardListView.as_view(), name='board-list'),
-    path('messages/post/', PostNostrMessageView.as_view(), name='post-message'),
-    path('user/ignore/', IgnoreUserView.as_view(), name='ignore-user'),
-    path('admin/ban/', BanUserView.as_view(), name='ban-user'),
+    path('boards/<int:pk>/messages/', MessageListView.as_view(), name='message-list'),
+    path('messages/post/', PostMessageView.as_view(), name='post-message'),
+    path('user/ignore/', IgnorePubkeyView.as_view(), name='ignore-pubkey'),
+    path('admin/ban/', BanPubkeyView.as_view(), name='ban-pubkey'),
 ]

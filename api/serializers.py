@@ -53,7 +53,9 @@ class UserSerializer(serializers.ModelSerializer):
                 storage_path=identity_storage_path,
                 encryption_key=encryption_key
             )
-            identity_service.generate_and_add_nostr_identity(name="default")
+            identity = identity_service.generate_and_add_nostr_identity(name="default")
+            user.nostr_pubkey = identity['public_key']
+            user.save()
             logger.info(f"Successfully created initial Nostr identity for {user.username}")
 
         except Exception as e:
@@ -84,8 +86,10 @@ class MessageBoardSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     author_username = serializers.ReadOnlyField(source='author.username')
+    pubkey = serializers.ReadOnlyField()
+    nostr_id = serializers.ReadOnlyField()
 
     class Meta:
         model = Message
-        fields = ('id', 'subject', 'body', 'author_username', 'posted_at')
-        read_only_fields = ('id', 'author_username', 'posted_at')
+        fields = ('id', 'nostr_id', 'subject', 'body', 'author_username', 'pubkey', 'posted_at')
+        read_only_fields = ('id', 'nostr_id', 'author_username', 'pubkey', 'posted_at')

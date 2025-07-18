@@ -7,14 +7,13 @@ import uuid
 from datetime import datetime
 # We will create this encryption utility next
 from .encryption_utils import encrypt_data, decrypt_data
-from pynostr.key import PrivateKey  # Use pynostr for compatible keys
+from cryptography.hazmat.primitives.asymmetric import rsa  # For RSA keys
 
 logger = logging.getLogger(__name__)
 
 class IdentityService:
     """
-    Manages user Nostr key pairs with encrypted storage.
-    Adapted from the IdentityManager in the 'offtherails' project.
+    Manages user key pairs with encrypted storage.
     Each user on the BBS will have their own instance of this service,
     unlocked with their password.
     """
@@ -65,35 +64,69 @@ class IdentityService:
         except Exception as e:
             logger.error(f"Failed to save identities to {self.storage_file}: {e}", exc_info=True)
 
-    def generate_and_add_nostr_identity(self, name: str = "default") -> Dict[str, Any]:
+    def generate_and_add_identity(self, name: str = "default") -> Dict[str, Any]:
         """
-        Generates a new Nostr key pair and adds it as an identity.
+        Generates a new RSA key pair and adds it as an identity.
         """
         try:
-            private_key = PrivateKey()
-            public_key_hex = private_key.public_key.hex()
-            private_key_hex = private_key.hex()
+            private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            public_key_pem = private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ).decode('utf-8')
+            private_key_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            ).decode('utf-8')
             identity = {
                 "id": str(uuid.uuid4()),
                 "name": name,
-                "type": "nostr",
-                "public_key": public_key_hex,
-                "private_key": private_key_hex, # This will be encrypted on save
+                "type": "rsa",
+                "public_key": public_key_pem,
+                "private_key": private_key_pem, # This will be encrypted on save
                 "created_at": datetime.now().isoformat()
             }
             self.identities.append(identity)
             self._save_identities()
-            logger.info(f"Generated Nostr identity '{name}': {public_key_hex[:8]}...")
+            logger.info(f"Generated RSA identity '{name}'")
             return identity
         except Exception as e:
-            logger.error(f"Failed to generate Nostr identity: {e}", exc_info=True)
+            logger.error(f"Failed to generate identity: {e}", exc_info=True)
             raise
 
-    def get_all_nostr_identities(self) -> List[Dict[str, Any]]:
+    def add_existing_identity(self, name: str, private_key_pem: str) -> Dict[str, Any]:
         """
-        Retrieves all Nostr identities for the user.
+        Adds an existing private key as a new identity.
         """
-        return [id_ for id_ in self.identities if id_.get("type") == "nostr"]
+        try:
+            # Validate the private key by loading it
+            private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+            public_key_pem = private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ).decode('utf-8')
+            identity = {
+                "id": str(uuid.uuid4()),
+                "name": name,
+                "type": "rsa",
+                "public_key": public_key_pem,
+                "private_key": private_key_pem,
+                "created_at": datetime.now().isoformat()
+            }
+            self.identities.append(identity)
+            self._save_identities()
+            logger.info(f"Added existing identity '{name}'")
+            return identity
+        except Exception as e:
+            logger.error(f"Failed to add existing identity: {e}", exc_info=True)
+            raise
+
+    def get_all_identities(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all identities for the user.
+        """
+        return [id_ for id_ in self.identities]
 
     def get_identity_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """

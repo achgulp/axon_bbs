@@ -19,6 +19,7 @@ class User(AbstractUser):
     """
     access_level = models.PositiveIntegerField(default=10, help_text="User's security access level.")
     is_banned = models.BooleanField(default=False, help_text="Designates if the user is banned from the local instance.")
+    pubkey = models.TextField(blank=True, null=True, help_text="User's public key (PEM).")
 
     # --- FIX FOR CLASHING REVERSE ACCESSORS ---
     groups = models.ManyToManyField(
@@ -41,16 +42,23 @@ class User(AbstractUser):
     def __str__(self):
         return self.username
 
-class IgnoredUser(models.Model):
-    """Represents a user being ignored by another user."""
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='ignored_by')
-    ignored_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='ignored_users')
+class IgnoredPubkey(models.Model):
+    """Represents a public key being ignored by a user."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='ignored_pubkeys')
+    pubkey = models.TextField()
 
     class Meta:
-        unique_together = ('user', 'ignored_user')
+        unique_together = ('user', 'pubkey')
 
     def __str__(self):
-        return f"{self.user.username} ignores {self.ignored_user.username}"
+        return f"{self.user.username} ignores pubkey starting with {self.pubkey[:12]}..."
+
+class BannedPubkey(models.Model):
+    """Represents a banned public key on the platform."""
+    pubkey = models.TextField(unique=True)
+
+    def __str__(self):
+        return f"Banned pubkey starting with {self.pubkey[:12]}..."
 
 class Content(models.Model):
     """Abstract base class for user-generated content."""
@@ -69,15 +77,6 @@ class MessageBoard(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     required_access_level = models.PositiveIntegerField(default=10)
-    relays = models.JSONField(default=list, blank=True, help_text="List of up to 6 Nostr relay URLs for this board (e.g., ['wss://relay.example.com']).")
-
-    def clean(self):
-        """Validate the relays field."""
-        if len(self.relays) > 6:
-            raise ValidationError("A message board can have at most 6 relays.")
-        for relay in self.relays:
-            if not isinstance(relay, str) or not relay.startswith('wss://'):
-                raise ValidationError("Each relay must be a valid wss:// URL.")
 
     def __str__(self):
         return self.name
@@ -86,7 +85,8 @@ class Message(Content):
     """Represents a single post within a MessageBoard."""
     board = models.ForeignKey(MessageBoard, on_delete=models.CASCADE, related_name='messages')
     subject = models.CharField(max_length=255)
-    body = models.TextField()
+    body = models.TextField()  # JSON for threads
+    pubkey = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return f"'{self.subject}' by {self.author.username if self.author else 'system'}"
@@ -103,7 +103,7 @@ class PrivateMessage(Content):
     """Represents a private mail message between two users."""
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail')
     subject = models.CharField(max_length=255)
-    body = models.TextField()
+    body = models.TextField()  # Encrypted JSON
     is_read = models.BooleanField(default=False)
 
     def __str__(self):
@@ -118,3 +118,11 @@ class ContentExtensionRequest(models.Model):
 
     def __str__(self):
         return f"Extension request for content {self.content_id} by {self.user.username}"
+
+class TrustedInstance(models.Model):
+    pubkey = models.TextField(unique=True)
+    encrypted_private_key = models.TextField(blank=True)  # Encrypted with SECRET_KEY-derived Fernet
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.pubkey
