@@ -1,22 +1,19 @@
 // axon_bbs/frontend/src/App.js
 import React, { useState, useEffect } from 'react';
 import apiClient from './apiClient';
-// import AnsiViewer from './components/AnsiViewer';  // Comment out or remove if not used
 import LoginScreen from './components/LoginScreen';
 import RegisterScreen from './components/RegisterScreen';
 import MessageList from './components/MessageList';
 
-// --- Helper Components ---
-const Header = ({ text }) => <div className="text-4xl font-bold text-white mb-6 pb-2 border-b-2 border-gray-600">{text}</div>;
-const Button = ({ onClick, children, className = 'bg-blue-600 hover:bg-blue-700' }) => (
-    <button onClick={onClick} className={`${className} text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out w-full mb-2`}>
+const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
+
+const SideBarButton = ({ onClick, children }) => (
+    <button onClick={onClick} className="w-full text-left py-2 px-4 rounded hover:bg-gray-700 text-gray-300 transition duration-150 ease-in-out">
         {children}
     </button>
 );
-const BackButton = ({ onClick }) => <button onClick={onClick} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out w-full mt-4">Back</button>;
 
-// --- API-Driven Components ---
-const MessageBoardList = ({ onSelectBoard, onBack }) => {
+const MessageBoardList = ({ onSelectBoard }) => {
   const [boards, setBoards] = useState([]);
   useEffect(() => {
     apiClient.get('/api/boards/').then(response => setBoards(response.data));
@@ -24,36 +21,30 @@ const MessageBoardList = ({ onSelectBoard, onBack }) => {
   return (
     <div>
       <Header text="Message Boards" />
-      {boards.map(board => <Button key={board.id} onClick={() => onSelectBoard(board.id, board.name)}>{board.name}</Button>)}
-      <BackButton onClick={onBack} />
+      <div className="space-y-2">
+        {boards.map(board => 
+            <button key={board.id} onClick={() => onSelectBoard(board.id, board.name)} className="w-full text-left p-3 rounded bg-gray-800 hover:bg-gray-700 border border-gray-700">
+                <h3 className="font-bold text-gray-200">{board.name}</h3>
+                <p className="text-sm text-gray-400">{board.description}</p>
+            </button>
+        )}
+      </div>
     </div>
   );
 };
 
-const FileAreaList = ({ onBack }) => {
-    return (
-        <div>
-            <Header text="File Areas" />
-            <p className="text-gray-400 mb-4">File area functionality is not yet implemented.</p>
-            <BackButton onClick={onBack} />
-        </div>
-    );
-};
-
-// --- Main App Component ---
 function App() {
     const [token, setToken] = useState(localStorage.getItem('token'));
     const [authView, setAuthView] = useState('login');
-    const [view, setView] = useState('main');
-    const [selectedBoard, setSelectedBoard] = useState({ id: null, name: '' });
-
+    const [view, setView] = useState('messages');
+    const [selectedBoard, setSelectedBoard] = useState(null);
+    
     const setAuthToken = (newToken) => {
         if (newToken) {
             localStorage.setItem('token', newToken);
         } else {
             localStorage.removeItem('token');
         }
-        // The apiClient now handles headers automatically, so this line is removed.
         setToken(newToken);
     };
 
@@ -64,59 +55,61 @@ function App() {
         }
     }, []);
 
-    const handleLogout = () => {
-        setAuthToken(null);
-        setView('main');
+    const handleLogout = async () => {
+        try {
+            await apiClient.post('/api/logout/');
+        } catch (err) {
+            console.error("Failed to clear server session, logging out client-side anyway.", err);
+        } finally {
+            setAuthToken(null);
+            setView('messages');
+        }
     };
-    
+
     const handleSelectBoard = (boardId, boardName) => {
         setSelectedBoard({ id: boardId, name: boardName });
     };
 
     if (!token) {
-        if (authView === 'login') {
-            return <LoginScreen onLogin={setAuthToken} onNavigateToRegister={() => setAuthView('register')} />;
-        } else {
-            return <RegisterScreen onRegisterSuccess={() => setAuthView('login')} onNavigateToLogin={() => setAuthView('login')} />;
-        }
+        return (
+            <div className="bg-gray-800">
+                {authView === 'login' 
+                    ? <LoginScreen onLogin={setAuthToken} onNavigateToRegister={() => setAuthView('register')} />
+                    : <RegisterScreen onRegisterSuccess={() => setAuthView('login')} onNavigateToLogin={() => setAuthView('login')} />
+                }
+            </div>
+        );
     }
 
-    const renderBbsContent = () => {
-        if (selectedBoard.id) {
-            return (
-                <div>
-                    <Header text={`Board: ${selectedBoard.name}`} />
-                    <MessageList boardId={selectedBoard.id} boardName={selectedBoard.name} />
-                    <BackButton onClick={() => setSelectedBoard({ id: null, name: '' })} />
-                </div>
-            );
+    const renderMainContent = () => {
+        if (selectedBoard) {
+            return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} />;
         }
-
-        switch(view) {
-            case 'messages':
-                return <MessageBoardList onSelectBoard={handleSelectBoard} onBack={() => setView('main')} />;
-            case 'files':
-                return <FileAreaList onBack={() => setView('main')} />;
-            default: // 'main' menu
-                return (
-                    <div>
-                        <Header text="Main Menu" />
-                        <Button onClick={() => setView('messages')}>Message Boards</Button>
-                        <Button onClick={() => setView('files')}>File Areas</Button>
-                        <Button onClick={() => setView('mail')}>Private Mail</Button>
-                        <Button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 mt-4">
-                            Logout
-                        </Button>
-                    </div>
-                );
-        }
+        return <MessageBoardList onSelectBoard={handleSelectBoard} />;
     };
     
     return (
-        <div className="bg-gray-900 text-gray-300 min-h-screen p-8">
-            <div className="max-w-2xl mx-auto">
-                <h1 className="text-5xl font-bold text-white text-center mb-12">Axon BBS</h1>
-                {renderBbsContent()}
+        <div className="min-h-screen bg-gray-900 text-gray-300 font-sans">
+            <div className="flex flex-col md:flex-row">
+                <div className="w-full md:w-60 bg-gray-800 p-4 border-r border-gray-700 flex-shrink-0">
+                    <div className="text-2xl font-bold text-white mb-6">Axon BBS</div>
+                    <nav className="space-y-2">
+                        <div className="p-2">
+                            <h3 className="font-semibold text-gray-400 mb-2">Menu</h3>
+                            <SideBarButton onClick={() => { setView('messages'); setSelectedBoard(null); }}>Message Boards</SideBarButton>
+                            <SideBarButton onClick={() => alert("File Areas not yet implemented.")}>File Areas</SideBarButton>
+                            <SideBarButton onClick={() => alert("Private Mail not yet implemented.")}>Private Mail</SideBarButton>
+                        </div>
+                        <div className="p-2">
+                            <h3 className="font-semibold text-gray-400 mb-2">User</h3>
+                            <SideBarButton onClick={() => alert("Profile not yet implemented.")}>Profile</SideBarButton>
+                            <SideBarButton onClick={handleLogout}>Logout</SideBarButton>
+                        </div>
+                    </nav>
+                </div>
+                <main className="flex-1 p-6">
+                    {renderMainContent()}
+                </main>
             </div>
         </div>
     );

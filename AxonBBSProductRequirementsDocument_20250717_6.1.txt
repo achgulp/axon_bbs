@@ -1,0 +1,233 @@
+Axon BBS - Consolidated Product Requirements Document
+Version: 6.1 (Updated)
+Date: July 17, 2025
+
+Overview
+Axon BBS is a modern, anonymous bulletin board system (BBS) inspired by the classic 90s BBS era. [307] It leverages the Nostr protocol for all message and data distribution, ensuring censorship resistance and anonymity within its network. [308] The system is built using Django for the backend and React for the frontend, with a focus on user privacy and security. [309]
+
+User Roles & Stories
+As a User...
+
+I want to generate a new Nostr identity or import my existing one so I can control my account. [310]
+
+I want my private key to be encrypted with my password so the SysOp cannot impersonate me. [311]
+
+I want to send and receive end-to-end encrypted private messages. [312]
+
+I want to post on public message boards and read posts from others. [313]
+
+I want to upload and download files. [314]
+
+I want to stream large video and audio files without downloading the entire file first. [315]
+
+I want a personal ignore list to hide all content from users I don't want to interact with. [316]
+
+I want a list of my content so I can request a pinning extension from moderators. [317]
+
+I want to request an extension on the lifespan of my content before it is deleted. [318]
+
+I want to receive notifications when my content is about to expire so I can request an extension. [130, 363]
+
+As a Moderator...
+
+I want to be able to temporarily or permanently ban unruly users from the local BBS instance. [319]
+
+I want to review and approve or deny user requests for extending the pin duration of their content. [320]
+
+I want to review and approve or deny user requests for extending the lifespan of their content. [321]
+
+I want to be able to unpin any user's content to enforce content policies, except for content pinned by an Admin. [273, 384]
+
+As a SysOp (Admin)...
+
+I want all the powers of a Moderator. [322]
+
+I want to be able to override pinning rules for any content. [323]
+
+I want to configure which external Nostr relays our BBS connects to. [324]
+
+I want to set the default time durations for how long content is stored on my BBS. [325]
+
+I want to manage a whitelist of trusted federated BBS instances to ensure network security. [174]
+
+I want to be able to unpin any content on the server, including content pinned by moderators. [274, 384]
+
+Key Features
+User Registration and Authentication
+Users can register with a username and password. [326] Passwords are hashed and salted for security. [326]
+
+API endpoints are secured using JWT authentication. [326]
+
+Nostr Identity Management
+The user interface MUST provide the ability for users to generate a new Nostr public/private key pair. [327]
+
+The user interface MUST allow users to import an existing Nostr private key (nsec...). [328]
+
+The user's private key MUST be encrypted with a key derived from their login password and stored locally in the browser. [329]
+
+The Axon BBS server MUST NEVER have access to a user's unencrypted private key. [330]
+
+Message Boards
+The system supports multiple message boards. [331]
+
+Boards are defined by names, descriptions, and required access levels. [331]
+
+Federated BBS Network (Private File Sync)
+Concept: Trusted Axon BBS nodes can form a private, federated network to synchronize files for resilience and redundancy. [332]
+
+Mechanism (Hybrid Encryption): The system uses a secure "digital envelope" model to broadcast a single data chunk to multiple trusted relays. [333]
+
+Session Key: For each data chunk, a random, single-use symmetric key is generated. [334]
+
+Data Encryption: The chunk is encrypted once with this session key. [335]
+
+Digital Envelopes: The session key is then encrypted multiple times, once for each recipient relay's public key. [336]
+
+Bundled Event: A single Nostr event contains the encrypted data chunk and the list of encrypted session keys. [337] This single event is broadcast to all private relays. [337]
+
+Key Revocation: A relay's access is revoked by no longer including an envelope for its public key in future messages. [338]
+
+Federation Trust and Security
+Federation will be managed via a whitelist of trusted Axon BBS instances, configurable by SysOps. [174]
+
+Data sync events between instances must be authenticated using public keys to verify the source. [174]
+
+The system must include rate-limiting and content validation for incoming data sync events to prevent abuse. [176]
+
+Anonymity and Privacy
+All external network communications are routed through Tor. [339]
+
+The server's SECRET_KEY is stored securely in an .env file. [339]
+
+External Link Policy: To prevent IP address leakage, links to external websites posted by users MUST NOT be rendered as clickable hyperlinks (<a> tags). [340] They should be displayed as plain text, requiring the user to consciously copy and paste the link into their browser. [341]
+
+File Handling and Viewing
+Live Reassembly: For standard downloads, the React frontend will request all of a file's chunks from the backend and reassemble them live in the browser to create a downloadable file (Blob). [342]
+
+Streaming for Media: For large media files (video/audio), the frontend will use a streaming approach. [343] It will request chunks sequentially and feed them into a media player using the Media Source Extensions API. [344] This provides a fast start time and low memory usage. [345]
+
+Content Lifecycle and Storage
+Content Storage Model
+The Axon BBS nodes themselves are the sole storage layer for all content. [346]
+
+The Nostr relays act only as a real-time transport layer. [347]
+
+Files are stored as individual, encrypted chunks and are not reassembled on the server's filesystem. [348] Reassembly is handled by the client application on demand. [348]
+
+Content Lifecycle Policies (Trash Collection)
+The Time-to-Live (TTL) for all content is configurable by the SysOp. [349]
+
+A scheduled task performs "trash collection," deleting content that has exceeded its TTL. [349]
+
+Private Messages: TTL of 3 months. [350]
+
+Message Board Posts: TTL of 1 month. [350]
+
+Uploaded Files: TTL of 1 week by default. [351]
+
+Federated Content: TTL of 3 days. [351]
+
+Moderator Pins: Content pinned by a Moderator has a TTL of 1 month. [352]
+
+Admin Pins: Can be set to a default of 1 month, but Admins have the authority to change or remove the expiration for any pinned object. [353]
+
+Content Persistence Extension
+Users can request a 30-day extension for any of their content. [354]
+
+These requests appear in a queue for Moderators and SysOps to approve or deny. [355]
+
+Content Removal and Unpinning Rules
+Users: Can only unpin (request deletion of) their own content. [273, 383]
+
+Moderators: Can unpin any user's content but CANNOT unpin content pinned by an Admin. [273, 384]
+
+Admins: Can unpin any content on the server, including content pinned by Moderators. [274, 384]
+
+Moderation and Compliance
+Content Policy and Compliance:
+
+A clear content policy must be defined, outlining prohibited content types and procedures for handling reports. [356]
+
+The platform must implement a DMCA-compliant takedown process, allowing SysOps to unpin and flag reported content. [357]
+
+Moderation tools will include automated scanning and a review queue for reported content. [358]
+
+Connectivity and User Experience
+Alternative Connection Handlers
+The BBS will act as a privacy proxy for users connecting via non-internet native handlers like Audio Modem or Meshtastic. [359]
+
+User Onboarding and Education
+To address the complexity of the underlying decentralized technologies, the platform must prioritize user education. [360]
+
+Onboarding Flow: A user-friendly onboarding flow will guide new users through key concepts like generating Nostr keys and understanding the federated network. [361]
+
+In-App Help Section: A dedicated help section will provide FAQs and a glossary of terms. [362]
+
+User Notifications: The system will use in-app notifications to provide critical information, such as warnings about key loss or reminders about content expiration. [130, 363, 406]
+
+Performance and Monitoring
+The system will integrate monitoring tools like Prometheus and Grafana to track the health of the Nostr relay connections, and Tor network latency. [363]
+
+Secure, detailed error logging will be implemented to capture critical failures without exposing user data. [364]
+
+The user interface will provide basic status indicators to inform users of the current connection health to Nostr. [365]
+
+Technical Requirements
+Backend: Django 5.2.4, Python 3.13 [366]
+
+Frontend: React 18+, Tailwind CSS. [366]
+
+Streaming media playback will be implemented using a library that supports Media Source Extensions, such as hls.js or shaka-player. [367]
+
+Project File Structure
+(No changes to the file structure are required for these functional additions)
+
+axon_bbs/
+├── axon_project/           # Django Project Configuration
+│   ├── __init__.py
+│   ├── settings.py
+│   └── urls.py
+│
+├── core/                   # BBS Core Engine
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   └── services/           # Integrated Services
+│       ├── __init__.py
+│       ├── encryption_utils.py  [368]
+│       ├── identity_service.py  [368]
+│       ├── nostr_service.py     [368]
+│       ├── service_manager.py   [368]
+│       ├── socket_utils.py      [368]
+│       └── tor_service.py       [368]
+│
+├── api/                    # Web Handler / RESTful API
+│   ├── __init__.py
+│   ├── urls.py
+│   └── views.py
+│
+├── handlers/               # Connection Handlers
+│   ├── __init__.py          [369]
+│   ├── audio_modem_handler.py [369]
+│   └── meshtastic_handler.py  [369]
+│
+├── frontend/               # Web Front-End (React)
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── components/
+│   │   ├── App.js
+│   │   └── apiClient.js
+│   └── package.json
+│
+├── data/                   # Application Data (SQLite DB)
+│
+├── manage.py               # Django's command-line utility [370]
+└── requirements.txt        # Python package dependencies [370]
+Future Enhancements
+Threaded discussions (Nostr replies). [371]
+
+User profiles on Nostr. [371]
+
+Unique tags for boards (e.g., "axon-general") to filter out public Nostr noise. [371]
