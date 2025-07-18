@@ -22,7 +22,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
-    'channels',
     # Local apps
     'core.apps.CoreConfig',
     'api',
@@ -59,13 +58,6 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'axon_project.wsgi.application'
-ASGI_APPLICATION = 'axon_project.asgi.application'
-
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
-    },
-}
 
 # --- Database ---
 DATABASES = {
@@ -119,13 +111,6 @@ REST_FRAMEWORK = {
 TOR_SOCKS_HOST = "127.0.0.1"
 TOR_SOCKS_PORT = 9050
 
-# --- Nostr Configuration ---
-# List of relay URLs to connect to (configurable for multi-relay support)
-NOSTR_RELAY_URLS = [
-    "wss://relay.damus.io",
-    "wss://nostr-pub.wellorder.net",  # Add more as needed
-]
-
 # --- Logging Configuration ---
 LOGGING = {
     'version': 1,
@@ -145,3 +130,8 @@ LOGGING = {
         },
     },
 }
+
+# --- Session Configuration ---
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # DB-backed to persist (but we clear on start)
+SESSION_COOKIE_AGE = 3600  # 1 hour expiration for auto-logout
+SESSION_SAVE_EVERY_REQUEST = True  # Refresh expiry on activity
