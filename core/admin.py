@@ -1,7 +1,7 @@
 # axon_bbs/core/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance
+from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
@@ -35,7 +35,7 @@ class PrivateMessageAdmin(admin.ModelAdmin):
 
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
-    list_display = ('pubkey', 'added_at')
+    list_display = ('pubkey', 'onion_url', 'added_at')
     actions = ['generate_keys']
 
     def generate_keys(self, request, queryset):
@@ -63,3 +63,9 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
         self.message_user(request, "Keys generated and encrypted for selected instances.")
 
     generate_keys.short_description = "Generate and encrypt keys"
+
+@admin.register(Alias)
+class AliasAdmin(admin.ModelAdmin):
+    list_display = ('nickname', 'pubkey', 'verified', 'added_at')
+    list_filter = ('verified',)
+    search_fields = ('nickname', 'pubkey')

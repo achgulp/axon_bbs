@@ -6,7 +6,10 @@ from django.conf import settings
 import os
 import logging
 import asyncio
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import hashes, serialization, padding
 import json
+import base64
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer
 from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey
@@ -61,8 +64,8 @@ class UnlockIdentityView(views.APIView):
                 return Response({"error": "No default identity found for user."}, status=status.HTTP_404_NOT_FOUND)
 
             # Store the unencrypted key in the session
-            private_key_hex = identity['private_key']
-            request.session['unencrypted_priv_key'] = private_key_hex
+            private_key_pem = identity['private_key']
+            request.session['unencrypted_priv_key'] = private_key_pem
             
             logger.info(f"Identity unlocked for user {user.username}")
             return Response({"status": "identity unlocked"}, status=status.HTTP_200_OK)
@@ -81,10 +84,10 @@ class ImportIdentityView(views.APIView):
         """
         user = request.user
         password = request.data.get('password')
-        priv_key_hex = request.data.get('priv_key_hex')
+        priv_key_pem = request.data.get('priv_key_pem')
         name = request.data.get('name', 'imported')
-        if not password or not priv_key_hex:
-            return Response({"error": "Password and priv_key_hex are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not password or not priv_key_pem:
+            return Response({"error": "Password and priv_key_pem are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Derive key and initialize identity service
@@ -97,7 +100,7 @@ class ImportIdentityView(views.APIView):
             identity_service = IdentityService(identity_storage_path, encryption_key)
             
             # Add the key
-            identity = identity_service.add_existing_identity(name, priv_key_hex)
+            identity = identity_service.add_existing_identity(name, priv_key_pem)
             
             # Optionally set as user's pubkey if none set
             if not user.pubkey:
@@ -108,7 +111,7 @@ class ImportIdentityView(views.APIView):
             return Response({"status": "identity imported", "pubkey": identity['public_key']}, status=status.HTTP_200_OK)
 
         except ValueError as e:
-            return Response({"error": "Invalid priv_key_hex provided."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid priv_key_pem provided."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "Failed to import identity. Check details or system logs."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -140,8 +143,8 @@ class PostMessageView(views.APIView):
             return Response({"error": "Subject and body are required."}, status=status.HTTP_400_BAD_REQUEST)
         
         # Get the unencrypted private key from the session
-        private_key_hex = request.session.get('unencrypted_priv_key')
-        if not private_key_hex:
+        private_key_pem = request.session.get('unencrypted_priv_key')
+        if not private_key_pem:
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
@@ -151,28 +154,42 @@ class PostMessageView(views.APIView):
             except MessageBoard.DoesNotExist:
                 return Response({"error": f"Board '{board_name}' not found."}, status=status.HTTP_404_NOT_FOUND)
 
-            # Construct the message content
+            # Construct the message content with signed nickname if set
             message_content = {
                 "subject": subject,
                 "body": body
             }
+            if user.nickname:
+                nick_hash = hashes.Hash(hashes.SHA256()).update(user.nickname.encode()).finalize()
+                private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+                nick_sig = private_key.sign(
+                    nick_hash,
+                    padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+                    hashes.SHA256()
+                )
+                message_content['nickname'] = user.nickname
+                message_content['nick_sig'] = base64.b64encode(nick_sig).decode()
+
+            data = json.dumps(message_content).encode()
 
             # Use BitTorrentService to create and publish torrent
             if service_manager.bittorrent_service and service_manager.loop:
-                # Serialize message as data
-                data = json.dumps(message_content).encode()
-                magnet, torrent_file = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
+                future = asyncio.run_coroutine_threadsafe(
+                    service_manager.bittorrent_service.create_torrent_async(data, f"msg_{board_name}"),  # Assume async method if needed
+                    service_manager.loop
+                )
+                magnet, torrent_file = future.result()
 
-                # Share magnet with trusted peers (e.g., via API or email; placeholder)
+                # Share magnet with trusted peers (placeholder: log it; implement API/email)
                 logger.info(f"Message torrent created: magnet={magnet}")
 
                 # Store locally
                 Message.objects.create(
                     board=board,
                     subject=subject,
-                    body=body,
+                    body=json.dumps(message_content),
                     author=user,
-                    pubkey=user.pubkey,  # Assuming user has pubkey
+                    pubkey=user.pubkey,
                 )
 
                 return Response({"status": "message_published", "magnet": magnet}, status=status.HTTP_200_OK)

@@ -5,6 +5,7 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
+import hashlib  # Added for short ID
 
 logger = logging.getLogger(__name__)
 
@@ -44,3 +45,9 @@ def decrypt_data(encrypted_data: bytes, key: bytes) -> str:
     decrypted_bytes = f.decrypt(encrypted_data)
     return decrypted_bytes.decode()
 
+def generate_short_id(pubkey_pem: str, length: int = 16) -> str:
+    """
+    Generates a semi-unique short ID from a public key PEM string.
+    """
+    hash_obj = hashlib.sha256(pubkey_pem.encode())
+    return hash_obj.hexdigest()[:length]

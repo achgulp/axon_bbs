@@ -20,6 +20,7 @@ class User(AbstractUser):
     access_level = models.PositiveIntegerField(default=10, help_text="User's security access level.")
     is_banned = models.BooleanField(default=False, help_text="Designates if the user is banned from the local instance.")
     pubkey = models.TextField(blank=True, null=True, help_text="User's public key (PEM).")
+    nickname = models.CharField(max_length=50, unique=True, blank=True, null=True, help_text="User's chosen nickname.")
 
     # --- FIX FOR CLASHING REVERSE ACCESSORS ---
     groups = models.ManyToManyField(
@@ -59,6 +60,18 @@ class BannedPubkey(models.Model):
 
     def __str__(self):
         return f"Banned pubkey starting with {self.pubkey[:12]}..."
+
+class Alias(models.Model):
+    pubkey = models.TextField(unique=True)
+    nickname = models.CharField(max_length=50)
+    verified = models.BooleanField(default=False)  # True if signature checked
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "aliases"
+
+    def __str__(self):
+        return f"{self.nickname} ({self.pubkey[:12]}...)"
 
 class Content(models.Model):
     """Abstract base class for user-generated content."""
@@ -120,7 +133,8 @@ class ContentExtensionRequest(models.Model):
         return f"Extension request for content {self.content_id} by {self.user.username}"
 
 class TrustedInstance(models.Model):
-    pubkey = models.TextField(unique=True)
+    pubkey = models.TextField(blank=True, unique=True)
+    onion_url = models.URLField(blank=True, help_text="Full .onion URL for the peer (e.g., http://example.onion:6881)")
     encrypted_private_key = models.TextField(blank=True)  # Encrypted with SECRET_KEY-derived Fernet
     added_at = models.DateTimeField(auto_now_add=True)
 

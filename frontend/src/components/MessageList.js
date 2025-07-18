@@ -61,7 +61,7 @@ const MessageList = ({ board, onBack }) => {
                 id: msg.nostr_id,
                 subject: msg.subject,
                 body: msg.body,
-                author: msg.author_username || (msg.pubkey ? msg.pubkey.substring(0, 12) + '...' : 'Anonymous'),
+                author: msg.author_username || (msg.pubkey ? `Moo ${generate_short_id(msg.pubkey)}` : 'Anonymous'),  # Updated to use Moo + short ID
                 postedAt: new Date(msg.posted_at).toLocaleString(),
             })));
         } catch (err) {
@@ -78,7 +78,7 @@ const MessageList = ({ board, onBack }) => {
         try {
             await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name });
             setSubject(''); setBody(''); setShowPostForm(false);
-            fetchMessages();  // Refetch messages after posting
+            fetchMessages();  # Refetch messages after posting
         } catch (err) {
             if (err.response && err.response.data.error === 'identity_locked') {
                 setNeedsUnlock(true);
@@ -92,7 +92,7 @@ const MessageList = ({ board, onBack }) => {
         return (
             <div>
                 <button onClick={() => setSelectedMessage(null)} className="mb-4 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
-                    &larr; Back to {board.name}
+                    ← Back to {board.name}
                 </button>
                 <div className="bg-gray-800 p-4 rounded border border-gray-700">
                     <h3 className="text-xl font-bold text-white mb-1">{selectedMessage.subject}</h3>
@@ -110,7 +110,7 @@ const MessageList = ({ board, onBack }) => {
             <div className="flex justify-between items-center mb-4">
                 <Header text={board.name} />
                 <div>
-                     <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2">&larr; Boards</button>
+                     <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2">← Boards</button>
                      <button onClick={() => setShowPostForm(!showPostForm)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                         {showPostForm ? 'Cancel' : 'New Post'}
                      </button>
@@ -138,21 +138,4 @@ const MessageList = ({ board, onBack }) => {
                             <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Author</th>
                             <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Last Post</th>
                         </tr>
-                    </thead>
-                    <tbody>
-                        {messages.map(msg => (
-                            <tr key={msg.id} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700 cursor-pointer" onClick={() => setSelectedMessage(msg)}>
-                                <td className="p-3 text-gray-200">{msg.subject}</td>
-                                <td className="p-3 text-gray-400">{msg.author}</td>
-                                <td className="p-3 text-gray-400">{msg.postedAt}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-                 {messages.length === 0 && <p className="text-gray-400 text-center p-4">No messages yet on this board...</p>}
-            </div>
-        </div>
-    );
-};
-
-export default MessageList;
+                    </thead
