@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
+    'channels',
     # Local apps
     'core.apps.CoreConfig',
     'api',
@@ -58,6 +59,13 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'axon_project.wsgi.application'
+ASGI_APPLICATION = 'axon_project.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
 
 # --- Database ---
 DATABASES = {
@@ -117,3 +125,23 @@ NOSTR_RELAY_URLS = [
     "wss://relay.damus.io",
     "wss://nostr-pub.wellorder.net",  # Add more as needed
 ]
+
+# --- Logging Configuration ---
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs/nostr.log',
+        },
+    },
+    'loggers': {
+        'core.services.nostr_service': {
+            'handlers': ['file'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}

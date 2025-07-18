@@ -1,5 +1,5 @@
 // axon_bbs/frontend/src/components/MessageList.js
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
@@ -53,50 +53,40 @@ const MessageList = ({ board, onBack }) => {
     const [subject, setSubject] = useState('');
     const [body, setBody] = useState('');
     const [error, setError] = useState('');
-    const nostrSocket = useRef(null);
+
+    const fetchMessages = useCallback(async () => {
+        try {
+            const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
+            setMessages(response.data.map(msg => ({
+                id: msg.nostr_id,
+                subject: msg.subject,
+                body: msg.body,
+                author: msg.author_username || (msg.pubkey ? msg.pubkey.substring(0, 12) + '...' : 'Anonymous'),
+                postedAt: new Date(msg.posted_at).toLocaleString(),
+            })));
+        } catch (err) {
+            console.error("Failed to fetch messages:", err);
+        }
+    }, [board.id]);
 
     useEffect(() => {
-        const relayUrl = 'wss://relay.damus.io';
-        nostrSocket.current = new WebSocket(relayUrl);
-        nostrSocket.current.onopen = () => {
-            const subId = `sub-board-${board.id}-${Date.now()}`;
-            const filters = { kinds: [1], '#t': [board.name], limit: 20 };
-            nostrSocket.current.send(JSON.stringify(["REQ", subId, filters]));
-        };
-        nostrSocket.current.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data[0] === 'EVENT') {
-                const nostrEvent = data[2];
-                try {
-                    const content = JSON.parse(nostrEvent.content);
-                    const message = {
-                        id: nostrEvent.id,
-                        subject: content.subject,
-                        body: content.body,
-                        author: nostrEvent.pubkey.substring(0, 12) + '...',
-                        postedAt: new Date(nostrEvent.created_at * 1000).toLocaleString(),
-                    };
-                    setMessages(prev => {
-                        if (prev.some(msg => msg.id === message.id)) return prev;
-                        return [message, ...prev].sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
-                    });
-                } catch (e) { console.error("Could not parse message content:", e); }
-            }
-        };
-        return () => { if (nostrSocket.current) nostrSocket.current.close(); };
-    }, [board.id, board.name]);
+        fetchMessages();
+    }, [fetchMessages]);
     
     const handlePostMessage = useCallback(async () => {
         setError('');
         try {
             await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name });
             setSubject(''); setBody(''); setShowPostForm(false);
+            fetchMessages();  // Refetch messages after posting
         } catch (err) {
             if (err.response && err.response.data.error === 'identity_locked') {
                 setNeedsUnlock(true);
-            } else { setError('Could not post message.'); }
+            } else {
+                setError(err.response?.data?.error || 'Could not post message.');
+            }
         }
-    }, [subject, body, board.name]);
+    }, [subject, body, board.name, fetchMessages]);
 
     if (selectedMessage) {
         return (
@@ -159,7 +149,7 @@ const MessageList = ({ board, onBack }) => {
                         ))}
                     </tbody>
                 </table>
-                 {messages.length === 0 && <p className="text-gray-400 text-center p-4">Listening for messages on this board...</p>}
+                 {messages.length === 0 && <p className="text-gray-400 text-center p-4">No messages yet on this board...</p>}
             </div>
         </div>
     );

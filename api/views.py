@@ -6,12 +6,10 @@ from django.conf import settings
 import os
 import logging
 import asyncio
-from pynostr.key import PrivateKey
-from pynostr.event import Event
 import json
 
-from .serializers import UserSerializer, MessageBoardSerializer
-from core.models import MessageBoard, IgnoredUser
+from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer
+from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password
 from core.services.service_manager import service_manager
@@ -31,8 +29,8 @@ class LogoutView(views.APIView):
         """
         Clears the decrypted private key from the server's session memory.
         """
-        if 'unencrypted_nostr_pk' in request.session:
-            del request.session['unencrypted_nostr_pk']
+        if 'unencrypted_priv_key' in request.session:
+            del request.session['unencrypted_priv_key']
         return Response({"status": "session cleared"}, status=status.HTTP_200_OK)
 
 class UnlockIdentityView(views.APIView):
@@ -40,7 +38,7 @@ class UnlockIdentityView(views.APIView):
 
     def post(self, request, *args, **kwargs):
         """
-        Decrypts the user's Nostr private key using their password and
+        Decrypts the user's private key using their password and
         stores it in the server-side session for later use.
         """
         user = request.user
@@ -58,13 +56,13 @@ class UnlockIdentityView(views.APIView):
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(identity_storage_path, encryption_key)
             
-            nostr_identity = identity_service.get_identity_by_name("default")
-            if not nostr_identity:
-                return Response({"error": "No default Nostr identity found for user."}, status=status.HTTP_404_NOT_FOUND)
+            identity = identity_service.get_identity_by_name("default")
+            if not identity:
+                return Response({"error": "No default identity found for user."}, status=status.HTTP_404_NOT_FOUND)
 
             # Store the unencrypted key in the session
-            private_key_hex = nostr_identity['private_key']
-            request.session['unencrypted_nostr_pk'] = private_key_hex
+            private_key_hex = identity['private_key']
+            request.session['unencrypted_priv_key'] = private_key_hex
             
             logger.info(f"Identity unlocked for user {user.username}")
             return Response({"status": "identity unlocked"}, status=status.HTTP_200_OK)
@@ -73,13 +71,63 @@ class UnlockIdentityView(views.APIView):
             logger.error(f"Failed to unlock identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "Failed to unlock identity. Check password or system logs."}, status=status.HTTP_401_UNAUTHORIZED)
 
+class ImportIdentityView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        """
+        Imports an existing private key provided by the user.
+        Requires the user's password to decrypt and re-encrypt the identity storage.
+        """
+        user = request.user
+        password = request.data.get('password')
+        priv_key_hex = request.data.get('priv_key_hex')
+        name = request.data.get('name', 'imported')
+        if not password or not priv_key_hex:
+            return Response({"error": "Password and priv_key_hex are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Derive key and initialize identity service
+            user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
+            salt_path = os.path.join(user_data_dir, 'salt.bin')
+            with open(salt_path, 'rb') as f:
+                salt = f.read()
+            encryption_key = derive_key_from_password(password, salt)
+            identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
+            identity_service = IdentityService(identity_storage_path, encryption_key)
+            
+            # Add the key
+            identity = identity_service.add_existing_identity(name, priv_key_hex)
+            
+            # Optionally set as user's pubkey if none set
+            if not user.pubkey:
+                user.pubkey = identity['public_key']
+                user.save()
+
+            logger.info(f"Imported identity '{name}' for user {user.username}")
+            return Response({"status": "identity imported", "pubkey": identity['public_key']}, status=status.HTTP_200_OK)
+
+        except ValueError as e:
+            return Response({"error": "Invalid priv_key_hex provided."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
+            return Response({"error": "Failed to import identity. Check details or system logs."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class MessageBoardListView(generics.ListAPIView):
     queryset = MessageBoard.objects.all()
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = MessageBoardSerializer
 
-class PostNostrMessageView(views.APIView):
+class MessageListView(generics.ListAPIView):
+    serializer_class = MessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        board_id = self.kwargs['pk']
+        ignored_pubkeys = IgnoredPubkey.objects.filter(user=self.request.user).values_list('pubkey', flat=True)
+        return Message.objects.filter(board_id=board_id).exclude(pubkey__in=ignored_pubkeys).order_by('-created_at')
+
+class PostMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
@@ -92,15 +140,14 @@ class PostNostrMessageView(views.APIView):
             return Response({"error": "Subject and body are required."}, status=status.HTTP_400_BAD_REQUEST)
         
         # Get the unencrypted private key from the session
-        private_key_hex = request.session.get('unencrypted_nostr_pk')
+        private_key_hex = request.session.get('unencrypted_priv_key')
         if not private_key_hex:
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            # Fetch the board to get its specific relays
+            # Fetch the board
             try:
                 board = MessageBoard.objects.get(name=board_name)
-                relays = board.relays if board.relays else settings.NOSTR_RELAY_URLS
             except MessageBoard.DoesNotExist:
                 return Response({"error": f"Board '{board_name}' not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -110,61 +157,49 @@ class PostNostrMessageView(views.APIView):
                 "body": body
             }
 
-            # Construct and sign the event using the in-memory key
-            private_key = PrivateKey.from_hex(private_key_hex)
-            event = Event(
-                content=json.dumps(message_content),
-                tags=[["t", board_name]]
-            )
-            event.sign(private_key.hex())
-            
-            logger.info(f"Event created with session key: id={event.id}")
+            # Use BitTorrentService to create and publish torrent
+            if service_manager.bittorrent_service and service_manager.loop:
+                # Serialize message as data
+                data = json.dumps(message_content).encode()
+                magnet, torrent_file = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
 
-            # Publish the event to the board's relays (or global fallback)
-            if service_manager.nostr_service and service_manager.loop:
-                future = asyncio.run_coroutine_threadsafe(
-                    service_manager.nostr_service.publish_event(event, relays=relays),
-                    service_manager.loop
+                # Share magnet with trusted peers (e.g., via API or email; placeholder)
+                logger.info(f"Message torrent created: magnet={magnet}")
+
+                # Store locally
+                Message.objects.create(
+                    board=board,
+                    subject=subject,
+                    body=body,
+                    author=user,
+                    pubkey=user.pubkey,  # Assuming user has pubkey
                 )
-                publish_success = future.result()  # Now returns True/False
-                if publish_success:
-                    logger.info(f"Event {event.id} published by user {user.username} to relays: {', '.join(relays)}")
-                    return Response({"status": "message_published", "event_id": event.id, "relays": relays}, status=status.HTTP_200_OK)
-                else:
-                    return Response({"error": "Could not post message to any relays. Check logs for details."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+                return Response({"status": "message_published", "magnet": magnet}, status=status.HTTP_200_OK)
             else:
-                logger.error("Cannot publish event, NostrService or its event loop is not available.")
-                return Response({"error": "Cannot connect to the Nostr network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+                logger.error("Cannot publish message, BitTorrentService or its event loop is not available.")
+                return Response({"error": "Cannot sync to network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         except Exception as e:
-            logger.error(f"Failed to post Nostr message for {user.username}: {e}", exc_info=True)
+            logger.error(f"Failed to post message for {user.username}: {e}", exc_info=True)
             return Response({"error": "Could not post message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class IgnoreUserView(views.APIView):
+class IgnorePubkeyView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        user_to_ignore_username = request.data.get('username')
-        if not user_to_ignore_username:
-            return Response({"error": "Username to ignore is required."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            user_to_ignore = User.objects.get(username=user_to_ignore_username)
-            IgnoredUser.objects.create(user=request.user, ignored_user=user_to_ignore)
-            return Response({"status": f"User {user_to_ignore_username} has been ignored."}, status=status.HTTP_200_OK)
-        except User.DoesNotExist:
-            return Response({"error": "User to ignore not found."}, status=status.HTTP_404_NOT_FOUND)
+        pubkey = request.data.get('pubkey')
+        if not pubkey:
+            return Response({"error": "Pubkey to ignore is required."}, status=status.HTTP_400_BAD_REQUEST)
+        IgnoredPubkey.objects.create(user=request.user, pubkey=pubkey)
+        return Response({"status": "Pubkey ignored."}, status=status.HTTP_200_OK)
 
-class BanUserView(views.APIView):
+class BanPubkeyView(views.APIView):
     permission_classes = [permissions.IsAdminUser]
 
     def post(self, request, *args, **kwargs):
-        user_to_ban_username = request.data.get('username')
-        if not user_to_ban_username:
-            return Response({"error": "Username to ban is required."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            user_to_ban = User.objects.get(username=user_to_ban_username)
-            user_to_ban.is_banned = True
-            user_to_ban.save()
-            return Response({"status": f"User {user_to_ban_username} has been banned."}, status=status.HTTP_200_OK)
-        except User.DoesNotExist:
-            return Response({"error": "User to ban not found."}, status=status.HTTP_404_NOT_FOUND)
+        pubkey = request.data.get('pubkey')
+        if not pubkey:
+            return Response({"error": "Pubkey to ban is required."}, status=status.HTTP_400_BAD_REQUEST)
+        BannedPubkey.objects.create(pubkey=pubkey)
+        return Response({"status": "Pubkey banned."}, status=status.HTTP_200_OK)
