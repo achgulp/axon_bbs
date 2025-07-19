@@ -7,7 +7,8 @@ import os
 import logging
 import asyncio
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import hashes, serialization, padding
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 import json
 import base64
 import requests  # Added for sharing magnets via HTTP over Tor
@@ -168,7 +169,7 @@ class PostMessageView(views.APIView):
                 private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
                 nick_sig = private_key.sign(
                     nick_hash,
-                    padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+                    PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH),
                     hashes.SHA256()
                 )
                 message_content['nickname'] = user.nickname
@@ -216,7 +217,7 @@ class PostMessageView(views.APIView):
         digest = hash_ctx.finalize()
         signature = private_key.sign(
             digest,
-            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+            PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH),
             hashes.SHA256()
         )
         signature_b64 = base64.b64encode(signature).decode()
@@ -282,7 +283,7 @@ class ReceiveMagnetView(views.APIView):
                     pubkey_obj.verify(
                         base64.b64decode(nick_sig),
                         digest,
-                        padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+                        PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH),
                         hashes.SHA256()
                     )
                     Alias.objects.update_or_create(
