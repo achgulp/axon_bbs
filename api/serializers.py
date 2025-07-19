@@ -14,7 +14,7 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     """
     Serializer for the User model. Now also handles creation of the
-    user's Nostr identity on registration.
+    user's identity on registration.
     """
     password = serializers.CharField(write_only=True)
 
@@ -35,7 +35,7 @@ class UserSerializer(serializers.ModelSerializer):
 
         try:
             # 2. Prepare for identity creation
-            # Create a unique, encrypted file for the user's Nostr keys
+            # Create a unique, encrypted file for the user's keys
             user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
             os.makedirs(user_data_dir, exist_ok=True)
             
@@ -53,43 +53,30 @@ class UserSerializer(serializers.ModelSerializer):
                 storage_path=identity_storage_path,
                 encryption_key=encryption_key
             )
-            identity = identity_service.generate_and_add_nostr_identity(name="default")
-            user.nostr_pubkey = identity['public_key']
+            identity = identity_service.generate_and_add_identity(name="default")
+            user.pubkey = identity['public_key']
             user.save()
-            logger.info(f"Successfully created initial Nostr identity for {user.username}")
+            logger.info(f"Successfully created initial identity for {user.username}")
 
         except Exception as e:
-            # If identity creation fails, we should roll back the user creation
-            # to prevent orphaned user accounts.
+            # If identity creation fails, roll back user creation
             logger.error(f"Failed to create identity for {user.username}. Rolling back user creation. Error: {e}")
             user.delete()
-            # Re-raise the exception so the view returns a 500 error
             raise e
 
         return user
 
 
 class MessageBoardSerializer(serializers.ModelSerializer):
-    relays = serializers.JSONField(required=False)  # Allow editing relays per board
 
     class Meta:
         model = MessageBoard
-        fields = ('id', 'name', 'description', 'relays')
-
-    def validate_relays(self, value):
-        if len(value) > 6:
-            raise serializers.ValidationError("A message board can have at most 6 relays.")
-        for relay in value:
-            if not isinstance(relay, str) or not relay.startswith('wss://'):
-                raise serializers.ValidationError("Each relay must be a valid wss:// URL.")
-        return value
+        fields = ('id', 'name', 'description')
 
 class MessageSerializer(serializers.ModelSerializer):
     author_username = serializers.ReadOnlyField(source='author.username')
-    pubkey = serializers.ReadOnlyField()
-    nostr_id = serializers.ReadOnlyField()
 
     class Meta:
         model = Message
-        fields = ('id', 'nostr_id', 'subject', 'body', 'author_username', 'pubkey', 'posted_at')
-        read_only_fields = ('id', 'nostr_id', 'author_username', 'pubkey', 'posted_at')
+        fields = ('id', 'subject', 'body', 'author_username', 'created_at')
+        read_only_fields = ('id', 'author_username', 'created_at')

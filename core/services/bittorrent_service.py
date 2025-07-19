@@ -65,7 +65,9 @@ class BitTorrentService:
         for chunk in chunks:
             aes_key, enc_chunk = self.encrypt_chunk(chunk)
             envelopes = {pk: self.create_envelope(aes_key, pk) for pk in trusted_pubkeys}
-            chunk_hash = hashes.Hash(hashes.SHA256()).update(enc_chunk).finalize()
+            chunk_hash_ctx = hashes.Hash(hashes.SHA256())
+            chunk_hash_ctx.update(enc_chunk)
+            chunk_hash = chunk_hash_ctx.finalize()
             sig = self.private_key.sign(chunk_hash, padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
             signatures.append(base64.b64encode(sig).decode())
 
@@ -79,7 +81,7 @@ class BitTorrentService:
         fs = lt.file_storage()
         fs.add_file(os.path.basename(file_path) + '.enc', len(enc_data))
         t = lt.create_torrent(fs)
-        t.set_creator('AxonBBS v8.0')
+        t.set_creator('AxonBBS v8.2.0')
         lt.set_piece_hashes(t, '.')
         metadata = {'envelopes': envelopes_list, 'signatures': signatures}
         t.set_comment(json.dumps(metadata))
@@ -113,7 +115,9 @@ class BitTorrentService:
             new_envelopes_list.append(new_envelopes)
 
             # Verify sig
-            chunk_hash = hashes.Hash(hashes.SHA256()).update(enc_chunk).finalize()
+            chunk_hash_ctx = hashes.Hash(hashes.SHA256())
+            chunk_hash_ctx.update(enc_chunk)
+            chunk_hash = chunk_hash_ctx.finalize()
             # sender_pub = ...  # Load from trusted or metadata
             # sender_pub.verify(base64.b64decode(signatures[i]), chunk_hash, ...)
 
@@ -157,7 +161,9 @@ class BitTorrentService:
             dec_chunk = f.decrypt(enc_chunk)
 
             # Verify signature
-            chunk_hash = hashes.Hash(hashes.SHA256()).update(enc_chunk).finalize()
+            chunk_hash_ctx = hashes.Hash(hashes.SHA256())
+            chunk_hash_ctx.update(enc_chunk)
+            chunk_hash = chunk_hash_ctx.finalize()
             # sender_pub.verify(base64.b64decode(signatures[i]), chunk_hash, ...)
 
             decrypted_chunks.append(dec_chunk)

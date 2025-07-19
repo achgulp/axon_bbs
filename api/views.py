@@ -173,12 +173,9 @@ class PostMessageView(views.APIView):
             data = json.dumps(message_content).encode()
 
             # Use BitTorrentService to create and publish torrent
-            if service_manager.bittorrent_service and service_manager.loop:
-                future = asyncio.run_coroutine_threadsafe(
-                    service_manager.bittorrent_service.create_torrent_async(data, f"msg_{board_name}"),  # Assume async method if needed
-                    service_manager.loop
-                )
-                magnet, torrent_file = future.result()
+            if service_manager.bittorrent_service:
+                # Since create_torrent is sync, call directly (or wrap if needed)
+                magnet, torrent_file = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
 
                 # Share magnet with trusted peers (placeholder: log it; implement API/email)
                 logger.info(f"Message torrent created: magnet={magnet}")
@@ -194,7 +191,7 @@ class PostMessageView(views.APIView):
 
                 return Response({"status": "message_published", "magnet": magnet}, status=status.HTTP_200_OK)
             else:
-                logger.error("Cannot publish message, BitTorrentService or its event loop is not available.")
+                logger.error("Cannot publish message, BitTorrentService is not available.")
                 return Response({"error": "Cannot sync to network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         except Exception as e:

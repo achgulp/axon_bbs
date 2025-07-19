@@ -119,19 +119,14 @@ LOGGING = {
         'file': {
             'level': 'DEBUG',
             'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs/nostr.log',
+            'filename': BASE_DIR / 'logs/bbs.log',
         },
     },
     'loggers': {
-        'core.services.nostr_service': {
+        'core.services.bittorrent_service': {
             'handlers': ['file'],
             'level': 'DEBUG',
             'propagate': True,
         },
     },
 }
-
-# --- Session Configuration ---
-SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # DB-backed to persist (but we clear on start)
-SESSION_COOKIE_AGE = 3600  # 1 hour expiration for auto-logout
-SESSION_SAVE_EVERY_REQUEST = True  # Refresh expiry on activity
