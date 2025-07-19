@@ -76,5 +76,5 @@ class TrustedPeerPermission(permissions.BasePermission):
             )
             return True
         except Exception as e:
-            logger.warning(f"Signature verification failed: {e}")
+            logger.warning(f"Signature verification failed: {str(e)}", exc_info=True)
             return False
