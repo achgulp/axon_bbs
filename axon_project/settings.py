@@ -43,8 +43,7 @@ ROOT_URLCONF = 'axon_project.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        # Tell Django to look for templates in the React build folder
-        'DIRS': [os.path.join(BASE_DIR, 'frontend', 'build')],
+        'DIRS': [os.path.join(BASE_DIR, 'frontend', 'build'), os.path.join(BASE_DIR, 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
