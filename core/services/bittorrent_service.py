@@ -19,7 +19,8 @@ class BitTorrentService:
             'proxy_hostname': '127.0.0.1',
             'proxy_port': 9050,
             'proxy_type': lt.proxy_type_t.socks5,
-            'anonymous_mode': True  # Enhances privacy
+            'anonymous_mode': True,
+            'alert_mask': lt.alert.category_t.all_categories  # Enable all alerts for monitoring
         }
         self.session = lt.session(settings_pack)
         self.private_key = self.load_bbs_private_key()
@@ -30,11 +31,11 @@ class BitTorrentService:
         return rsa.generate_private_key(65537, 2048)  # Placeholder; load real
 
     async def start_session(self):
-        # Async loop for session management (e.g., alerts)
+        # Async loop for session management and alert monitoring
         while True:
             alerts = self.session.pop_alerts()
             for a in alerts:
-                logger.info(a.message())
+                logger.info(f"BitTorrent Alert: {a.message()} ({a.what()})")  # Log all alerts
             await asyncio.sleep(1)
 
     def chunk_data(self, data, chunk_size=1024*1024):  # 1MB chunks
