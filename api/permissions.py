@@ -2,9 +2,13 @@
 from rest_framework import permissions
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 import base64
+import logging
 from core.models import TrustedInstance
+
+logger = logging.getLogger(__name__)
 
 class HasBoardAccess(permissions.BasePermission):
     """
@@ -37,6 +41,7 @@ class HasFileAreaUploadAccess(permissions.BasePermission):
         # Similar to boards, allow any authenticated user for now.
         return request.user and request.user.is_authenticated
 
+
 class TrustedPeerPermission(permissions.BasePermission):
     """
     Custom permission for trusted peers to access receive_magnet endpoint.
@@ -60,11 +65,13 @@ class TrustedPeerPermission(permissions.BasePermission):
         try:
             pubkey_obj = load_pem_public_key(sender_pubkey.encode())
             signature = base64.b64decode(signature_b64)
-            digest = hashes.Hash(hashes.SHA256()).update(magnet.encode()).finalize()
+            hash_ctx = hashes.Hash(hashes.SHA256())
+            hash_ctx.update(magnet.encode())
+            digest = hash_ctx.finalize()
             pubkey_obj.verify(
                 signature,
                 digest,
-                padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+                PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH),
                 hashes.SHA256()
             )
             return True
