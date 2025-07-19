@@ -1,36 +1,38 @@
 # axon_bbs/core/services/bittorrent_service.py
 import libtorrent as lt
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives import hashes, serialization
-import os
+import asyncio
 import base64
 import json
-from core.models import TrustedInstance
-from asgiref.sync import sync_to_async
-from datetime import datetime
-import asyncio
 import logging
+import os
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from django.conf import settings
+
+from core.models import TrustedInstance
 
 logger = logging.getLogger(__name__)
 
 class BitTorrentService:
-    def __init__(self, tor_service=None):
+    def __init__(self, tor_service):
+        self.tor_service = tor_service
+        self.private_key: RSAPrivateKey = self.load_bbs_private_key()
+        self.local_onion = self.get_local_onion()
+
+        # Initialize libtorrent session with Tor proxy
         settings_pack = {
             'listen_interfaces': '0.0.0.0:6881',
             'enable_dht': True,
-            'proxy_hostname': '127.0.0.1',
-            'proxy_port': 9050,
+            'proxy_hostname': self.tor_service._socks_host,
+            'proxy_port': self.tor_service._socks_port,
             'proxy_type': lt.proxy_type_t.socks5,
-            'anonymous_mode': True,
-            'alert_mask': lt.alert.category_t.all_categories  # Enable all for monitoring
+            'anonymous_mode': True
         }
         self.session = lt.session(settings_pack)
-        self.private_key = self.load_bbs_private_key()
-        self.tor_service = tor_service
-
-        # Load local .onion for self-exclusion
-        self.local_onion = self.get_local_onion()
 
         # Auto-add peers from TrustedInstance.onion_url
         self.add_trusted_peers()
@@ -49,7 +51,7 @@ class BitTorrentService:
         return rsa.generate_private_key(65537, 2048)  # Placeholder; load real
 
     def add_trusted_peers(self):
-        trusted_onions = TrustedInstance.objects.values_list('onion_url', flat=True)
+        trusted_onions = TrustedInstance.objects.filter(encrypted_private_key='').values_list('onion_url', flat=True)  # Exclude local (assumed to have private key)
         for onion in trusted_onions:
             # Parse host and port safely
             if '://' in onion:
