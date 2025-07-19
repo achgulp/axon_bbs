@@ -26,10 +26,14 @@ class BitTorrentService:
         # Initialize libtorrent session with Tor proxy
         settings_pack = {
             'listen_interfaces': '0.0.0.0:6881',
-            'enable_dht': True,
+            'enable_dht': False,
+            'enable_lsd': False,
             'proxy_hostname': self.tor_service._socks_host,
             'proxy_port': self.tor_service._socks_port,
             'proxy_type': lt.proxy_type_t.socks5,
+            'proxy_peer_connections': True,
+            'proxy_tracker_connections': True,
+            'proxy_hostnames': True,
             'anonymous_mode': True
         }
         self.session = lt.session(settings_pack)
@@ -68,8 +72,8 @@ class BitTorrentService:
                 logger.info(f"Skipping self as peer: {host}:{port}")
                 continue
 
-            self.session.add_dht_router(host, port)
-            logger.info(f"Added trusted peer: {host}:{port}")
+            # Since DHT is disabled, add as direct peers if possible (libtorrent doesn't have direct add_node, but we can log or prepare for torrent params)
+            logger.info(f"Trusted peer noted (DHT disabled): {host}:{port}")
 
     async def start_session(self):
         # Async loop for session management (e.g., alerts)
@@ -123,7 +127,7 @@ class BitTorrentService:
         fs = lt.file_storage()
         fs.add_file(os.path.basename(file_path) + '.enc', len(enc_data))
         t = lt.create_torrent(fs)
-        t.set_creator('AxonBBS v8.2.0')
+        t.set_creator('AxonBBS v8.3.0')
         lt.set_piece_hashes(t, '.')
         metadata = {'envelopes': envelopes_list, 'signatures': signatures}
         t.set_comment(json.dumps(metadata))
