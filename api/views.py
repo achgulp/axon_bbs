@@ -13,6 +13,7 @@ import base64
 import requests  # Added for sharing magnets via HTTP over Tor
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer
+from .permissions import TrustedPeerPermission
 from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password
@@ -204,12 +205,32 @@ class PostMessageView(views.APIView):
             return Response({"error": "Could not post message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def share_magnet_with_trusts(self, magnet):
-        """Share magnet to trusted peers via HTTP POST over Tor."""
+        """Share magnet to trusted peers via HTTP POST over Tor with signature."""
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}  # Tor proxy
-        trusted_urls = TrustedInstance.objects.values_list('onion_url', flat=True)
+        # Load local BBS private key for signing (assume it's self.private_key from BitTorrentService)
+        private_key = service_manager.bittorrent_service.private_key
+        local_pubkey = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first().pubkey  # Assume first with key is local
+
+        hash_ctx = hashes.Hash(hashes.SHA256())
+        hash_ctx.update(magnet.encode())
+        digest = hash_ctx.finalize()
+        signature = private_key.sign(
+            digest,
+            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+            hashes.SHA256()
+        )
+        signature_b64 = base64.b64encode(signature).decode()
+
+        payload = {
+            'magnet': magnet,
+            'signature': signature_b64,
+            'sender_pubkey': local_pubkey
+        }
+
+        trusted_urls = TrustedInstance.objects.filter(encrypted_private_key='').values_list('onion_url', flat=True)  # Exclude local
         for url in trusted_urls:
             try:
-                response = requests.post(f"{url}/api/receive_magnet/", json={'magnet': magnet}, proxies=proxies)
+                response = requests.post(f"{url}/api/receive_magnet/", json=payload, proxies=proxies)
                 if response.status_code == 200:
                     logger.info(f"Magnet shared to {url}")
                 else:
@@ -218,7 +239,7 @@ class PostMessageView(views.APIView):
                 logger.error(f"Error sharing magnet to {url}: {e}")
 
 class ReceiveMagnetView(views.APIView):
-    permission_classes = [permissions.IsAdminUser]  # Or authenticate via key
+    permission_classes = [TrustedPeerPermission]
 
     def post(self, request, *args, **kwargs):
         magnet = request.data.get('magnet')
