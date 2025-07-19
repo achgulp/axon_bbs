@@ -10,9 +10,9 @@ from core.models import TrustedInstance
 from asgiref.sync import sync_to_async
 from datetime import datetime
 import asyncio
-import logging  # Added import
+import logging
 
-logger = logging.getLogger(__name__)  # Added logger setup
+logger = logging.getLogger(__name__)
 
 class BitTorrentService:
     def __init__(self, tor_service=None):
@@ -22,7 +22,8 @@ class BitTorrentService:
             'proxy_hostname': '127.0.0.1',
             'proxy_port': 9050,
             'proxy_type': lt.proxy_type_t.socks5,
-            'anonymous_mode': True  # Enhances privacy
+            'anonymous_mode': True,
+            'alert_mask': lt.alert.category_t.all_categories  # Enable all for monitoring
         }
         self.session = lt.session(settings_pack)
         self.private_key = self.load_bbs_private_key()
@@ -37,7 +38,8 @@ class BitTorrentService:
         while True:
             alerts = self.session.pop_alerts()
             for a in alerts:
-                logger.info(f"BitTorrent Alert: {a.message()} ({a.what()})")  # Log all alerts
+                print(f"BitTorrent Alert: {a.message()} ({a.what()})")  # Console for immediate feedback
+                logger.info(f"BitTorrent Alert: {a.message()} ({a.what()})")  # Log to file
             await asyncio.sleep(1)
 
     def chunk_data(self, data, chunk_size=1024*1024):  # 1MB chunks
@@ -64,6 +66,8 @@ class BitTorrentService:
         signatures = []
 
         trusted_pubkeys = TrustedInstance.objects.values_list('pubkey', flat=True)  # PEM strings
+        if not trusted_pubkeys:
+            raise ValueError("No trusted pubkeys - add TrustedInstances first")
 
         for chunk in chunks:
             aes_key, enc_chunk = self.encrypt_chunk(chunk)
