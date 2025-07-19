@@ -27,19 +27,36 @@ class BitTorrentService:
         }
         self.session = lt.session(settings_pack)
         self.private_key = self.load_bbs_private_key()
-        self.tor_service = tor_service  # For additional Tor proxying if needed
+        self.tor_service = tor_service
+
+        # Auto-add peers from TrustedInstance.onion_url
+        self.add_trusted_peers()
 
     def load_bbs_private_key(self):
         # Load/generate RSA private key (store encrypted in DB)
         return rsa.generate_private_key(65537, 2048)  # Placeholder; load real
+
+    def add_trusted_peers(self):
+        trusted_onions = TrustedInstance.objects.values_list('onion_url', flat=True)
+        for onion in trusted_onions:
+            # Parse host and port safely
+            if '://' in onion:
+                onion = onion.split('://')[1]  # Remove http:// or wss://
+            if ':' in onion:
+                host, port_str = onion.split(':')
+                port = int(port_str)
+            else:
+                host = onion
+                port = 6881  # Default if no port
+            self.session.add_dht_router(host, port)
+            logger.info(f"Added trusted peer: {host}:{port}")
 
     async def start_session(self):
         # Async loop for session management (e.g., alerts)
         while True:
             alerts = self.session.pop_alerts()
             for a in alerts:
-                print(f"BitTorrent Alert: {a.message()} ({a.what()})")  # Console for immediate feedback
-                logger.info(f"BitTorrent Alert: {a.message()} ({a.what()})")  # Log to file
+                logger.info(f"BitTorrent Alert: {a.message()} ({a.what()})")  # Log all alerts
             await asyncio.sleep(1)
 
     def chunk_data(self, data, chunk_size=1024*1024):  # 1MB chunks
@@ -66,8 +83,6 @@ class BitTorrentService:
         signatures = []
 
         trusted_pubkeys = TrustedInstance.objects.values_list('pubkey', flat=True)  # PEM strings
-        if not trusted_pubkeys:
-            raise ValueError("No trusted pubkeys - add TrustedInstances first")
 
         for chunk in chunks:
             aes_key, enc_chunk = self.encrypt_chunk(chunk)

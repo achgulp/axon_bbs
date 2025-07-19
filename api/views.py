@@ -10,9 +10,10 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization, padding
 import json
 import base64
+import requests  # Added for sharing magnets via HTTP
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer
-from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey
+from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password
 from core.services.service_manager import service_manager
@@ -174,11 +175,10 @@ class PostMessageView(views.APIView):
 
             # Use BitTorrentService to create and publish torrent
             if service_manager.bittorrent_service:
-                # Since create_torrent is sync, call directly (or wrap if needed)
                 magnet, torrent_file = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
 
-                # Share magnet with trusted peers (placeholder: log it; implement API/email)
-                logger.info(f"Message torrent created: magnet={magnet}")
+                # Share magnet with trusted peers via HTTP POST over Tor
+                self.share_magnet_with_trusts(magnet)
 
                 # Store locally
                 Message.objects.create(
@@ -197,6 +197,41 @@ class PostMessageView(views.APIView):
         except Exception as e:
             logger.error(f"Failed to post message for {user.username}: {e}", exc_info=True)
             return Response({"error": "Could not post message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def share_magnet_with_trusts(self, magnet):
+        """Share magnet to trusted peers via HTTP POST over Tor."""
+        proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}  # Tor proxy
+        trusted_urls = TrustedInstance.objects.values_list('onion_url', flat=True)
+        for url in trusted_urls:
+            try:
+                response = requests.post(f"{url}/api/receive_magnet/", json={'magnet': magnet}, proxies=proxies)
+                if response.status_code == 200:
+                    logger.info(f"Magnet shared to {url}")
+                else:
+                    logger.warning(f"Failed to share magnet to {url}: {response.status_code}")
+            except Exception as e:
+                logger.error(f"Error sharing magnet to {url}: {e}")
+
+class ReceiveMagnetView(views.APIView):
+    permission_classes = [permissions.IsAdminUser]  # Or authenticate via key
+
+    def post(self, request, *args, **kwargs):
+        magnet = request.data.get('magnet')
+        if not magnet:
+            return Response({"error": "Magnet required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            save_path = os.path.join(settings.BASE_DIR, 'data', 'sync')
+            os.makedirs(save_path, exist_ok=True)
+            my_pubkey = 'your_bbs_pubkey'  # Load from config or TrustedInstance
+            decrypted = service_manager.bittorrent_service.download_and_decrypt(magnet, save_path, my_pubkey)
+            # Process decrypted data (e.g., store message)
+            message_content = json.loads(decrypted.decode())
+            # Save to DB...
+            return Response({"status": "Magnet received and processed."}, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Failed to process magnet: {e}")
+            return Response({"error": "Failed to process magnet."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class IgnorePubkeyView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
