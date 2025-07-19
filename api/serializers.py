@@ -2,9 +2,9 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from core.models import MessageBoard, Message
+from core.models import MessageBoard, Message, Alias, User
 from core.services.identity_service import IdentityService
-from core.services.encryption_utils import derive_key_from_password, generate_salt
+from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
 import os
 import logging
 
@@ -74,9 +74,27 @@ class MessageBoardSerializer(serializers.ModelSerializer):
         fields = ('id', 'name', 'description')
 
 class MessageSerializer(serializers.ModelSerializer):
-    author_username = serializers.ReadOnlyField(source='author.username')
+    author_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ('id', 'subject', 'body', 'author_username', 'created_at')
-        read_only_fields = ('id', 'author_username', 'created_at')
+        fields = ('id', 'subject', 'body', 'created_at', 'author_display')
+        read_only_fields = ('id', 'created_at')
+
+    def get_author_display(self, obj):
+        if obj.author:
+            return obj.author.nickname if obj.author.nickname else obj.author.username
+        elif obj.pubkey:
+            alias = Alias.objects.filter(pubkey=obj.pubkey, verified=True).first()
+            if alias:
+                # Check for nickname conflicts with other aliases or local users
+                conflicting = Alias.objects.filter(nickname=alias.nickname).exclude(pubkey=obj.pubkey).exists() or \
+                              User.objects.filter(nickname=alias.nickname).exists()
+                if conflicting:
+                    short_id = generate_short_id(obj.pubkey)
+                    return f"{alias.nickname} {short_id}"
+                return alias.nickname
+            else:
+                short_id = generate_short_id(obj.pubkey)
+                return f"Moo {short_id}"
+        return 'Anonymous'

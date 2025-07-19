@@ -13,7 +13,7 @@ import base64
 import requests  # Added for sharing magnets via HTTP over Tor
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer
-from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance
+from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password
 from core.services.service_manager import service_manager
@@ -158,7 +158,9 @@ class PostMessageView(views.APIView):
             # Construct the message content with signed nickname if set
             message_content = {
                 "subject": subject,
-                "body": body
+                "body": body,
+                "board": board.name,
+                "pubkey": user.pubkey
             }
             if user.nickname:
                 nick_hash = hashes.Hash(hashes.SHA256()).update(user.nickname.encode()).finalize()
@@ -183,11 +185,11 @@ class PostMessageView(views.APIView):
                 # Share magnet with trusted peers via HTTP POST over Tor
                 self.share_magnet_with_trusts(magnet)
 
-                # Store locally
+                # Store locally (plain body, not JSON)
                 Message.objects.create(
                     board=board,
                     subject=subject,
-                    body=json.dumps(message_content),
+                    body=body,
                     author=user,
                     pubkey=user.pubkey,
                 )
@@ -228,9 +230,48 @@ class ReceiveMagnetView(views.APIView):
             os.makedirs(save_path, exist_ok=True)
             my_pubkey = 'your_bbs_pubkey'  # Load from config or TrustedInstance
             decrypted = service_manager.bittorrent_service.download_and_decrypt(magnet, save_path, my_pubkey)
-            # Process decrypted data (e.g., store message)
-            message_content = json.loads(decrypted.decode())
-            # Save to DB...
+            content = json.loads(decrypted.decode())
+
+            # Extract fields
+            subject = content.get('subject')
+            body = content.get('body')
+            pubkey = content.get('pubkey')
+            board_name = content.get('board', 'general')
+            nickname = content.get('nickname')
+            nick_sig = content.get('nick_sig')
+
+            # Get or create board
+            board, _ = MessageBoard.objects.get_or_create(name=board_name)
+
+            # Store the message (author=None for remote, use pubkey)
+            message = Message.objects.create(
+                board=board,
+                subject=subject,
+                body=body,
+                pubkey=pubkey,
+            )
+
+            # If nickname and sig provided, verify and store Alias
+            if nickname and nick_sig and pubkey:
+                try:
+                    pubkey_obj = serialization.load_pem_public_key(pubkey.encode())
+                    nick_hash = hashes.Hash(hashes.SHA256())
+                    nick_hash.update(nickname.encode())
+                    digest = nick_hash.finalize()
+                    pubkey_obj.verify(
+                        base64.b64decode(nick_sig),
+                        digest,
+                        padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
+                        hashes.SHA256()
+                    )
+                    Alias.objects.update_or_create(
+                        pubkey=pubkey,
+                        defaults={'nickname': nickname, 'verified': True}
+                    )
+                    logger.info(f"Verified and stored alias for pubkey {pubkey[:12]}...: {nickname}")
+                except Exception as e:
+                    logger.warning(f"Failed to verify nickname sig for pubkey {pubkey[:12]}...: {e}")
+
             return Response({"status": "Magnet received and processed."}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Failed to process magnet: {e}")

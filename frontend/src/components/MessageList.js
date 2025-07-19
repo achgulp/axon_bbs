@@ -1,15 +1,6 @@
+// axon_bbs/frontend/src/components/MessageList.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
-
-const generate_short_id = async (pubkey, length = 16) => {
-  // Use Web Crypto API for SHA-256 hash (browser-native, no polyfill needed)
-  const encoder = new TextEncoder();
-  const data = encoder.encode(pubkey);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex.substring(0, length);
-};
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
@@ -66,13 +57,13 @@ const MessageList = ({ board, onBack }) => {
     const fetchMessages = useCallback(async () => {
         try {
             const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
-            const msgs = await Promise.all(response.data.map(async msg => ({
+            const msgs = response.data.map(msg => ({
                 id: msg.id,
                 subject: msg.subject,
                 body: msg.body,
-                author: msg.author_username || (msg.pubkey ? `Moo ${await generate_short_id(msg.pubkey)}` : 'Anonymous'),
+                author_display: msg.author_display,
                 postedAt: new Date(msg.created_at).toLocaleString(),
-            })));
+            }));
             setMessages(msgs);
         } catch (err) {
             console.error("Failed to fetch messages:", err);
@@ -102,11 +93,11 @@ const MessageList = ({ board, onBack }) => {
         return (
             <div>
                 <button onClick={() => setSelectedMessage(null)} className="mb-4 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
-                    ← Back to {board.name}
+                    â�� Back to {board.name}
                 </button>
                 <div className="bg-gray-800 p-4 rounded border border-gray-700">
                     <h3 className="text-xl font-bold text-white mb-1">{selectedMessage.subject}</h3>
-                    <p className="text-sm text-gray-400 mb-2">by {selectedMessage.author} on {selectedMessage.postedAt}</p>
+                    <p className="text-sm text-gray-400 mb-2">by {selectedMessage.author_display} on {selectedMessage.postedAt}</p>
                     <p className="text-gray-300 whitespace-pre-wrap">{selectedMessage.body}</p>
                 </div>
             </div>
@@ -120,7 +111,7 @@ const MessageList = ({ board, onBack }) => {
             <div className="flex justify-between items-center mb-4">
                 <Header text={board.name} />
                 <div>
-                     <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2">← Boards</button>
+                     <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2">â�� Boards</button>
                      <button onClick={() => setShowPostForm(!showPostForm)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                         {showPostForm ? 'Cancel' : 'New Post'}
                      </button>
@@ -153,7 +144,7 @@ const MessageList = ({ board, onBack }) => {
                         {messages.map(msg => (
                             <tr key={msg.id} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700 cursor-pointer" onClick={() => setSelectedMessage(msg)}>
                                 <td className="p-3 text-gray-200">{msg.subject}</td>
-                                <td className="p-3 text-gray-400">{msg.author}</td>
+                                <td className="p-3 text-gray-400">{msg.author_display}</td>
                                 <td className="p-3 text-gray-400">{msg.postedAt}</td>
                             </tr>
                         ))}
