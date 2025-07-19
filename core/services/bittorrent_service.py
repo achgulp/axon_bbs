@@ -10,6 +10,9 @@ from core.models import TrustedInstance
 from asgiref.sync import sync_to_async
 from datetime import datetime
 import asyncio
+import logging  # Added import
+
+logger = logging.getLogger(__name__)  # Added logger setup
 
 class BitTorrentService:
     def __init__(self, tor_service=None):
@@ -19,8 +22,7 @@ class BitTorrentService:
             'proxy_hostname': '127.0.0.1',
             'proxy_port': 9050,
             'proxy_type': lt.proxy_type_t.socks5,
-            'anonymous_mode': True,
-            'alert_mask': lt.alert.category_t.all_categories  # Enable all alerts for monitoring
+            'anonymous_mode': True  # Enhances privacy
         }
         self.session = lt.session(settings_pack)
         self.private_key = self.load_bbs_private_key()
@@ -31,7 +33,7 @@ class BitTorrentService:
         return rsa.generate_private_key(65537, 2048)  # Placeholder; load real
 
     async def start_session(self):
-        # Async loop for session management and alert monitoring
+        # Async loop for session management (e.g., alerts)
         while True:
             alerts = self.session.pop_alerts()
             for a in alerts:
