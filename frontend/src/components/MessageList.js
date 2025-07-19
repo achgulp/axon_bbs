@@ -1,6 +1,15 @@
-// axon_bbs/frontend/src/components/MessageList.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
+
+const generate_short_id = async (pubkey, length = 16) => {
+  // Use Web Crypto API for SHA-256 hash (browser-native, no polyfill needed)
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pubkey);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex.substring(0, length);
+};
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
@@ -57,13 +66,14 @@ const MessageList = ({ board, onBack }) => {
     const fetchMessages = useCallback(async () => {
         try {
             const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
-            setMessages(response.data.map(msg => ({
-                id: msg.nostr_id,
+            const msgs = await Promise.all(response.data.map(async msg => ({
+                id: msg.id,
                 subject: msg.subject,
                 body: msg.body,
-                author: msg.author_username || (msg.pubkey ? `Moo ${generate_short_id(msg.pubkey)}` : 'Anonymous'),  # Updated to use Moo + short ID
-                postedAt: new Date(msg.posted_at).toLocaleString(),
+                author: msg.author_username || (msg.pubkey ? `Moo ${await generate_short_id(msg.pubkey)}` : 'Anonymous'),
+                postedAt: new Date(msg.created_at).toLocaleString(),
             })));
+            setMessages(msgs);
         } catch (err) {
             console.error("Failed to fetch messages:", err);
         }
@@ -78,7 +88,7 @@ const MessageList = ({ board, onBack }) => {
         try {
             await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name });
             setSubject(''); setBody(''); setShowPostForm(false);
-            fetchMessages();  # Refetch messages after posting
+            fetchMessages();  // Refetch messages after posting
         } catch (err) {
             if (err.response && err.response.data.error === 'identity_locked') {
                 setNeedsUnlock(true);
@@ -138,4 +148,21 @@ const MessageList = ({ board, onBack }) => {
                             <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Author</th>
                             <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Last Post</th>
                         </tr>
-                    </thead
+                    </thead>
+                    <tbody>
+                        {messages.map(msg => (
+                            <tr key={msg.id} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700 cursor-pointer" onClick={() => setSelectedMessage(msg)}>
+                                <td className="p-3 text-gray-200">{msg.subject}</td>
+                                <td className="p-3 text-gray-400">{msg.author}</td>
+                                <td className="p-3 text-gray-400">{msg.postedAt}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                 {messages.length === 0 && <p className="text-gray-400 text-center p-4">No messages yet on this board...</p>}
+            </div>
+        </div>
+    );
+};
+
+export default MessageList;
