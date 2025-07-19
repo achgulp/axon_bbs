@@ -29,8 +29,20 @@ class BitTorrentService:
         self.private_key = self.load_bbs_private_key()
         self.tor_service = tor_service
 
+        # Load local .onion for self-exclusion
+        self.local_onion = self.get_local_onion()
+
         # Auto-add peers from TrustedInstance.onion_url
         self.add_trusted_peers()
+
+    def get_local_onion(self):
+        """Read local .onion from Tor hidden service dir."""
+        hidden_dir = '/var/lib/tor/bbs_hidden_service/'  # Match your torrc
+        hostname_file = os.path.join(hidden_dir, 'hostname')
+        if os.path.exists(hostname_file):
+            with open(hostname_file, 'r') as f:
+                return f.read().strip()
+        return None  # If not set, no exclusion
 
     def load_bbs_private_key(self):
         # Load/generate RSA private key (store encrypted in DB)
@@ -48,6 +60,12 @@ class BitTorrentService:
             else:
                 host = onion
                 port = 6881  # Default if no port
+
+            # Exclude self if local .onion matches
+            if self.local_onion and host == self.local_onion:
+                logger.info(f"Skipping self as peer: {host}:{port}")
+                continue
+
             self.session.add_dht_router(host, port)
             logger.info(f"Added trusted peer: {host}:{port}")
 
