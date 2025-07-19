@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 class BitTorrentService:
     def __init__(self, tor_service):
         self.tor_service = tor_service
-        self.private_key: RSAPrivateKey = self.load_bbs_private_key()
         self.local_onion = self.get_local_onion()
+        self.private_key: RSAPrivateKey = self.load_bbs_private_key()
 
         # Initialize libtorrent session with Tor proxy
         settings_pack = {
@@ -52,10 +52,12 @@ class BitTorrentService:
         return None  # If not set, no exclusion
 
     def load_bbs_private_key(self):
-        local_instance = TrustedInstance.objects.filter(onion_url__contains=self.local_onion).first()
+        key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])  # Derive Fernet key
+        f = Fernet(key)
+        local_instance = None
+        if self.local_onion:
+            local_instance = TrustedInstance.objects.filter(onion_url__contains=self.local_onion).first()
         if local_instance and local_instance.encrypted_private_key:
-            key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
-            f = Fernet(key)
             private_pem = f.decrypt(local_instance.encrypted_private_key.encode()).decode()
             return load_pem_private_key(private_pem.encode(), password=None)
         else:
