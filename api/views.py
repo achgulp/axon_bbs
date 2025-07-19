@@ -250,7 +250,7 @@ class ReceiveMagnetView(views.APIView):
         try:
             save_path = os.path.join(settings.BASE_DIR, 'data', 'sync')
             os.makedirs(save_path, exist_ok=True)
-            my_pubkey = 'your_bbs_pubkey'  # Load from config or TrustedInstance
+            my_pubkey = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first().pubkey  # Local pubkey
             decrypted = service_manager.bittorrent_service.download_and_decrypt(magnet, save_path, my_pubkey)
             content = json.loads(decrypted.decode())
 
