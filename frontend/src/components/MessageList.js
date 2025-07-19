@@ -62,7 +62,7 @@ const MessageList = ({ board, onBack }) => {
                 subject: msg.subject,
                 body: msg.body,
                 author_display: msg.author_display,
-                postedAt: new Date(msg.created_at).toLocaleString(),
+                postedAt: new Date(msg.created_at + 'Z').toLocaleString(),  // Assume UTC, add 'Z' for timezone
             }));
             setMessages(msgs);
         } catch (err) {

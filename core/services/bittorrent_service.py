@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from django.conf import settings
 
@@ -93,7 +94,7 @@ class BitTorrentService:
         return aes_key, encrypted_chunk
 
     def create_envelope(self, aes_key, pubkey_pem):
-        pubkey = serialization.load_pem_public_key(pubkey_pem.encode())
+        pubkey = load_pem_public_key(pubkey_pem.encode())
         encrypted_aes = pubkey.encrypt(
             aes_key,
             padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
