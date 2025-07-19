@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization, padding
 import json
 import base64
-import requests  # Added for sharing magnets via HTTP
+import requests  # Added for sharing magnets via HTTP over Tor
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer
 from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance
@@ -176,6 +176,9 @@ class PostMessageView(views.APIView):
             # Use BitTorrentService to create and publish torrent
             if service_manager.bittorrent_service:
                 magnet, torrent_file = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
+
+                # Log magnet for verification
+                logger.info(f"Message torrent created: magnet={magnet}")
 
                 # Share magnet with trusted peers via HTTP POST over Tor
                 self.share_magnet_with_trusts(magnet)
