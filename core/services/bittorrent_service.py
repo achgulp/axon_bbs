@@ -57,6 +57,9 @@ class BitTorrentService:
         local_instance = None
         if self.local_onion:
             local_instance = TrustedInstance.objects.filter(onion_url__contains=self.local_onion).first()
+        if not local_instance:
+            # Fallback: Look for any instance with encrypted_private_key (assume single local)
+            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
         if local_instance and local_instance.encrypted_private_key:
             private_pem = f.decrypt(local_instance.encrypted_private_key.encode()).decode()
             return load_pem_private_key(private_pem.encode(), password=None)
@@ -73,16 +76,11 @@ class BitTorrentService:
                 encryption_algorithm=serialization.NoEncryption()
             ).decode('utf-8')
             encrypted_private = f.encrypt(private_pem.encode()).decode()
-            if not local_instance:
-                local_instance = TrustedInstance.objects.create(
-                    onion_url=f"http://{self.local_onion}:6881" if self.local_onion else "",
-                    pubkey=public_key,
-                    encrypted_private_key=encrypted_private
-                )
-            else:
-                local_instance.pubkey = public_key
-                local_instance.encrypted_private_key = encrypted_private
-                local_instance.save()
+            local_instance = TrustedInstance.objects.create(
+                onion_url=f"http://{self.local_onion}:6881" if self.local_onion else "",
+                pubkey=public_key,
+                encrypted_private_key=encrypted_private
+            )
             return private_key
 
     def add_trusted_peers(self):
