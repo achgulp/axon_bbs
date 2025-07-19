@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.hazmat.primitives.serialization import load_pem_public_key, load_pem_private_key
 from django.conf import settings
 
 from core.models import TrustedInstance
@@ -52,8 +52,36 @@ class BitTorrentService:
         return None  # If not set, no exclusion
 
     def load_bbs_private_key(self):
-        # Load/generate RSA private key (store encrypted in DB)
-        return rsa.generate_private_key(65537, 2048)  # Placeholder; load real
+        local_instance = TrustedInstance.objects.filter(onion_url__contains=self.local_onion).first()
+        if local_instance and local_instance.encrypted_private_key:
+            key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
+            f = Fernet(key)
+            private_pem = f.decrypt(local_instance.encrypted_private_key.encode()).decode()
+            return load_pem_private_key(private_pem.encode(), password=None)
+        else:
+            # Generate new if not exist (like admin action)
+            private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            public_key = private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ).decode('utf-8')
+            private_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            ).decode('utf-8')
+            encrypted_private = f.encrypt(private_pem.encode()).decode()
+            if not local_instance:
+                local_instance = TrustedInstance.objects.create(
+                    onion_url=f"http://{self.local_onion}:6881" if self.local_onion else "",
+                    pubkey=public_key,
+                    encrypted_private_key=encrypted_private
+                )
+            else:
+                local_instance.pubkey = public_key
+                local_instance.encrypted_private_key = encrypted_private
+                local_instance.save()
+            return private_key
 
     def add_trusted_peers(self):
         trusted_onions = TrustedInstance.objects.filter(encrypted_private_key='').values_list('onion_url', flat=True)  # Exclude local (assumed to have private key)
