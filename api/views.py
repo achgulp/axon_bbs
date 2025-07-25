@@ -206,10 +206,12 @@ class PostMessageView(views.APIView):
     def share_magnet_with_trusts(self, magnet):
         """Share magnet to trusted peers via HTTP POST over Tor with signature."""
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-        private_key = service_manager.bittorrent_service.private_key
+        
+        private_key = service_manager.bittorrent_service.get_private_key()
+        
         local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
-        if not local_instance:
-            logger.error("Could not find local instance with a private key to sign magnet sharing request.")
+        if not private_key or not local_instance:
+            logger.error("Could not find local instance or its private key to sign magnet sharing request.")
             return
             
         local_pubkey = local_instance.pubkey
