@@ -3,7 +3,8 @@ import axios from 'axios';
 
 // Create an instance of axios for our API
 const apiClient = axios.create({
-  baseURL: 'http://127.0.0.1:8000',
+  // By removing the hardcoded baseURL, requests will be sent to the 
+  // same host that served the frontend files. This makes the app portable.
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
