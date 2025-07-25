@@ -1,20 +1,26 @@
-# Core Django and REST
-django==5.0.6
-djangorestframework==3.15.2
+# axon_bbs/requirements.txt
+# Core Django and dependencies
+Django==5.0.6
+djangorestframework==3.15.0  # Latest stable as of July 2025
 djangorestframework-simplejwt==5.3.1
-django-cors-headers==4.4.0
+python-dotenv==1.0.1  # For .env file support
+django-cors-headers==4.4.0  # Latest
 
-# Async/WebSocket support (if retained for other features)
-channels==4.1.0
+# Cryptography for encryption/signing
+cryptography==43.0.0  # Latest stable
 
-# Cryptography for key encryption/signing
-cryptography==43.0.0
+# BitTorrent support (Python bindings for libtorrent; may require system install)
+# Note: python-libtorrent is not always available via pip; install system-wide first:
+#   Ubuntu/Debian: sudo apt install python3-libtorrent libtorrent-rasterbar-dev
+#   Or build from source: pip install git+https://github.com/arvidn/libtorrent.git
+# Fallback to latest available version if manual install is preferred
+# python-libtorrent==2.0.10  # Commented out due to unavailability; use system package
 
-# P2P/BitTorrent library
-libtorrent==2.0.11
+# Requests for HTTP over Tor
+requests==2.32.3
 
-# Other deps
-python-socks==2.5.1
-websockets==12.0
-asgiref==3.8.1
-async-timeout==4.0.3  # Required by python-socks for asyncio
+# Optional: For production/testing
+gunicorn==22.0.0  # Updated
+psycopg2-binary==2.9.9  # If switching to PostgreSQL
+
+# Ensure compatibility with Python 3.11/3.13
