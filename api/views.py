@@ -146,7 +146,7 @@ class PostMessageView(views.APIView):
                     digest, PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH), hashes.SHA256()
                 )
                 message_content['nickname'] = user.nickname
-                message_content['nick_sig'] = base64.b64encode(nick_sig).decode()
+                message_content['nick_sig'] = base64.b64encode(nick_sig).decode('utf-8')
             data = json.dumps(message_content).encode()
             if service_manager.bittorrent_service:
                 magnet, torrent_file_path = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
@@ -179,7 +179,7 @@ class PostMessageView(views.APIView):
         signature = private_key.sign(
             digest, PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH), hashes.SHA256()
         )
-        signature_b64 = base64.b64encode(signature).decode()
+        signature_b64 = base64.b64encode(signature).decode('utf-8')
         payload = {
             'magnet': magnet, 
             'signature': signature_b64, 
@@ -256,9 +256,6 @@ class ReceiveMagnetView(views.APIView):
                 except Exception as e:
                     logger.warning(f"Failed to verify nickname sig for pubkey {pubkey[:12]}...: {e}")
             
-            # re_envelope_and_reseed is a future enhancement for multi-hop, not strictly needed for this to work
-            # new_magnet = service_manager.bittorrent_service.re_envelope_and_reseed(handle, save_path, my_pubkey)
-
             return Response({"status": "Magnet received and processed."}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Failed to process magnet: {e}", exc_info=True)
@@ -366,34 +363,3 @@ class UnpinContentView(views.APIView):
         content_obj.pinned_by = None
         content_obj.save()
         return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)
-
-class TorrentFileView(views.APIView):
-    """
-    Serves the actual encrypted data file for a given torrent info_hash.
-    This enables web seeding between trusted peers over Tor.
-    """
-    permission_classes = [permissions.AllowAny] # Security is handled by filename obscurity
-
-    def get(self, request, info_hash, *args, **kwargs):
-        try:
-            # This logic is simplified; a real implementation would need a robust
-            # way to map info_hash back to a file path.
-            temp_dir = os.path.join(settings.BASE_DIR, 'data', 'temp_torrents')
-            # This assumes a naming convention we establish in the bittorrent_service
-            file_path = None
-            for f in os.listdir(temp_dir):
-                if info_hash in f: # Simple substring match
-                    file_path = os.path.join(temp_dir, f)
-                    break
-            
-            if not file_path or not os.path.exists(file_path):
-                raise Http404("Torrent data file not found on disk.")
-
-            # Serve the file
-            with open(file_path, 'rb') as f:
-                response = HttpResponse(f.read(), content_type='application/octet-stream')
-                response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
-                return response
-        except Exception as e:
-            logger.error(f"Error serving torrent file for hash {info_hash}: {e}")
-            raise Http404("Could not serve torrent file.")
