@@ -1,4 +1,4 @@
-# axon_bbs/frontend/src/apiClient.js
+// axon_bbs/frontend/src/apiClient.js
 import axios from 'axios';
 
 // Create an instance of axios for our API
@@ -8,10 +8,10 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true,  // Add this to send cookies with requests for session support
+  withCredentials: true,  // Send cookies for session-based unlock
 });
 
-// --- Interceptor to dynamically add the token to every request ---
+// Interceptor to add JWT token to every request
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -20,9 +20,7 @@ apiClient.interceptors.request.use(
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 export default apiClient;
