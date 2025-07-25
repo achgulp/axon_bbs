@@ -10,7 +10,10 @@ from .views import (
     UnlockIdentityView,
     ImportIdentityView,
     LogoutView,
-    ReceiveMagnetView,  # Added
+    ReceiveMagnetView,
+    RequestContentExtensionView,
+    ReviewContentExtensionView,
+    UnpinContentView,
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -32,7 +35,12 @@ urlpatterns = [
     path('boards/', MessageBoardListView.as_view(), name='board-list'),
     path('boards/<int:pk>/messages/', MessageListView.as_view(), name='message-list'),
     path('messages/post/', PostMessageView.as_view(), name='post-message'),
-    path('receive_magnet/', ReceiveMagnetView.as_view(), name='receive-magnet'),  # Added for magnet sharing
+    path('receive_magnet/', ReceiveMagnetView.as_view(), name='receive-magnet'),
     path('user/ignore/', IgnorePubkeyView.as_view(), name='ignore-pubkey'),
+    
+    # Admin & Moderator Actions
     path('admin/ban/', BanPubkeyView.as_view(), name='ban-pubkey'),
+    path('content/request-extension/', RequestContentExtensionView.as_view(), name='request-extension'),
+    path('content/review-extension/<int:pk>/', ReviewContentExtensionView.as_view(), name='review-extension'),
+    path('content/unpin/', UnpinContentView.as_view(), name='unpin-content'),
 ]

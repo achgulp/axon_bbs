@@ -57,9 +57,20 @@ class IgnoredPubkey(models.Model):
 class BannedPubkey(models.Model):
     """Represents a banned public key on the platform."""
     pubkey = models.TextField(unique=True)
+    is_temporary = models.BooleanField(default=False)
+    expires_at = models.DateTimeField(null=True, blank=True, help_text="If the ban is temporary, this is when it expires.")
 
     def __str__(self):
-        return f"Banned pubkey starting with {self.pubkey[:12]}..."
+        status = "Temporarily Banned" if self.is_temporary and self.expires_at and self.expires_at > timezone.now() else "Banned"
+        return f"[{status}] pubkey starting with {self.pubkey[:12]}..."
+
+    def save(self, *args, **kwargs):
+        if self.is_temporary and not self.expires_at:
+            # Set a default temporary ban duration if not specified, e.g., 72 hours.
+            self.expires_at = timezone.now() + timedelta(hours=72)
+        if not self.is_temporary:
+            self.expires_at = None
+        super().save(*args, **kwargs)
 
 class Alias(models.Model):
     pubkey = models.TextField(unique=True)
@@ -124,13 +135,22 @@ class PrivateMessage(Content):
 
 class ContentExtensionRequest(models.Model):
     """Represents a user's request to extend the lifespan of their content."""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('denied', 'Denied'),
+    ]
+    
     content_id = models.UUIDField()
+    content_type = models.CharField(max_length=20) # e.g., 'message', 'uploadedfile'
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     request_date = models.DateTimeField(auto_now_add=True)
-    is_approved = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reviewed_requests')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f"Extension request for content {self.content_id} by {self.user.username}"
+        return f"Extension request for content {self.content_id} by {self.user.username} ({self.status})"
 
 class TrustedInstance(models.Model):
     pubkey = models.TextField(blank=True, unique=True)
