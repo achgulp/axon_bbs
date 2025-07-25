@@ -210,9 +210,7 @@ class PostMessageView(views.APIView):
             return Response({"error": "Could not post message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def share_magnet_with_trusts(self, magnet):
-        """Share magnet to trusted peers via HTTP POST over Tor with signature."""
-        proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-        
+        """Share magnet to trusted peers via HTTP POST."""
         private_key = service_manager.bittorrent_service.get_private_key()
         
         local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
@@ -241,6 +239,13 @@ class PostMessageView(views.APIView):
         trusted_urls = TrustedInstance.objects.exclude(pk=local_instance.pk).values_list('onion_url', flat=True)
         for url in trusted_urls:
             if not url: continue
+            
+            # --- CHANGE: Conditionally use the proxy only for .onion addresses ---
+            proxies = None
+            if '.onion' in url:
+                proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+            # --- END CHANGE ---
+
             try:
                 target_url = url.strip('/') + '/api/receive_magnet/'
                 response = requests.post(target_url, json=payload, proxies=proxies, timeout=30)
@@ -318,7 +323,7 @@ class ReceiveMagnetView(views.APIView):
             if new_magnet:
                 logger.info(f"Re-enveloped and re-seeding torrent. New magnet: {new_magnet}")
                 # Create a new background thread for re-sharing to avoid long-running requests
-                thread = threading.Thread(target=self.share_magnet_with_trusts, args=(new_magnet,))
+                thread = threading.Thread(target=PostMessageView.share_magnet_with_trusts, args=(self, new_magnet,))
                 thread.daemon = True
                 thread.start()
             
