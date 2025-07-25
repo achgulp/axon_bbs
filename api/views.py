@@ -7,6 +7,7 @@ import os
 import logging
 import asyncio
 import threading
+import traceback # Import traceback for detailed error logging
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
@@ -183,11 +184,9 @@ class PostMessageView(views.APIView):
         for url in trusted_urls:
             if not url: continue
             
-            # --- CHANGE: Explicitly disable proxies for non-onion URLs ---
-            proxies = {} # Use an empty dict to override any system proxies
+            proxies = {} 
             if '.onion' in url:
                 proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-            # --- END CHANGE ---
 
             try:
                 target_url = url.strip('/') + '/api/receive_magnet/'
@@ -196,8 +195,11 @@ class PostMessageView(views.APIView):
                     logger.info(f"BACKGROUND: Magnet shared to {url}")
                 else:
                     logger.warning(f"BACKGROUND: Failed to share magnet to {url}: {response.status_code} - {response.text}")
-            except Exception as e:
-                logger.error(f"BACKGROUND: Error sharing magnet to {url}: {e}")
+            # --- CHANGE: Add detailed traceback logging for network errors ---
+            except requests.exceptions.RequestException:
+                logger.error(f"BACKGROUND: A critical network error occurred while sharing magnet to {url}.")
+                logger.error(traceback.format_exc())
+            # --- END CHANGE ---
 
 @method_decorator(csrf_exempt, name='dispatch')
 class ReceiveMagnetView(views.APIView):
