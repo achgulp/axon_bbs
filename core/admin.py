@@ -48,7 +48,9 @@ class ContentExtensionRequestAdmin(admin.ModelAdmin):
 
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
-    list_display = ('pubkey', 'onion_url', 'added_at')
+    # --- CHANGE: Updated field names to match the new model ---
+    list_display = ('pubkey', 'web_ui_onion_url', 'p2p_onion_address', 'added_at')
+    # --- END CHANGE ---
     actions = ['generate_keys', 'generate_test_script']
 
     def generate_keys(self, request, queryset):

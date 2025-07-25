@@ -142,7 +142,9 @@ class ContentExtensionRequest(models.Model):
     ]
     
     content_id = models.UUIDField()
-    content_type = models.CharField(max_length=20) # e.g., 'message', 'uploadedfile'
+    # --- CHANGE: Added a default value to the new field ---
+    content_type = models.CharField(max_length=20, default='') # e.g., 'message', 'uploadedfile'
+    # --- END CHANGE ---
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     request_date = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
@@ -154,9 +156,10 @@ class ContentExtensionRequest(models.Model):
 
 class TrustedInstance(models.Model):
     pubkey = models.TextField(blank=True, unique=True)
-    onion_url = models.URLField(blank=True, help_text="Full .onion URL for the peer (e.g., http://example.onion:6881)")
-    encrypted_private_key = models.TextField(blank=True)  # Encrypted with SECRET_KEY-derived Fernet
+    web_ui_onion_url = models.URLField(blank=True, help_text="Full .onion URL for the peer's web interface (e.g., http://<hash>.onion)")
+    p2p_onion_address = models.CharField(max_length=255, blank=True, help_text="The peer's .onion address and port for BitTorrent (e.g. <hash>.onion:6881)")
+    encrypted_private_key = models.TextField(blank=True)
     added_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.pubkey
+        return self.web_ui_onion_url or self.pubkey
