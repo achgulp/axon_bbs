@@ -1,6 +1,5 @@
 # axon_bbs/manage.py
 #!/usr/bin/env python
-# axon_bbs/manage.py
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
