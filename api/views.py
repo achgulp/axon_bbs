@@ -11,12 +11,15 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 import json
 import base64
-import requests  # Added for sharing magnets via HTTP over Tor
+import requests
 from django.views.decorators.csrf import csrf_exempt
+from datetime import timedelta
+from django.utils import timezone
+from django.apps import apps
 
-from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer
+from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer
 from .permissions import TrustedPeerPermission
-from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias
+from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password
 from core.services.service_manager import service_manager
@@ -114,7 +117,7 @@ class ImportIdentityView(views.APIView):
             logger.info(f"Imported identity '{name}' for user {user.username}")
             return Response({"status": "identity imported", "pubkey": identity['public_key']}, status=status.HTTP_200_OK)
 
-        except ValueError as e:
+        except ValueError:
             return Response({"error": "Invalid priv_key_pem provided."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
@@ -137,7 +140,7 @@ class MessageListView(generics.ListAPIView):
 class PostMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @csrf_exempt  # Add this to disable CSRF for API POST
+    @csrf_exempt
     def post(self, request, *args, **kwargs):
         user = request.user
         subject = request.data.get('subject')
@@ -147,19 +150,16 @@ class PostMessageView(views.APIView):
         if not all([subject, body]):
             return Response({"error": "Subject and body are required."}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get the unencrypted private key from the session
         private_key_pem = request.session.get('unencrypted_priv_key')
         if not private_key_pem:
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            # Fetch the board
             try:
                 board = MessageBoard.objects.get(name=board_name)
             except MessageBoard.DoesNotExist:
                 return Response({"error": f"Board '{board_name}' not found."}, status=status.HTTP_404_NOT_FOUND)
 
-            # Construct the message content with signed nickname if set
             message_content = {
                 "subject": subject,
                 "body": body,
@@ -167,10 +167,12 @@ class PostMessageView(views.APIView):
                 "pubkey": user.pubkey
             }
             if user.nickname:
-                nick_hash = hashes.Hash(hashes.SHA256()).update(user.nickname.encode()).finalize()
+                nick_hash = hashes.Hash(hashes.SHA256())
+                nick_hash.update(user.nickname.encode())
+                digest = nick_hash.finalize()
                 private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
                 nick_sig = private_key.sign(
-                    nick_hash,
+                    digest,
                     PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH),
                     hashes.SHA256()
                 )
@@ -179,17 +181,11 @@ class PostMessageView(views.APIView):
 
             data = json.dumps(message_content).encode()
 
-            # Use BitTorrentService to create and publish torrent
             if service_manager.bittorrent_service:
                 magnet, torrent_file = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
-
-                # Log magnet for verification
                 logger.info(f"Message torrent created: magnet={magnet}")
-
-                # Share magnet with trusted peers via HTTP POST over Tor
                 self.share_magnet_with_trusts(magnet)
 
-                # Store locally (plain body, not JSON)
                 Message.objects.create(
                     board=board,
                     subject=subject,
@@ -209,10 +205,14 @@ class PostMessageView(views.APIView):
 
     def share_magnet_with_trusts(self, magnet):
         """Share magnet to trusted peers via HTTP POST over Tor with signature."""
-        proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}  # Tor proxy
-        # Load local BBS private key for signing (assume it's self.private_key from BitTorrentService)
+        proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         private_key = service_manager.bittorrent_service.private_key
-        local_pubkey = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first().pubkey  # Assume first with key is local
+        local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
+        if not local_instance:
+            logger.error("Could not find local instance with a private key to sign magnet sharing request.")
+            return
+            
+        local_pubkey = local_instance.pubkey
 
         hash_ctx = hashes.Hash(hashes.SHA256())
         hash_ctx.update(magnet.encode())
@@ -230,21 +230,24 @@ class PostMessageView(views.APIView):
             'sender_pubkey': local_pubkey
         }
 
-        trusted_urls = TrustedInstance.objects.filter(encrypted_private_key='').values_list('onion_url', flat=True)  # Exclude local
+        trusted_urls = TrustedInstance.objects.exclude(pk=local_instance.pk).values_list('onion_url', flat=True)
         for url in trusted_urls:
+            if not url: continue
             try:
-                response = requests.post(f"{url}/api/receive_magnet/", json=payload, proxies=proxies)
+                # Append the API endpoint to the base onion URL
+                target_url = url.strip('/') + '/api/receive_magnet/'
+                response = requests.post(target_url, json=payload, proxies=proxies, timeout=30)
                 if response.status_code == 200:
                     logger.info(f"Magnet shared to {url}")
                 else:
-                    logger.warning(f"Failed to share magnet to {url}: {response.status_code}")
+                    logger.warning(f"Failed to share magnet to {url}: {response.status_code} - {response.text}")
             except Exception as e:
                 logger.error(f"Error sharing magnet to {url}: {e}")
 
 class ReceiveMagnetView(views.APIView):
     permission_classes = [TrustedPeerPermission]
 
-    @csrf_exempt  # Add this to disable CSRF for API POST
+    @csrf_exempt
     def post(self, request, *args, **kwargs):
         magnet = request.data.get('magnet')
         if not magnet:
@@ -253,11 +256,19 @@ class ReceiveMagnetView(views.APIView):
         try:
             save_path = os.path.join(settings.BASE_DIR, 'data', 'sync')
             os.makedirs(save_path, exist_ok=True)
-            my_pubkey = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first().pubkey  # Local pubkey
-            decrypted = service_manager.bittorrent_service.download_and_decrypt(magnet, save_path, my_pubkey)
-            content = json.loads(decrypted.decode())
+            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
+            if not local_instance:
+                 return Response({"error": "Local instance not configured."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            my_pubkey = local_instance.pubkey
 
-            # Extract fields
+            # Download and decrypt the content
+            handle, decrypted_content = service_manager.bittorrent_service.download_and_decrypt(magnet, save_path, my_pubkey)
+            if not decrypted_content:
+                return Response({"error": "Failed to decrypt content, envelope may not be for this instance."}, status=status.HTTP_403_FORBIDDEN)
+            
+            content = json.loads(decrypted_content.decode())
+
+            # Process the received content
             subject = content.get('subject')
             body = content.get('body')
             pubkey = content.get('pubkey')
@@ -265,11 +276,9 @@ class ReceiveMagnetView(views.APIView):
             nickname = content.get('nickname')
             nick_sig = content.get('nick_sig')
 
-            # Get or create board
-            board, _ = MessageBoard.objects.get_or_create(name=board_name)
+            board, _ = MessageBoard.objects.get_or_create(name=board_name, defaults={'description': 'Auto-created board'})
 
-            # Store the message (author=None for remote, use pubkey)
-            message = Message.objects.create(
+            Message.objects.create(
                 board=board,
                 subject=subject,
                 body=body,
@@ -297,9 +306,15 @@ class ReceiveMagnetView(views.APIView):
                 except Exception as e:
                     logger.warning(f"Failed to verify nickname sig for pubkey {pubkey[:12]}...: {e}")
 
+            # Re-envelope and re-seed for multi-hop propagation
+            new_magnet = service_manager.bittorrent_service.re_envelope_and_reseed(handle, save_path, my_pubkey)
+            if new_magnet:
+                logger.info(f"Re-enveloped and re-seeding torrent. New magnet: {new_magnet}")
+                self.share_magnet_with_trusts(new_magnet)
+            
             return Response({"status": "Magnet received and processed."}, status=status.HTTP_200_OK)
         except Exception as e:
-            logger.error(f"Failed to process magnet: {e}")
+            logger.error(f"Failed to process magnet: {e}", exc_info=True)
             return Response({"error": "Failed to process magnet."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class IgnorePubkeyView(views.APIView):
@@ -309,7 +324,7 @@ class IgnorePubkeyView(views.APIView):
         pubkey = request.data.get('pubkey')
         if not pubkey:
             return Response({"error": "Pubkey to ignore is required."}, status=status.HTTP_400_BAD_REQUEST)
-        IgnoredPubkey.objects.create(user=request.user, pubkey=pubkey)
+        IgnoredPubkey.objects.get_or_create(user=request.user, pubkey=pubkey)
         return Response({"status": "Pubkey ignored."}, status=status.HTTP_200_OK)
 
 class BanPubkeyView(views.APIView):
@@ -317,7 +332,115 @@ class BanPubkeyView(views.APIView):
 
     def post(self, request, *args, **kwargs):
         pubkey = request.data.get('pubkey')
+        is_temporary = request.data.get('is_temporary', False)
+        duration_hours = request.data.get('duration_hours')
+
         if not pubkey:
             return Response({"error": "Pubkey to ban is required."}, status=status.HTTP_400_BAD_REQUEST)
-        BannedPubkey.objects.create(pubkey=pubkey)
-        return Response({"status": "Pubkey banned."}, status=status.HTTP_200_OK)
+        
+        expires_at = None
+        if is_temporary:
+            if not duration_hours:
+                return Response({"error": "Duration in hours is required for a temporary ban."}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                expires_at = timezone.now() + timedelta(hours=int(duration_hours))
+            except (ValueError, TypeError):
+                return Response({"error": "Invalid duration format."}, status=status.HTTP_400_BAD_REQUEST)
+
+        ban, created = BannedPubkey.objects.update_or_create(
+            pubkey=pubkey,
+            defaults={
+                'is_temporary': is_temporary,
+                'expires_at': expires_at
+            }
+        )
+        status_msg = "Pubkey permanently banned."
+        if is_temporary:
+            status_msg = f"Pubkey temporarily banned until {expires_at.strftime('%Y-%m-%d %H:%M:%S %Z')}."
+        
+        return Response({"status": status_msg}, status=status.HTTP_200_OK)
+
+class RequestContentExtensionView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        content_id = request.data.get('content_id')
+        content_type = request.data.get('content_type')
+        
+        if not all([content_id, content_type]):
+            return Response({"error": "content_id and content_type are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            model = apps.get_model('core', content_type.capitalize())
+            content_obj = model.objects.get(pk=content_id, author=request.user)
+        except (LookupError, model.DoesNotExist):
+            return Response({"error": "Invalid content_type or content not found/not owned by user."}, status=status.HTTP_404_NOT_FOUND)
+
+        ext_request, created = ContentExtensionRequest.objects.get_or_create(
+            content_id=content_id,
+            user=request.user,
+            defaults={'content_type': content_type}
+        )
+
+        if not created and ext_request.status in ['pending', 'approved']:
+             return Response({"status": "An extension request is already pending or has been approved."}, status=status.HTTP_200_OK)
+        
+        ext_request.status = 'pending'
+        ext_request.save()
+        
+        return Response(ContentExtensionRequestSerializer(ext_request).data, status=status.HTTP_201_CREATED)
+
+class ReviewContentExtensionView(views.APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, pk, *args, **kwargs):
+        try:
+            ext_request = ContentExtensionRequest.objects.get(pk=pk, status='pending')
+        except ContentExtensionRequest.DoesNotExist:
+            return Response({"error": "Request not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
+
+        action = request.data.get('action') # 'approve' or 'deny'
+        if action not in ['approve', 'deny']:
+            return Response({"error": "Action must be 'approve' or 'deny'."}, status=status.HTTP_400_BAD_REQUEST)
+
+        ext_request.status = f"{action}d"
+        ext_request.reviewed_by = request.user
+        ext_request.reviewed_at = timezone.now()
+        
+        if action == 'approve':
+            try:
+                model = apps.get_model('core', ext_request.content_type.capitalize())
+                content_obj = model.objects.get(pk=ext_request.content_id)
+                content_obj.expires_at += timedelta(days=30)
+                content_obj.save()
+            except (LookupError, model.DoesNotExist):
+                ext_request.status = 'denied'
+                logger.error(f"Could not find content {ext_request.content_id} to approve extension.")
+
+        ext_request.save()
+        return Response(ContentExtensionRequestSerializer(ext_request).data, status=status.HTTP_200_OK)
+
+class UnpinContentView(views.APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, *args, **kwargs):
+        content_id = request.data.get('content_id')
+        content_type = request.data.get('content_type')
+
+        if not all([content_id, content_type]):
+            return Response({"error": "content_id and content_type are required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            model = apps.get_model('core', content_type.capitalize())
+            content_obj = model.objects.get(pk=content_id)
+        except (LookupError, model.DoesNotExist):
+            return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if content_obj.pinned_by and content_obj.pinned_by.is_staff and not request.user.is_staff:
+             return Response({"error": "Moderators cannot unpin content pinned by an Admin."}, status=status.HTTP_403_FORBIDDEN)
+
+        content_obj.is_pinned = False
+        content_obj.pinned_by = None
+        content_obj.save()
+
+        return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)

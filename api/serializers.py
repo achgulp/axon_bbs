@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from core.models import MessageBoard, Message, Alias, User
+from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
 import os
@@ -83,8 +83,10 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_author_display(self, obj):
         if obj.author:
+            # Local users can have nicknames
             return obj.author.nickname if obj.author.nickname else obj.author.username
         elif obj.pubkey:
+            # Remote users identified by pubkey, check for a verified Alias
             alias = Alias.objects.filter(pubkey=obj.pubkey, verified=True).first()
             if alias:
                 # Check for nickname conflicts with other aliases or local users
@@ -95,6 +97,16 @@ class MessageSerializer(serializers.ModelSerializer):
                     return f"{alias.nickname} {short_id}"
                 return alias.nickname
             else:
+                # Fallback for un-aliased remote users
                 short_id = generate_short_id(obj.pubkey)
                 return f"Moo {short_id}"
         return 'Anonymous'
+
+class ContentExtensionRequestSerializer(serializers.ModelSerializer):
+    user = serializers.StringRelatedField()
+    reviewed_by = serializers.StringRelatedField()
+
+    class Meta:
+        model = ContentExtensionRequest
+        fields = ('id', 'content_id', 'content_type', 'user', 'request_date', 'status', 'reviewed_by', 'reviewed_at')
+        read_only_fields = ('id', 'user', 'request_date', 'status', 'reviewed_by', 'reviewed_at')
