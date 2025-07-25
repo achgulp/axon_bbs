@@ -32,12 +32,12 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
 ]
 
 ROOT_URLCONF = 'axon_project.urls'
@@ -99,6 +99,15 @@ AUTH_USER_MODEL = 'core.User'
 # --- CORS Configuration ---
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+]
+CORS_ALLOW_CREDENTIALS = True  # Add this to allow cookies/session with CORS
+
+# --- CSRF Trusted Origins ---
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://192.168.58.173:3000',
+    'http://*.onion',
 ]
 
 # --- REST Framework Configuration ---

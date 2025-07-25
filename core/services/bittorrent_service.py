@@ -247,6 +247,7 @@ class BitTorrentService:
             chunk_hash_ctx = hashes.Hash(hashes.SHA256())
             chunk_hash_ctx.update(enc_chunk)
             chunk_hash = chunk_hash_ctx.finalize()
+            # sender_pub = ...  # Load from trusted or metadata
             # sender_pub.verify(base64.b64decode(signatures[i]), chunk_hash, ...)
 
             decrypted_chunks.append(dec_chunk)

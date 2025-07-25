@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 import json
 import base64
 import requests  # Added for sharing magnets via HTTP over Tor
+from django.views.decorators.csrf import csrf_exempt
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer
 from .permissions import TrustedPeerPermission
@@ -136,6 +137,7 @@ class MessageListView(generics.ListAPIView):
 class PostMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @csrf_exempt  # Add this to disable CSRF for API POST
     def post(self, request, *args, **kwargs):
         user = request.user
         subject = request.data.get('subject')
@@ -242,6 +244,7 @@ class PostMessageView(views.APIView):
 class ReceiveMagnetView(views.APIView):
     permission_classes = [TrustedPeerPermission]
 
+    @csrf_exempt  # Add this to disable CSRF for API POST
     def post(self, request, *args, **kwargs):
         magnet = request.data.get('magnet')
         if not magnet:
