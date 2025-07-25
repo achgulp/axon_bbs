@@ -1,13 +1,14 @@
 # axon_bbs/api/views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
+from django.http import HttpResponse, Http404
 from django.contrib.auth import get_user_model
 from django.conf import settings
 import os
 import logging
 import asyncio
 import threading
-import traceback # Import traceback for detailed error logging
+import traceback
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
@@ -19,6 +20,7 @@ from django.utils.decorators import method_decorator
 from datetime import timedelta
 from django.utils import timezone
 from django.apps import apps
+import libtorrent as lt
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer
 from .permissions import TrustedPeerPermission
@@ -147,7 +149,7 @@ class PostMessageView(views.APIView):
                 message_content['nick_sig'] = base64.b64encode(nick_sig).decode()
             data = json.dumps(message_content).encode()
             if service_manager.bittorrent_service:
-                magnet, torrent_file = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
+                magnet, torrent_file_path = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
                 logger.info(f"Message torrent created: magnet={magnet}")
                 thread = threading.Thread(target=self.share_magnet_with_trusts, args=(magnet,))
                 thread.daemon = True
@@ -170,7 +172,6 @@ class PostMessageView(views.APIView):
             logger.error("BACKGROUND: Could not find local instance or its private key to sign magnet sharing request.")
             return
         local_pubkey = local_instance.pubkey
-        local_p2p_address = local_instance.p2p_onion_address
         
         hash_ctx = hashes.Hash(hashes.SHA256())
         hash_ctx.update(magnet.encode())
@@ -183,7 +184,6 @@ class PostMessageView(views.APIView):
             'magnet': magnet, 
             'signature': signature_b64, 
             'sender_pubkey': local_pubkey,
-            'sender_p2p_address': local_p2p_address
         }
         
         trusted_peers = TrustedInstance.objects.exclude(pk=local_instance.pk)
@@ -197,7 +197,7 @@ class PostMessageView(views.APIView):
 
             try:
                 target_url = url.strip('/') + '/api/receive_magnet/'
-                response = requests.post(target_url, json=payload, proxies=proxies, timeout=30)
+                response = requests.post(target_url, json=payload, proxies=proxies, timeout=60)
                 if response.status_code == 200:
                     logger.info(f"BACKGROUND: Magnet shared to {url}")
                 else:
@@ -212,7 +212,6 @@ class ReceiveMagnetView(views.APIView):
 
     def post(self, request, *args, **kwargs):
         magnet = request.data.get('magnet')
-        peer_p2p_address = request.data.get('sender_p2p_address')
 
         if not magnet:
             return Response({"error": "Magnet required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -225,7 +224,7 @@ class ReceiveMagnetView(views.APIView):
             my_pubkey = local_instance.pubkey
             
             handle, decrypted_content = service_manager.bittorrent_service.download_and_decrypt(
-                magnet, save_path, my_pubkey, peer_address=peer_p2p_address
+                magnet, save_path, my_pubkey
             )
             
             if not decrypted_content:
@@ -256,12 +255,10 @@ class ReceiveMagnetView(views.APIView):
                     logger.info(f"Verified and stored alias for pubkey {pubkey[:12]}...: {nickname}")
                 except Exception as e:
                     logger.warning(f"Failed to verify nickname sig for pubkey {pubkey[:12]}...: {e}")
-            new_magnet = service_manager.bittorrent_service.re_envelope_and_reseed(handle, save_path, my_pubkey)
-            if new_magnet:
-                logger.info(f"Re-enveloped and re-seeding torrent. New magnet: {new_magnet}")
-                thread = threading.Thread(target=PostMessageView.share_magnet_with_trusts, args=(self, new_magnet,))
-                thread.daemon = True
-                thread.start()
+            
+            # re_envelope_and_reseed is a future enhancement for multi-hop, not strictly needed for this to work
+            # new_magnet = service_manager.bittorrent_service.re_envelope_and_reseed(handle, save_path, my_pubkey)
+
             return Response({"status": "Magnet received and processed."}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Failed to process magnet: {e}", exc_info=True)
@@ -369,3 +366,34 @@ class UnpinContentView(views.APIView):
         content_obj.pinned_by = None
         content_obj.save()
         return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)
+
+class TorrentFileView(views.APIView):
+    """
+    Serves the actual encrypted data file for a given torrent info_hash.
+    This enables web seeding between trusted peers over Tor.
+    """
+    permission_classes = [permissions.AllowAny] # Security is handled by filename obscurity
+
+    def get(self, request, info_hash, *args, **kwargs):
+        try:
+            # This logic is simplified; a real implementation would need a robust
+            # way to map info_hash back to a file path.
+            temp_dir = os.path.join(settings.BASE_DIR, 'data', 'temp_torrents')
+            # This assumes a naming convention we establish in the bittorrent_service
+            file_path = None
+            for f in os.listdir(temp_dir):
+                if info_hash in f: # Simple substring match
+                    file_path = os.path.join(temp_dir, f)
+                    break
+            
+            if not file_path or not os.path.exists(file_path):
+                raise Http404("Torrent data file not found on disk.")
+
+            # Serve the file
+            with open(file_path, 'rb') as f:
+                response = HttpResponse(f.read(), content_type='application/octet-stream')
+                response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
+                return response
+        except Exception as e:
+            logger.error(f"Error serving torrent file for hash {info_hash}: {e}")
+            raise Http404("Could not serve torrent file.")
