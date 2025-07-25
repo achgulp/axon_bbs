@@ -5,7 +5,7 @@ import base64
 import json
 import logging
 import os
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -61,27 +61,35 @@ class BitTorrentService:
             # Fallback: Look for any instance with encrypted_private_key (assume single local)
             local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
         if local_instance and local_instance.encrypted_private_key:
-            private_pem = f.decrypt(local_instance.encrypted_private_key.encode()).decode()
-            return load_pem_private_key(private_pem.encode(), password=None)
-        else:
-            # Generate new if not exist (like admin action)
-            private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-            public_key = private_key.public_key().public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
-            ).decode('utf-8')
-            private_pem = private_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption()
-            ).decode('utf-8')
-            encrypted_private = f.encrypt(private_pem.encode()).decode()
+            try:
+                private_pem = f.decrypt(local_instance.encrypted_private_key.encode()).decode()
+                return load_pem_private_key(private_pem.encode(), password=None)
+            except InvalidToken as e:
+                logger.warning(f"Invalid decryption for encrypted_private_key - regenerating keys: {e}")
+                # Fall through to generation below
+        # Generate new if not exist or invalid
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        public_key = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8')
+        private_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ).decode('utf-8')
+        encrypted_private = f.encrypt(private_pem.encode()).decode()
+        if not local_instance:
             local_instance = TrustedInstance.objects.create(
                 onion_url=f"http://{self.local_onion}:6881" if self.local_onion else "",
                 pubkey=public_key,
                 encrypted_private_key=encrypted_private
             )
-            return private_key
+        else:
+            local_instance.pubkey = public_key
+            local_instance.encrypted_private_key = encrypted_private
+            local_instance.save()
+        return private_key
 
     def add_trusted_peers(self):
         trusted_onions = TrustedInstance.objects.filter(encrypted_private_key='').values_list('onion_url', flat=True)  # Exclude local (assumed to have private key)

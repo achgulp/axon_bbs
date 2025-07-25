@@ -5,6 +5,7 @@ from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 import base64
 from django.conf import settings
 from django.http import HttpResponse

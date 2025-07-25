@@ -1,8 +1,10 @@
 # axon_bbs/axon_project/settings.py
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-a#c884w!$z#%q)t_f$z&!#8+@58!#n4t!#c8+q)t_f$z&!#')
 
