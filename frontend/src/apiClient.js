@@ -7,7 +7,7 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true,  // Send cookies for session
+  withCredentials: true, // Send cookies for session
 });
 
 apiClient.interceptors.request.use(
@@ -15,6 +15,8 @@ apiClient.interceptors.request.use(
     const token = localStorage.getItem('token');
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      console.warn('No token found in localStorage');
     }
     return config;
   },
