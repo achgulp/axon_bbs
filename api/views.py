@@ -6,6 +6,7 @@ from django.conf import settings
 import os
 import logging
 import asyncio
+import threading # Import the threading module
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
@@ -184,7 +185,11 @@ class PostMessageView(views.APIView):
             if service_manager.bittorrent_service:
                 magnet, torrent_file = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
                 logger.info(f"Message torrent created: magnet={magnet}")
-                self.share_magnet_with_trusts(magnet)
+
+                # Run sharing in a background thread to avoid blocking the user response
+                thread = threading.Thread(target=self.share_magnet_with_trusts, args=(magnet,))
+                thread.daemon = True
+                thread.start()
 
                 Message.objects.create(
                     board=board,
@@ -193,7 +198,8 @@ class PostMessageView(views.APIView):
                     author=user,
                     pubkey=user.pubkey,
                 )
-
+                
+                # Return success immediately
                 return Response({"status": "message_published", "magnet": magnet}, status=status.HTTP_200_OK)
             else:
                 logger.error("Cannot publish message, BitTorrentService is not available.")
@@ -211,7 +217,7 @@ class PostMessageView(views.APIView):
         
         local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
         if not private_key or not local_instance:
-            logger.error("Could not find local instance or its private key to sign magnet sharing request.")
+            logger.error("BACKGROUND: Could not find local instance or its private key to sign magnet sharing request.")
             return
             
         local_pubkey = local_instance.pubkey
@@ -236,15 +242,14 @@ class PostMessageView(views.APIView):
         for url in trusted_urls:
             if not url: continue
             try:
-                # Append the API endpoint to the base onion URL
                 target_url = url.strip('/') + '/api/receive_magnet/'
                 response = requests.post(target_url, json=payload, proxies=proxies, timeout=30)
                 if response.status_code == 200:
-                    logger.info(f"Magnet shared to {url}")
+                    logger.info(f"BACKGROUND: Magnet shared to {url}")
                 else:
-                    logger.warning(f"Failed to share magnet to {url}: {response.status_code} - {response.text}")
+                    logger.warning(f"BACKGROUND: Failed to share magnet to {url}: {response.status_code} - {response.text}")
             except Exception as e:
-                logger.error(f"Error sharing magnet to {url}: {e}")
+                logger.error(f"BACKGROUND: Error sharing magnet to {url}: {e}")
 
 class ReceiveMagnetView(views.APIView):
     permission_classes = [TrustedPeerPermission]
@@ -312,7 +317,10 @@ class ReceiveMagnetView(views.APIView):
             new_magnet = service_manager.bittorrent_service.re_envelope_and_reseed(handle, save_path, my_pubkey)
             if new_magnet:
                 logger.info(f"Re-enveloped and re-seeding torrent. New magnet: {new_magnet}")
-                self.share_magnet_with_trusts(new_magnet)
+                # Create a new background thread for re-sharing to avoid long-running requests
+                thread = threading.Thread(target=self.share_magnet_with_trusts, args=(new_magnet,))
+                thread.daemon = True
+                thread.start()
             
             return Response({"status": "Magnet received and processed."}, status=status.HTTP_200_OK)
         except Exception as e:
