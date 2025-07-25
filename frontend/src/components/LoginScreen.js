@@ -15,6 +15,7 @@ const LoginScreen = ({ onLogin, onNavigateToRegister }) => {
         username,
         password,
       });
+      localStorage.setItem('token', response.data.access);  // Store the access token for JWT
       onLogin(response.data.access);
     } catch (err) {
       setError('Invalid username or password.');
@@ -74,4 +75,3 @@ const LoginScreen = ({ onLogin, onNavigateToRegister }) => {
 };
 
 export default LoginScreen;
-
