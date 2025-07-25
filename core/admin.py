@@ -48,13 +48,11 @@ class ContentExtensionRequestAdmin(admin.ModelAdmin):
 
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
-    # --- CHANGE: Updated field names to match the new model ---
     list_display = ('pubkey', 'web_ui_onion_url', 'p2p_onion_address', 'added_at')
-    # --- END CHANGE ---
     actions = ['generate_keys', 'generate_test_script']
 
     def generate_keys(self, request, queryset):
-        key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])  # Derive Fernet key
+        key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
         f = Fernet(key)
 
         for instance in queryset:
@@ -87,7 +85,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
         instance = queryset.first()
         test_magnet = "magnet:?xt=urn:btih:testkeyverification&dn=keytest"
 
-        # Assume private key decryption for signing (in real, use load_bbs_private_key logic)
         key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
         f = Fernet(key)
         if instance.encrypted_private_key:
@@ -103,14 +100,14 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             )
             signature_b64 = base64.b64encode(signature).decode()
         else:
-            signature_b64 = "NO_PRIVATE_KEY"  # Placeholder if no key
+            signature_b64 = "NO_PRIVATE_KEY"
 
         context = {
             'public_pem': instance.pubkey,
             'test_magnet': test_magnet,
             'signature_b64': signature_b64,
         }
-        script_content = render_to_string('admin/test_key_script.txt', context)  # Use a template for the script
+        script_content = render_to_string('admin/test_key_script.txt', context)
 
         response = HttpResponse(script_content, content_type='text/plain')
         response['Content-Disposition'] = 'attachment; filename="test_keys.py"'
