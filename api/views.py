@@ -13,7 +13,10 @@ from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 import json
 import base64
 import requests
+# --- CHANGE: Import decorators for the class-based view ---
 from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+# --- END CHANGE ---
 from datetime import timedelta
 from django.utils import timezone
 from django.apps import apps
@@ -141,7 +144,6 @@ class MessageListView(generics.ListAPIView):
 class PostMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    @csrf_exempt
     def post(self, request, *args, **kwargs):
         user = request.user
         subject = request.data.get('subject')
@@ -240,11 +242,10 @@ class PostMessageView(views.APIView):
         for url in trusted_urls:
             if not url: continue
             
-            # --- CHANGE: Conditionally use the proxy only for .onion addresses ---
+            # Conditionally use the proxy only for .onion addresses
             proxies = None
             if '.onion' in url:
                 proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-            # --- END CHANGE ---
 
             try:
                 target_url = url.strip('/') + '/api/receive_magnet/'
@@ -256,10 +257,12 @@ class PostMessageView(views.APIView):
             except Exception as e:
                 logger.error(f"BACKGROUND: Error sharing magnet to {url}: {e}")
 
+# --- CHANGE: Apply csrf_exempt to the entire class for robustness ---
+@method_decorator(csrf_exempt, name='dispatch')
 class ReceiveMagnetView(views.APIView):
+# --- END CHANGE ---
     permission_classes = [TrustedPeerPermission]
 
-    @csrf_exempt
     def post(self, request, *args, **kwargs):
         magnet = request.data.get('magnet')
         if not magnet:
