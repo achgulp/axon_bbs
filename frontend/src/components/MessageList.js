@@ -44,7 +44,6 @@ const UnlockForm = ({ onUnlock, onCancel }) => {
   );
 };
 
-
 const MessageList = ({ board, onBack }) => {
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
@@ -62,7 +61,7 @@ const MessageList = ({ board, onBack }) => {
         subject: msg.subject,
         body: msg.body,
         author_display: msg.author_display,
-        postedAt: new Date(msg.created_at + 'Z').toLocaleString(),  // Assume UTC, add 'Z' for timezone
+        postedAt: new Date(msg.created_at + 'Z').toLocaleString(), // Assume UTC, add 'Z' for timezone
       }));
       setMessages(msgs);
     } catch (err) {
@@ -73,13 +72,13 @@ const MessageList = ({ board, onBack }) => {
   useEffect(() => {
     fetchMessages();
   }, [fetchMessages]);
-  
+
   const handlePostMessage = useCallback(async () => {
     setError('');
     try {
-      await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name });
+      const response = await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name });
       setSubject(''); setBody(''); setShowPostForm(false);
-      fetchMessages();  // Refetch messages after posting
+      fetchMessages(); // Refetch messages after posting
     } catch (err) {
       if (err.response && err.response.data.error === 'identity_locked') {
         setNeedsUnlock(true);
@@ -103,26 +102,39 @@ const MessageList = ({ board, onBack }) => {
       </div>
     );
   }
-  
+
   return (
     <div>
-      {needsUnlock && <UnlockForm onUnlock={() => { setNeedsUnlock(false); handlePostMessage(); }} onCancel={() => setNeedsUnlock(false)} />}
-      
+      {needsUnlock && <UnlockForm onUnlock={handlePostMessage} onCancel={() => setNeedsUnlock(false)} />}
       <div className="flex justify-between items-center mb-4">
         <Header text={board.name} />
         <div>
-             <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2">â�� Boards</button>
-             <button onClick={() => setShowPostForm(!showPostForm)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                {showPostForm ? 'Cancel' : 'New Post'}
-             </button>
+          <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2">â�� Boards</button>
+          <button onClick={() => setShowPostForm(!showPostForm)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+            {showPostForm ? 'Cancel' : 'New Post'}
+          </button>
         </div>
       </div>
 
       {showPostForm && (
         <div className="bg-gray-800 p-4 rounded mb-6 border border-gray-700">
           <form onSubmit={(e) => { e.preventDefault(); handlePostMessage(); }}>
-            <input type="text" placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <textarea placeholder="Your message..." value={body} onChange={(e) => setBody(e.target.value)} required rows="5" className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input
+              type="text"
+              placeholder="Subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              required
+              className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <textarea
+              placeholder="Your message..."
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              required
+              rows="5"
+              className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
             {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
             <div className="text-right">
               <button type="submit" className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Submit Post</button>
@@ -130,7 +142,7 @@ const MessageList = ({ board, onBack }) => {
           </form>
         </div>
       )}
-      
+
       <div className="bg-gray-800 rounded border border-gray-700">
         <table className="w-full text-left table-auto">
           <thead className="border-b border-gray-600">
@@ -142,7 +154,11 @@ const MessageList = ({ board, onBack }) => {
           </thead>
           <tbody>
             {messages.map(msg => (
-              <tr key={msg.id} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700 cursor-pointer" onClick={() => setSelectedMessage(msg)}>
+              <tr
+                key={msg.id}
+                className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700 cursor-pointer"
+                onClick={() => setSelectedMessage(msg)}
+              >
                 <td className="p-3 text-gray-200">{msg.subject}</td>
                 <td className="p-3 text-gray-400">{msg.author_display}</td>
                 <td className="p-3 text-gray-400">{msg.postedAt}</td>
@@ -150,7 +166,7 @@ const MessageList = ({ board, onBack }) => {
             ))}
           </tbody>
         </table>
-         {messages.length === 0 && <p className="text-gray-400 text-center p-4">No messages yet on this board...</p>}
+        {messages.length === 0 && <p className="text-gray-400 text-center p-4">No messages yet on this board...</p>}
       </div>
     </div>
   );
