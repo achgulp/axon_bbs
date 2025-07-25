@@ -1,19 +1,20 @@
 // axon_bbs/frontend/src/components/MessageList.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
-
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
+// --- UPDATED UNLOCKFORM COMPONENT ---
+// It now calls onUnlock which will handle closing the modal AND retrying the post.
 const UnlockForm = ({ onUnlock, onCancel }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-
+  
   const handleUnlock = async (e) => {
     e.preventDefault();
     setError('');
     try {
       await apiClient.post('/api/identity/unlock/', { password });
-      onUnlock();
+      onUnlock(); // Signal to the parent component that unlock was successful
     } catch (err) {
       setError('Unlock failed. Please check your password.');
     }
@@ -43,6 +44,7 @@ const UnlockForm = ({ onUnlock, onCancel }) => {
     </div>
   );
 };
+// --- END OF UPDATED COMPONENT ---
 
 const MessageList = ({ board, onBack }) => {
   const [messages, setMessages] = useState([]);
@@ -75,8 +77,13 @@ const MessageList = ({ board, onBack }) => {
 
   const handlePostMessage = useCallback(async () => {
     setError('');
+    // Guard against empty posts which cause the 400 error
+    if (!subject || !body) {
+      setError("Subject and body cannot be empty.");
+      return;
+    }
     try {
-      const response = await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name });
+      await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name });
       setSubject(''); setBody(''); setShowPostForm(false);
       fetchMessages(); // Refetch messages after posting
     } catch (err) {
@@ -88,11 +95,18 @@ const MessageList = ({ board, onBack }) => {
     }
   }, [subject, body, board.name, fetchMessages]);
 
+  // --- NEW FUNCTION TO HANDLE THE POST-UNLOCK LOGIC ---
+  const handleUnlockSuccess = () => {
+    setNeedsUnlock(false); // First, close the modal
+    handlePostMessage();   // Then, re-try the post
+  };
+  // --- END NEW FUNCTION ---
+
   if (selectedMessage) {
     return (
       <div>
         <button onClick={() => setSelectedMessage(null)} className="mb-4 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
-          â�� Back to {board.name}
+          ← Back to {board.name}
         </button>
         <div className="bg-gray-800 p-4 rounded border border-gray-700">
           <h3 className="text-xl font-bold text-white mb-1">{selectedMessage.subject}</h3>
@@ -105,11 +119,13 @@ const MessageList = ({ board, onBack }) => {
 
   return (
     <div>
-      {needsUnlock && <UnlockForm onUnlock={handlePostMessage} onCancel={() => setNeedsUnlock(false)} />}
+      {/* --- UPDATE: Pass the new handler to the UnlockForm --- */}
+      {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => setNeedsUnlock(false)} />}
+      
       <div className="flex justify-between items-center mb-4">
         <Header text={board.name} />
         <div>
-          <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2">â�� Boards</button>
+          <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2">← Boards</button>
           <button onClick={() => setShowPostForm(!showPostForm)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
             {showPostForm ? 'Cancel' : 'New Post'}
           </button>
