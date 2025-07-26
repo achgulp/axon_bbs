@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 
 from core.models import TrustedInstance, Message, MessageBoard
+from .encryption_utils import generate_checksum # Import the new function
 
 logger = logging.getLogger(__name__)
 
@@ -34,43 +35,30 @@ class SyncService:
             time.sleep(self.poll_interval)
 
     def _process_magnet(self, magnet, peer_pubkey):
-        """Helper to process a single magnet link."""
         from core.services.service_manager import service_manager
-        
         try:
             logger.info(f"Processing magnet: {magnet[:40]}...")
             handle, decrypted_content = service_manager.bittorrent_service.download_and_decrypt(
                 magnet, 'data/sync', peer_pubkey
             )
-            
             if decrypted_content:
                 content = json.loads(decrypted_content.decode())
                 board_name = content.get('board', 'general')
                 board, _ = MessageBoard.objects.get_or_create(name=board_name)
-                
                 if not Message.objects.filter(subject=content.get('subject'), pubkey=content.get('pubkey')).exists():
-                    Message.objects.create(
-                        board=board,
-                        subject=content.get('subject'),
-                        body=content.get('body'),
-                        pubkey=content.get('pubkey')
-                    )
+                    Message.objects.create(board=board, subject=content.get('subject'), body=content.get('body'), pubkey=content.get('pubkey'))
                     logger.info(f"Successfully synced new message: {content.get('subject')}")
                 else:
                     logger.info("Message already exists, skipping.")
         except Exception as e:
             logger.error(f"Failed to process magnet {magnet[:40]}: {e}", exc_info=True)
 
-
     def poll_peers(self):
         from core.services.service_manager import service_manager
-        
         peers = TrustedInstance.objects.filter(encrypted_private_key__exact='')
         if not peers.exists():
             logger.info("Sync service found no peers to poll.")
             return
-
-        logger.info(f"Polling {peers.count()} trusted peer(s) for new messages...")
         
         local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
         if not local_instance:
@@ -83,37 +71,25 @@ class SyncService:
             return
             
         local_pubkey = local_instance.pubkey
+        # --- DEBUG LOGGING ---
+        local_pubkey_checksum = generate_checksum(local_pubkey)
+        logger.info(f"SYNC-OUT: Preparing to poll peers with local key checksum: {local_pubkey_checksum}")
+        # --- END DEBUG LOGGING ---
 
         for peer in peers:
             if not peer.web_ui_onion_url:
                 continue
-
             last_sync = peer.last_synced_at or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
-            
-            proxies = {}
-            if '.onion' in peer.web_ui_onion_url:
-                proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-
+            proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'} if '.onion' in peer.web_ui_onion_url else {}
             try:
                 timestamp = timezone.now().isoformat()
                 hasher = hashes.Hash(hashes.SHA256())
                 hasher.update(timestamp.encode())
                 digest = hasher.finalize()
-                
-                signature = private_key.sign(
-                    digest, PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH), hashes.SHA256()
-                )
+                signature = private_key.sign(digest, PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH), hashes.SHA256())
                 signature_b64 = base64.b64encode(signature).decode('utf-8')
-
-                # --- FIX: Remove newline characters from the public key for the header ---
                 header_pubkey = local_pubkey.replace("\n", "").replace("\r", "")
-
-                headers = {
-                    'X-Pubkey': header_pubkey,
-                    'X-Timestamp': timestamp,
-                    'X-Signature': signature_b64
-                }
-
+                headers = {'X-Pubkey': header_pubkey, 'X-Timestamp': timestamp, 'X-Signature': signature_b64}
                 target_url = f"{peer.web_ui_onion_url.strip('/')}/api/sync/?since={last_sync.isoformat()}"
                 
                 with requests.Session() as session:
@@ -128,11 +104,9 @@ class SyncService:
                         logger.info(f"Received {len(new_magnets)} new magnet(s) from peer {peer.web_ui_onion_url}")
                         for magnet in new_magnets:
                             self._process_magnet(magnet, peer.pubkey)
-
                     peer.last_synced_at = timezone.now()
                     peer.save()
                 else:
                     logger.warning(f"Failed to sync with peer {peer.web_ui_onion_url}: Status {response.status_code} Body: {response.text}")
-
             except requests.exceptions.RequestException as e:
                 logger.error(f"Network error while syncing with peer {peer.web_ui_onion_url}: {e}")
