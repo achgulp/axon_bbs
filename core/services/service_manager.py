@@ -3,6 +3,7 @@ import logging
 from django.conf import settings
 from .tor_service import TorService
 from .bittorrent_service import BitTorrentService
+from .sync_service import SyncService # Import the new service
 import asyncio
 import threading
 
@@ -15,23 +16,17 @@ class ServiceManager:
             cls._instance = super(ServiceManager, cls).__new__(cls)
             cls._instance.tor_service = None
             cls._instance.bittorrent_service = None
+            cls._instance.sync_service = None # Add the sync service instance
             cls._instance.loop = None
         return cls._instance
 
     def _run_async_services(self):
-        """Background thread for asyncio event loop."""
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-
-        # Schedule BitTorrent session (async-friendly)
         self.loop.create_task(self.bittorrent_service.start_session())
-
         self.loop.run_forever()
 
     def initialize_services(self):
-        """
-        Initializes core services.
-        """
         if not self.tor_service:
             print("--> Connecting to Tor...")
             tor_host = getattr(settings, "TOR_SOCKS_HOST", "127.0.0.1")
@@ -44,10 +39,16 @@ class ServiceManager:
 
         if not self.bittorrent_service:
             print("--> Initializing BitTorrent service...")
-            self.bittorrent_service = BitTorrentService(tor_service=self.tor_service)  # Pass Tor for proxying
-
+            self.bittorrent_service = BitTorrentService(tor_service=self.tor_service)
             thread = threading.Thread(target=self._run_async_services, daemon=True)
             thread.start()
             print("--> BitTorrent thread started.")
+
+        # Initialize and start the sync service
+        if not self.sync_service:
+            print("--> Initializing Peer Sync service...")
+            self.sync_service = SyncService()
+            self.sync_service.start()
+            print("--> Peer Sync thread started.")
 
 service_manager = ServiceManager()
