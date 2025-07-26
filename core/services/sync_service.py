@@ -7,8 +7,6 @@ from django.utils import timezone
 import json
 
 from core.models import TrustedInstance, Message, MessageBoard
-# --- FIX: Moved the import here to break the circular dependency ---
-from core.services.service_manager import service_manager
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +31,11 @@ class SyncService:
 
     def _process_magnet(self, magnet, peer_pubkey):
         """Helper to process a single magnet link."""
+        # --- FIX: Moved the import here to break the circular dependency ---
+        from core.services.service_manager import service_manager
+        
         try:
             logger.info(f"Processing magnet: {magnet[:40]}...")
-            # --- FIX: The arguments for download_and_decrypt were in the wrong order ---
             handle, decrypted_content = service_manager.bittorrent_service.download_and_decrypt(
                 magnet, 'data/sync', peer_pubkey
             )
@@ -61,7 +61,7 @@ class SyncService:
 
 
     def poll_peers(self):
-        # Poll everyone except ourself (the instance with a private key)
+        # Poll everyone except ourself (the instance with a blank/null private key)
         peers = TrustedInstance.objects.filter(encrypted_private_key__exact='')
         if not peers.exists():
             logger.info("Sync service found no peers to poll.")
