@@ -7,6 +7,8 @@ from django.utils import timezone
 import json
 
 from core.models import TrustedInstance, Message, MessageBoard
+# --- FIX: Moved the import here to break the circular dependency ---
+from core.services.service_manager import service_manager
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,8 @@ class SyncService:
         logger.info("Peer Sync Service started.")
 
     def _run(self):
-        time.sleep(10)
+        # Give the main app a moment to start up before the first poll
+        time.sleep(15)
         while True:
             try:
                 self.poll_peers()
@@ -29,12 +32,10 @@ class SyncService:
             time.sleep(self.poll_interval)
 
     def _process_magnet(self, magnet, peer_pubkey):
-        # --- FIX: Moved the import here to break the circular dependency ---
-        from .service_manager import service_manager
-        
+        """Helper to process a single magnet link."""
         try:
             logger.info(f"Processing magnet: {magnet[:40]}...")
-            # Note: The download_and_decrypt arguments were incorrect, this is now fixed.
+            # --- FIX: The arguments for download_and_decrypt were in the wrong order ---
             handle, decrypted_content = service_manager.bittorrent_service.download_and_decrypt(
                 magnet, 'data/sync', peer_pubkey
             )
@@ -44,6 +45,7 @@ class SyncService:
                 board_name = content.get('board', 'general')
                 board, _ = MessageBoard.objects.get_or_create(name=board_name)
                 
+                # Avoid creating duplicate messages
                 if not Message.objects.filter(subject=content.get('subject'), pubkey=content.get('pubkey')).exists():
                     Message.objects.create(
                         board=board,
@@ -59,8 +61,10 @@ class SyncService:
 
 
     def poll_peers(self):
-        peers = TrustedInstance.objects.filter(encrypted_private_key__isnull=True)
+        # Poll everyone except ourself (the instance with a private key)
+        peers = TrustedInstance.objects.filter(encrypted_private_key__exact='')
         if not peers.exists():
+            logger.info("Sync service found no peers to poll.")
             return
 
         logger.info(f"Polling {peers.count()} trusted peer(s) for new messages...")

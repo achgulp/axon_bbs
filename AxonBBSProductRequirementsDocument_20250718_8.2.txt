@@ -1,0 +1,146 @@
+Axon BBS - Consolidated Product Requirements Document
+Version: 8.2 (Updated)
+Date: July 26, 2025
+
+Overview
+Axon BBS is a modern, anonymous bulletin board system (BBS) inspired by the classic 90s BBS era. It leverages a custom BitTorrent-like P2P protocol for message and data distribution, ensuring censorship resistance and anonymity within its federated network. The system is built using Django for the backend and React for the frontend, with a focus on user privacy and security. Data is chunked, encrypted with random AES keys, and shared via digital envelopes, allowing for secure data exchange between trusted peers. 
+
+
+
+
+Key Updates Since Version 8.1
+Re-architected the P2P synchronization mechanism from a direct "push" notification to a more resilient "pull" (polling) model to improve reliability over the Tor network.
+
+Introduced a background SyncService on each node that periodically polls trusted peers for new content.
+
+Added a new /api/sync/ endpoint to serve magnet links for new content created since the peer's last check-in.
+
+Implemented a "Web Seed" fallback for P2P transfers over Tor. New torrents are embedded with the creator's .onion web URL, allowing peers to download the initial data via a standard HTTPS request over Tor, bypassing library-level bugs in direct P2P connections.
+
+Added a new /api/torrents/<info_hash>/ endpoint to facilitate the web seed data transfer.
+
+The TrustedInstance model was updated with a last_synced_at field to support the new polling mechanism.
+
+User Roles & Stories
+As a User...
+I want to generate a new identity keypair or import my existing one so I can control my account. 
+
+I want to unlock my identity with my password once per session, so I don't have to re-enter it for every action. 
+
+I want to send and receive end-to-end encrypted private messages. 
+
+I want to post on public message boards and read posts from others. 
+
+I want to upload and download files. 
+
+I want to stream large video and audio files without downloading the entire file first. 
+
+I want a personal ignore list to hide all content from specific users based on their public keys. 
+
+I want to request an extension on the lifespan of my content before it is deleted. 
+
+I want to receive notifications when my content is about to expire so I can request an extension. 
+
+I want to choose a nickname associated with my public key, which is signed and verifiable across BBSes. 
+
+As a Moderator...
+I want to be able to temporarily or permanently ban users from the local BBS instance. 
+
+I want to review and approve or deny user requests for extending the pin duration or lifespan of their content. 
+
+I want to be able to unpin any user's content, except for content pinned by an Admin. 
+
+As a SysOp (Admin)...
+I want all the powers of a Moderator. 
+
+I want to be able to override pinning rules for any content. 
+
+I want to configure trusted federated BBS peers via their public keys and 
+
+.onion URLs. 
+
+I want to set the default time durations for how long content is stored on my BBS. 
+
+I want to be able to unpin any content on the server. 
+
+Key Features
+Federated BBS Network (P2P Chunk Sync)
+
+Concept: Trusted Axon BBS nodes form a private, federated network to synchronize data. 
+
+
+Encryption: Data is chunked and encrypted with a random AES key. The AES key is then encrypted in a "digital envelope" for each trusted peer using their public key. A torrent is created from these encrypted chunks. 
+
+
+
+New Sync Mechanism (Pull & Web Seed):
+
+Local Post: When a user on Node A posts a message, it is saved locally. A torrent for the encrypted message data is created. This torrent file is embedded with the .onion web URL of Node A (and all other trusted peers) as a "web seed".
+
+Polling: A background SyncService on Node B periodically polls Node A's /api/sync/ endpoint, asking for any new content created since its last check.
+
+Magnet Transfer: Node A responds with a list of magnet links for new content.
+
+Download via Web Seed: Node B receives the magnet link and passes it to its BitTorrent client. The client sees the web seed URL for Node A, connects to it via its Tor proxy, and downloads the encrypted data from Node A's /api/torrents/ endpoint.
+
+
+Decryption: Node B finds and decrypts its envelope from the torrent metadata to get the AES key, then decrypts the downloaded content. 
+
+Technical Requirements & File Structure
+Technical Stack
+
+Backend: Django 5.0.6, Python 3.11+ 
+
+
+Frontend: React 18+, Tailwind CSS 
+
+
+P2P: libtorrent for BitTorrent protocol handling 
+
+
+Cryptography: cryptography for encryption/signing 
+
+Full Project File Structure
+axon_bbs/
+├── axon_project/
+│   ├── __init__.py
+│   ├── asgi.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+├── core/
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── migrations/
+│   ├── models.py
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── bittorrent_service.py
+│   │   ├── encryption_utils.py
+│   │   ├── identity_service.py
+│   │   ├── service_manager.py
+│   │   ├── sync_service.py  <-- NEW
+│   │   └── tor_service.py
+│   └── tests/
+├── api/
+│   ├── __init__.py
+│   ├── permissions.py
+│   ├── serializers.py
+│   ├── urls.py
+│   ├── views.py
+│   └── tests/
+├── handlers/
+│   ├── __init__.py
+│   ├── audio_modem_handler.py
+│   └── meshtastic_handler.py
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   └── package.json
+├── data/
+│   └── axon_bbs.sqlite3
+├── logs/
+│   └── bbs.log
+├── manage.py
+└── requirements.txt
