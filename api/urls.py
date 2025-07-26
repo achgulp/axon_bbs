@@ -14,7 +14,8 @@ from .views import (
     RequestContentExtensionView,
     ReviewContentExtensionView,
     UnpinContentView,
-    TorrentFileView, # Re-add the torrent file view
+    TorrentFileView,
+    SyncView, # Import the new sync view
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -47,4 +48,7 @@ urlpatterns = [
 
     # Endpoint for serving torrent files for web seeding
     path('torrents/<str:info_hash>/', TorrentFileView.as_view(), name='torrent-file'),
+
+    # Endpoint for peers to poll for new messages
+    path('sync/', SyncView.as_view(), name='sync'),
 ]

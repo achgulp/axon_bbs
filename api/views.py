@@ -143,59 +143,16 @@ class PostMessageView(views.APIView):
             data = json.dumps(message_content).encode()
 
             if service_manager.bittorrent_service:
-                magnet, torrent_file_path = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
-                logger.info(f"Message torrent created: magnet={magnet}")
-                thread = threading.Thread(target=self.share_magnet_with_trusts, args=(magnet,))
-                thread.daemon = True
-                thread.start()
+                magnet, _ = service_manager.bittorrent_service.create_torrent(data, f"msg_{board_name}")
+                logger.info(f"Message torrent created locally: magnet={magnet}")
+                
                 Message.objects.create(board=board, subject=subject, body=body, author=user, pubkey=user.pubkey)
-                return Response({"status": "message_published", "magnet": magnet}, status=status.HTTP_200_OK)
+                return Response({"status": "message_published_locally", "magnet": magnet}, status=status.HTTP_200_OK)
             else:
                 return Response({"error": "Cannot sync to network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
             logger.error(f"Failed to post message for {user.username}: {e}", exc_info=True)
             return Response({"error": "Could not post message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def share_magnet_with_trusts(self, magnet):
-        private_key = service_manager.bittorrent_service.get_private_key()
-        local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
-        if not private_key or not local_instance:
-            logger.error("BACKGROUND: Could not find local instance to sign magnet sharing request.")
-            return
-        local_pubkey = local_instance.pubkey
-        
-        hash_ctx = hashes.Hash(hashes.SHA256())
-        hash_ctx.update(magnet.encode())
-        digest = hash_ctx.finalize()
-        signature = private_key.sign(digest, PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH), hashes.SHA256())
-        signature_b64 = base64.b64encode(signature).decode('utf-8')
-        payload = {'magnet': magnet, 'signature': signature_b64, 'sender_pubkey': local_pubkey}
-        
-        trusted_peers = TrustedInstance.objects.exclude(pk=local_instance.pk)
-        for peer in trusted_peers:
-            url = peer.web_ui_onion_url
-            if not url: continue
-            
-            # --- FINAL FIX: Create an isolated session for each request in the thread ---
-            with requests.Session() as session:
-                proxies = {}
-                if '.onion' in url:
-                    proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-                
-                session.proxies = proxies
-                
-                try:
-                    target_url = url.strip('/') + '/api/receive_magnet/'
-                    response = session.post(target_url, json=payload, timeout=120)
-                    if response.status_code == 200:
-                        logger.info(f"BACKGROUND: Magnet shared to {url}")
-                    else:
-                        logger.warning(f"BACKGROUND: Failed to share magnet to {url}: {response.status_code} - {response.text}")
-                except requests.exceptions.RequestException:
-                    logger.error(f"BACKGROUND: A critical network error occurred while sharing magnet to {url}.")
-                    logger.error(traceback.format_exc())
-            # --- END FIX ---
-
 
 @method_decorator(csrf_exempt, name='dispatch')
 class ReceiveMagnetView(views.APIView):
@@ -320,6 +277,30 @@ class UnpinContentView(views.APIView):
         content_obj.pinned_by = None
         content_obj.save()
         return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class SyncView(views.APIView):
+    permission_classes = [TrustedPeerPermission]
+
+    def get(self, request, *args, **kwargs):
+        since_str = request.query_params.get('since')
+        if not since_str:
+            return Response({"error": "'since' timestamp is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            since_dt = timezone.datetime.fromisoformat(since_str)
+            new_messages = Message.objects.filter(created_at__gt=since_dt)
+            
+            magnets = []
+            for msg in new_messages:
+                message_content = {"subject": msg.subject, "body": msg.body, "board": msg.board.name, "pubkey": msg.pubkey}
+                data = json.dumps(message_content).encode()
+                magnet, _ = service_manager.bittorrent_service.create_torrent(data, f"msg_{msg.board.name}")
+                magnets.append(magnet)
+
+            return Response({"magnets": magnets}, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error during sync operation: {e}")
+            return Response({"error": "Failed to process sync request."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class TorrentFileView(views.APIView):
     permission_classes = [permissions.AllowAny]
