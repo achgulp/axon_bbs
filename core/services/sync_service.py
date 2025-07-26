@@ -5,6 +5,7 @@ import requests
 import logging
 from django.utils import timezone
 import json
+import datetime
 
 from core.models import TrustedInstance, Message, MessageBoard
 
@@ -72,7 +73,7 @@ class SyncService:
             if not peer.web_ui_onion_url:
                 continue
 
-            last_sync = peer.last_synced_at or timezone.datetime.min.replace(tzinfo=timezone.utc)
+            last_sync = peer.last_synced_at or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
             
             proxies = {}
             if '.onion' in peer.web_ui_onion_url:
