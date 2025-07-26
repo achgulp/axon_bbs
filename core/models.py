@@ -160,5 +160,11 @@ class TrustedInstance(models.Model):
     added_at = models.DateTimeField(auto_now_add=True)
     last_synced_at = models.DateTimeField(null=True, blank=True, help_text="The timestamp of the last successful sync with this peer.")
 
+    def save(self, *args, **kwargs):
+        # Automatically strip whitespace from pubkey to prevent copy-paste errors
+        if self.pubkey:
+            self.pubkey = self.pubkey.strip()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.web_ui_onion_url or self.pubkey
