@@ -36,7 +36,9 @@ class BitTorrentService:
             'proxy_peer_connections': True,
             'proxy_tracker_connections': True,
             'proxy_hostnames': True,
-            'anonymous_mode': True
+            'anonymous_mode': True,
+            # --- FINAL FIX: Add a user agent to the session ---
+            'user_agent': f'AxonBBS/{settings.APP_VERSION} libtorrent/{lt.version}',
         }
         self.session = lt.session(settings_pack)
 
@@ -85,7 +87,6 @@ class BitTorrentService:
             envelopes_list.append(envelopes)
         enc_data = b''.join(encrypted_chunks)
         
-        # We need a predictable filename to serve it via the web seed URL
         data_hash = hashes.Hash(hashes.SHA256())
         data_hash.update(enc_data)
         data_hash_hex = data_hash.finalize().hex()
@@ -97,17 +98,14 @@ class BitTorrentService:
         fs = lt.file_storage()
         lt.add_files(fs, enc_file_path)
         
-        # 1. Create the initial torrent object
         t = lt.create_torrent(fs)
         t.set_creator('AxonBBS v8.4.0')
         lt.set_piece_hashes(t, os.path.dirname(enc_file_path))
         
-        # 2. Generate the torrent file content first to get its hash
         torrent_file_for_hash = lt.bencode(t.generate())
         info = lt.torrent_info(torrent_file_for_hash)
         info_hash_hex = info.info_hashes().v1.to_bytes().hex()
         
-        # 3. Add all trusted peers' web URLs as web seeds
         trusted_peers = TrustedInstance.objects.all()
         for peer in trusted_peers:
             if peer.web_ui_onion_url:
@@ -115,14 +113,12 @@ class BitTorrentService:
                 t.add_url_seed(seed_url)
                 logger.info(f"Adding web seed: {seed_url}")
 
-        # 4. Add metadata and re-generate the final torrent file
         metadata = {'envelopes': envelopes_list, 'signatures': signatures}
         t.set_comment(json.dumps(metadata))
         
         final_torrent_file = lt.bencode(t.generate())
         magnet = lt.make_magnet_uri(lt.torrent_info(final_torrent_file))
         
-        # 5. Add the final torrent to the session
         params = lt.add_torrent_params()
         params.ti = lt.torrent_info(final_torrent_file)
         params.save_path = temp_dir
