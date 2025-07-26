@@ -22,7 +22,6 @@ class User(AbstractUser):
     pubkey = models.TextField(blank=True, null=True, help_text="User's public key (PEM).")
     nickname = models.CharField(max_length=50, unique=True, blank=True, null=True, help_text="User's chosen nickname.")
 
-    # --- FIX FOR CLASHING REVERSE ACCESSORS ---
     groups = models.ManyToManyField(
         'auth.Group',
         verbose_name='groups',
@@ -66,7 +65,6 @@ class BannedPubkey(models.Model):
 
     def save(self, *args, **kwargs):
         if self.is_temporary and not self.expires_at:
-            # Set a default temporary ban duration if not specified, e.g., 72 hours.
             self.expires_at = timezone.now() + timedelta(hours=72)
         if not self.is_temporary:
             self.expires_at = None
@@ -75,7 +73,7 @@ class BannedPubkey(models.Model):
 class Alias(models.Model):
     pubkey = models.TextField(unique=True)
     nickname = models.CharField(max_length=50)
-    verified = models.BooleanField(default=False)  # True if signature checked
+    verified = models.BooleanField(default=False)
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -109,7 +107,7 @@ class Message(Content):
     """Represents a single post within a MessageBoard."""
     board = models.ForeignKey(MessageBoard, on_delete=models.CASCADE, related_name='messages')
     subject = models.CharField(max_length=255)
-    body = models.TextField()  # JSON for threads
+    body = models.TextField()
     pubkey = models.TextField(blank=True, null=True)
 
     def __str__(self):
@@ -127,7 +125,7 @@ class PrivateMessage(Content):
     """Represents a private mail message between two users."""
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail')
     subject = models.CharField(max_length=255)
-    body = models.TextField()  # Encrypted JSON
+    body = models.TextField()
     is_read = models.BooleanField(default=False)
 
     def __str__(self):
@@ -142,7 +140,7 @@ class ContentExtensionRequest(models.Model):
     ]
     
     content_id = models.UUIDField()
-    content_type = models.CharField(max_length=20, default='') # e.g., 'message', 'uploadedfile'
+    content_type = models.CharField(max_length=20, default='')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     request_date = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
@@ -161,9 +159,10 @@ class TrustedInstance(models.Model):
     last_synced_at = models.DateTimeField(null=True, blank=True, help_text="The timestamp of the last successful sync with this peer.")
 
     def save(self, *args, **kwargs):
-        # Automatically strip whitespace from pubkey to prevent copy-paste errors
         if self.pubkey:
             self.pubkey = self.pubkey.strip()
+        if self.encrypted_private_key:
+            self.encrypted_private_key = self.encrypted_private_key.strip()
         super().save(*args, **kwargs)
 
     def __str__(self):
