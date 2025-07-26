@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 
 from core.models import TrustedInstance
-from core.services.encryption_utils import generate_checksum # Import the new function
+from core.services.encryption_utils import generate_checksum
 
 logger = logging.getLogger(__name__)
 
@@ -38,24 +38,19 @@ class TrustedPeerPermission(permissions.BasePermission):
         if not all([signature_b64, sender_pubkey_pem, data_to_verify]):
             return False
 
-        # --- DEBUG LOGGING ---
-        incoming_checksum = generate_checksum(sender_pubkey_pem)
-        logger.info(f"SYNC-IN: Received request with key checksum: {incoming_checksum}")
+        # --- FINAL FIX: The logic to find the peer is corrected here ---
+        # Clean the incoming key, just in case.
+        cleaned_sender_pubkey = sender_pubkey_pem.strip()
         
-        # Log all trusted key checksums from the database for comparison
-        trusted_keys = TrustedInstance.objects.values_list('pubkey', flat=True)
-        for db_key in trusted_keys:
-            db_checksum = generate_checksum(db_key)
-            logger.info(f"SYNC-IN: Checking against trusted key in DB with checksum: {db_checksum}")
-        # --- END DEBUG LOGGING ---
-
-        # The actual check
-        if not TrustedInstance.objects.filter(pubkey=sender_pubkey_pem.strip()).exists():
-            logger.warning(f"Rejected request from untrusted public key checksum: {incoming_checksum}")
+        # Now, check if a trusted instance with this exact public key exists.
+        if not TrustedInstance.objects.filter(pubkey=cleaned_sender_pubkey).exists():
+            incoming_checksum = generate_checksum(cleaned_sender_pubkey)
+            logger.warning(f"Rejected request from untrusted public key with checksum: {incoming_checksum}")
             return False
+        # --- END FIX ---
 
         try:
-            pubkey_obj = load_pem_public_key(sender_pubkey_pem.encode())
+            pubkey_obj = load_pem_public_key(cleaned_sender_pubkey.encode())
             signature = base64.b64decode(signature_b64)
             hasher = hashes.Hash(hashes.SHA256())
             hasher.update(data_to_verify)
@@ -63,5 +58,5 @@ class TrustedPeerPermission(permissions.BasePermission):
             pubkey_obj.verify(signature, digest, PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH), hashes.SHA256())
             return True
         except Exception as e:
-            logger.warning(f"Signature verification failed for {sender_pubkey_pem[:30]}: {str(e)}", exc_info=True)
+            logger.warning(f"Signature verification failed for {cleaned_sender_pubkey[:30]}: {str(e)}", exc_info=True)
             return False
