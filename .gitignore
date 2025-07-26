@@ -55,6 +55,7 @@ dist/
 *.bak
 *.swp
 *.tmp
+*.sh
 
 
 # Node modules and caches
