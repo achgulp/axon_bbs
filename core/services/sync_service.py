@@ -6,6 +6,10 @@ import logging
 from django.utils import timezone
 import json
 import datetime
+import base64
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 
 from core.models import TrustedInstance, Message, MessageBoard
 
@@ -21,7 +25,6 @@ class SyncService:
         logger.info("Peer Sync Service started.")
 
     def _run(self):
-        # Give the main app a moment to start up before the first poll
         time.sleep(15)
         while True:
             try:
@@ -46,7 +49,6 @@ class SyncService:
                 board_name = content.get('board', 'general')
                 board, _ = MessageBoard.objects.get_or_create(name=board_name)
                 
-                # Avoid creating duplicate messages
                 if not Message.objects.filter(subject=content.get('subject'), pubkey=content.get('pubkey')).exists():
                     Message.objects.create(
                         board=board,
@@ -62,13 +64,28 @@ class SyncService:
 
 
     def poll_peers(self):
-        # Poll everyone except ourself (the instance with a blank/null private key)
+        # Moved import here as well to ensure it's available for private key access
+        from core.services.service_manager import service_manager
+        
         peers = TrustedInstance.objects.filter(encrypted_private_key__exact='')
         if not peers.exists():
             logger.info("Sync service found no peers to poll.")
             return
 
         logger.info(f"Polling {peers.count()} trusted peer(s) for new messages...")
+        
+        local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
+        if not local_instance:
+            logger.warning("Cannot poll peers: local instance identity not found.")
+            return
+        
+        private_key = service_manager.bittorrent_service.get_private_key()
+        if not private_key:
+            logger.warning("Cannot poll peers: local private key not loaded.")
+            return
+            
+        local_pubkey = local_instance.pubkey
+
         for peer in peers:
             if not peer.web_ui_onion_url:
                 continue
@@ -80,10 +97,27 @@ class SyncService:
                 proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
 
             try:
+                timestamp = timezone.now().isoformat()
+                hasher = hashes.Hash(hashes.SHA256())
+                hasher.update(timestamp.encode())
+                digest = hasher.finalize()
+                
+                signature = private_key.sign(
+                    digest, PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH), hashes.SHA256()
+                )
+                signature_b64 = base64.b64encode(signature).decode('utf-8')
+
+                headers = {
+                    'X-Pubkey': local_pubkey,
+                    'X-Timestamp': timestamp,
+                    'X-Signature': signature_b64
+                }
+
                 target_url = f"{peer.web_ui_onion_url.strip('/')}/api/sync/?since={last_sync.isoformat()}"
                 
                 with requests.Session() as session:
                     session.proxies = proxies
+                    session.headers.update(headers)
                     response = session.get(target_url, timeout=120)
                 
                 if response.status_code == 200:
@@ -97,7 +131,7 @@ class SyncService:
                     peer.last_synced_at = timezone.now()
                     peer.save()
                 else:
-                    logger.warning(f"Failed to sync with peer {peer.web_ui_onion_url}: Status {response.status_code}")
+                    logger.warning(f"Failed to sync with peer {peer.web_ui_onion_url}: Status {response.status_code} Body: {response.text}")
 
             except requests.exceptions.RequestException as e:
                 logger.error(f"Network error while syncing with peer {peer.web_ui_onion_url}: {e}")
