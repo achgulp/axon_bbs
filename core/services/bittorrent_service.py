@@ -28,8 +28,7 @@ class BitTorrentService:
         
         settings_pack = {
             'listen_interfaces': '0.0.0.0:6881',
-            'enable_dht': True,
-            'dht_bootstrap_nodes': '', 
+            'enable_dht': False,
             'enable_lsd': False,
             'proxy_hostname': self.tor_service._socks_host,
             'proxy_port': self.tor_service._socks_port,
@@ -40,21 +39,6 @@ class BitTorrentService:
             'anonymous_mode': True
         }
         self.session = lt.session(settings_pack)
-        self.bootstrap_private_dht()
-
-    def bootstrap_private_dht(self):
-        try:
-            peers = TrustedInstance.objects.values_list('p2p_onion_address', flat=True)
-            for peer_addr in peers:
-                if peer_addr and ':' in peer_addr:
-                    try:
-                        host, port_str = peer_addr.split(':')
-                        self.session.add_dht_router(host, int(port_str))
-                        logger.info(f"Added trusted peer to DHT bootstrap: {host}:{port_str}")
-                    except (ValueError, TypeError):
-                        logger.warning(f"Invalid P2P address format for DHT bootstrap: {peer_addr}")
-        except OperationalError:
-            logger.warning("Could not bootstrap DHT, database may not be ready.")
 
     def get_private_key(self):
         if self._private_key is None:
@@ -74,22 +58,21 @@ class BitTorrentService:
         while True:
             alerts = self.session.pop_alerts()
             for a in alerts:
-                if isinstance(a, lt.dht_stats_alert):
-                    logger.info(f"DHT stats: {a.active_nodes} active nodes.")
-                else:
-                    logger.info(f"BitTorrent Alert: {a.message()} ({a.what()})")
+                logger.info(f"BitTorrent Alert: {a.message()} ({a.what()})")
             await asyncio.sleep(5)
 
     def create_torrent(self, data: bytes, file_name: str):
         private_key = self.get_private_key()
         if not private_key:
             raise Exception("Cannot create torrent: BBS private key is not loaded.")
+
         temp_dir = os.path.join(settings.BASE_DIR, 'data', 'temp_torrents')
         os.makedirs(temp_dir, exist_ok=True)
         
         chunks = self.chunk_data(data)
         encrypted_chunks, envelopes_list, signatures = [], [], []
         trusted_pubkeys = list(TrustedInstance.objects.values_list('pubkey', flat=True))
+
         for chunk in chunks:
             aes_key, enc_chunk = self.encrypt_chunk(chunk)
             envelopes = {pk: self.create_envelope(aes_key, pk) for pk in trusted_pubkeys if pk}
@@ -97,32 +80,51 @@ class BitTorrentService:
             chunk_hash_ctx.update(enc_chunk)
             chunk_hash = chunk_hash_ctx.finalize()
             sig = private_key.sign(chunk_hash, padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
-            
             signatures.append(base64.b64encode(sig).decode('utf-8'))
-            
             encrypted_chunks.append(enc_chunk)
             envelopes_list.append(envelopes)
-            
         enc_data = b''.join(encrypted_chunks)
-        enc_file_path = os.path.join(temp_dir, f"{file_name}_{int(time.time())}.enc")
+        
+        # We need a predictable filename to serve it via the web seed URL
+        data_hash = hashes.Hash(hashes.SHA256())
+        data_hash.update(enc_data)
+        data_hash_hex = data_hash.finalize().hex()
+        
+        enc_file_path = os.path.join(temp_dir, f"{data_hash_hex}.enc")
         with open(enc_file_path, 'wb') as f:
             f.write(enc_data)
 
         fs = lt.file_storage()
         lt.add_files(fs, enc_file_path)
-        t = lt.create_torrent(fs)
         
+        # 1. Create the initial torrent object
+        t = lt.create_torrent(fs)
         t.set_creator('AxonBBS v8.4.0')
         lt.set_piece_hashes(t, os.path.dirname(enc_file_path))
-        metadata = {'envelopes': envelopes_list, 'signatures': signatures}
         
+        # 2. Generate the torrent file content first to get its hash
+        torrent_file_for_hash = lt.bencode(t.generate())
+        info = lt.torrent_info(torrent_file_for_hash)
+        info_hash_hex = info.info_hashes().v1.to_bytes().hex()
+        
+        # 3. Add all trusted peers' web URLs as web seeds
+        trusted_peers = TrustedInstance.objects.all()
+        for peer in trusted_peers:
+            if peer.web_ui_onion_url:
+                seed_url = f"{peer.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex}/"
+                t.add_url_seed(seed_url)
+                logger.info(f"Adding web seed: {seed_url}")
+
+        # 4. Add metadata and re-generate the final torrent file
+        metadata = {'envelopes': envelopes_list, 'signatures': signatures}
         t.set_comment(json.dumps(metadata))
         
-        torrent_file = lt.bencode(t.generate())
-        magnet = lt.make_magnet_uri(lt.torrent_info(torrent_file))
+        final_torrent_file = lt.bencode(t.generate())
+        magnet = lt.make_magnet_uri(lt.torrent_info(final_torrent_file))
         
+        # 5. Add the final torrent to the session
         params = lt.add_torrent_params()
-        params.ti = lt.torrent_info(torrent_file)
+        params.ti = lt.torrent_info(final_torrent_file)
         params.save_path = temp_dir
         self.session.add_torrent(params)
 
@@ -134,14 +136,13 @@ class BitTorrentService:
         handle = self.session.add_torrent(params)
         private_key = self.get_private_key()
         
-        logger.info(f"Downloading torrent {handle.name()}. Waiting for DHT and peers...")
-        for _ in range(120):
+        logger.info(f"Downloading torrent {handle.name()}. Waiting for web seeds...")
+        for _ in range(120): # Wait up to 2 minutes
             s = handle.status()
             if s.is_seeding or s.progress == 1.0:
                 logger.info("Download complete.")
                 break
-            dht_nodes = self.session.status().dht_nodes
-            logger.debug(f"Status: {s.state}, Peers: {s.num_peers}, DHT Nodes: {dht_nodes}, Progress: {s.progress*100:.2f}%")
+            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds}")
             time.sleep(2)
         else:
             logger.warning(f"Torrent {handle.name()} did not complete download in time.")
