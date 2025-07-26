@@ -14,7 +14,7 @@ from .views import (
     RequestContentExtensionView,
     ReviewContentExtensionView,
     UnpinContentView,
-    TorrentFileView, # Import the new view
+    TorrentFileView, # Re-add the torrent file view
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -45,6 +45,6 @@ urlpatterns = [
     path('content/review-extension/<int:pk>/', ReviewContentExtensionView.as_view(), name='review-extension'),
     path('content/unpin/', UnpinContentView.as_view(), name='unpin-content'),
 
-    # New endpoint for serving torrent files for web seeding
+    # Endpoint for serving torrent files for web seeding
     path('torrents/<str:info_hash>/', TorrentFileView.as_view(), name='torrent-file'),
 ]
