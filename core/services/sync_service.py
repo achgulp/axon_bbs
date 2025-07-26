@@ -35,7 +35,6 @@ class SyncService:
 
     def _process_magnet(self, magnet, peer_pubkey):
         """Helper to process a single magnet link."""
-        # --- FIX: Moved the import here to break the circular dependency ---
         from core.services.service_manager import service_manager
         
         try:
@@ -64,7 +63,6 @@ class SyncService:
 
 
     def poll_peers(self):
-        # Moved import here as well to ensure it's available for private key access
         from core.services.service_manager import service_manager
         
         peers = TrustedInstance.objects.filter(encrypted_private_key__exact='')
@@ -107,8 +105,11 @@ class SyncService:
                 )
                 signature_b64 = base64.b64encode(signature).decode('utf-8')
 
+                # --- FIX: Remove newline characters from the public key for the header ---
+                header_pubkey = local_pubkey.replace("\n", "").replace("\r", "")
+
                 headers = {
-                    'X-Pubkey': local_pubkey,
+                    'X-Pubkey': header_pubkey,
                     'X-Timestamp': timestamp,
                     'X-Signature': signature_b64
                 }
