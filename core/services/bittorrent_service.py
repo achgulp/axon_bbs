@@ -17,6 +17,7 @@ from django.conf import settings
 from django.db import OperationalError
 
 from core.models import TrustedInstance
+from manage import APP_VERSION # Import APP_VERSION from manage.py
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,8 @@ class BitTorrentService:
             'proxy_tracker_connections': True,
             'proxy_hostnames': True,
             'anonymous_mode': True,
-            # --- FINAL FIX: Add a user agent to the session ---
-            'user_agent': f'AxonBBS/{settings.APP_VERSION} libtorrent/{lt.version}',
+            # Use the imported APP_VERSION
+            'user_agent': f'AxonBBS/{APP_VERSION} libtorrent/{lt.version}',
         }
         self.session = lt.session(settings_pack)
 
