@@ -50,40 +50,24 @@ class BitTorrentService:
     def get_private_key(self):
         if self._private_key is None:
             try:
-                key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
-                f = Fernet(key)
+                # This check might run before the DB is ready, so we need to be careful.
                 local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).exclude(encrypted_private_key='').first()
                 
                 if local_instance and local_instance.encrypted_private_key:
+                    key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
+                    f = Fernet(key)
                     private_pem = f.decrypt(local_instance.encrypted_private_key.encode()).decode()
                     self._private_key = load_pem_private_key(private_pem.encode(), password=None)
                     logger.info(f"Successfully loaded local instance key for instance ID {local_instance.id}.")
                 else:
-                    logger.warning("No local instance key found. Attempting to generate a new one.")
-                    blank_instance = TrustedInstance.objects.filter(pubkey__exact='', encrypted_private_key__exact='').first()
-                    if blank_instance:
-                        private_key_obj = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-                        public_key_pem = private_key_obj.public_key().public_bytes(
-                            encoding=serialization.Encoding.PEM,
-                            format=serialization.PublicFormat.SubjectPublicKeyInfo
-                        ).decode('utf-8')
-                        private_pem = private_key_obj.private_bytes(
-                            encoding=serialization.Encoding.PEM,
-                            format=serialization.PrivateFormat.PKCS8,
-                            encryption_algorithm=serialization.NoEncryption()
-                        ).decode('utf-8')
-                        
-                        encrypted_private = f.encrypt(private_pem.encode()).decode()
-                        
-                        blank_instance.pubkey = public_key_pem
-                        blank_instance.encrypted_private_key = encrypted_private
-                        blank_instance.save()
-                        
-                        self._private_key = private_key_obj
-                        logger.info(f"Successfully generated and saved new keys for instance ID {blank_instance.id}.")
-                    else:
-                        logger.error("No key found and no blank instance available to generate one.")
-                        return None
+                    # This part runs if no key is found.
+                    # It should have been triggered during startup priming.
+                    # If we reach here during normal operation, something is wrong.
+                    logger.warning("get_private_key() called but no key found in database.")
+                    return None
+            except OperationalError:
+                logger.warning("Database is not ready yet for key loading. Will retry on next call.")
+                return None
             except Exception as e:
                 logger.error(f"CRITICAL ERROR in get_private_key: {e}", exc_info=True)
                 return None
