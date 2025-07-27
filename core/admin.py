@@ -50,7 +50,8 @@ class ContentExtensionRequestAdmin(admin.ModelAdmin):
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
     list_display = ('web_ui_onion_url', 'p2p_onion_address', 'pubkey_checksum', 'added_at')
-    list_display_links = ('web_ui_onion_url',)
+    # --- FINAL FIX: Make the checksum the clickable link ---
+    list_display_links = ('pubkey_checksum',)
     readonly_fields = ('pubkey_checksum',)
 
     @admin.display(description='Pubkey Checksum')
