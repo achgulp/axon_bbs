@@ -4,6 +4,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 import base64
 import logging
 from datetime import datetime, timedelta
@@ -44,7 +45,16 @@ class TrustedPeerPermission(permissions.BasePermission):
         if not all([signature_b64, sender_pubkey_pem, data_to_verify]):
             return False
 
-        cleaned_sender_pubkey = sender_pubkey_pem.strip()
+        # Normalize the incoming public key by loading and re-serializing
+        try:
+            pubkey_obj = load_pem_public_key(sender_pubkey_pem.strip().encode())
+            cleaned_sender_pubkey = pubkey_obj.public_bytes(
+                encoding=Encoding.PEM,
+                format=PublicFormat.SubjectPublicKeyInfo
+            ).decode('utf-8').strip()
+        except Exception as e:
+            logger.warning(f"Failed to normalize incoming public key: {e}")
+            return False
         
         # --- FINAL FIX: Query for the specific peer key, excluding our own identity ---
         if not TrustedInstance.objects.filter(pubkey=cleaned_sender_pubkey).exclude(encrypted_private_key__isnull=False).exists():
