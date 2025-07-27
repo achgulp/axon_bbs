@@ -1,4 +1,4 @@
-# axon_bbs/core/models.py
+# Full path: axon_bbs/core/models.py
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
@@ -7,6 +7,7 @@ from django.utils import timezone
 from datetime import timedelta
 from django.core.exceptions import ValidationError
 import json
+from cryptography.hazmat.primitives import serialization
 
 def get_default_expires_at():
     """Returns a default expiration time 30 days from now."""
@@ -129,7 +130,32 @@ class PrivateMessage(Content):
     is_read = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"From {self.author if self.author else 'system'} to {self.recipient}: '{self.subject}'"
+        return f"'{self.subject}' to {self.recipient.username} from {self.author.username if self.author else 'system'}"
+
+class TrustedInstance(models.Model):
+    """Represents a trusted peer BBS instance."""
+    web_ui_onion_url = models.URLField(max_length=255, blank=True, null=True)
+    p2p_onion_address = models.CharField(max_length=56, blank=True, null=True)
+    pubkey = models.TextField(blank=True, null=True)
+    encrypted_private_key = models.TextField(blank=True, null=True)
+    added_at = models.DateTimeField(auto_now_add=True)
+    last_synced_at = models.DateTimeField(blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        if self.pubkey:
+            try:
+                # Normalize the public key by loading and re-serializing it
+                pubkey_obj = serialization.load_pem_public_key(self.pubkey.encode())
+                self.pubkey = pubkey_obj.public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                ).decode('utf-8').strip()  # Ensure no extra whitespace
+            except Exception as e:
+                raise ValidationError(f"Invalid public key format: {e}")
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.web_ui_onion_url or "Local Instance"
 
 class ContentExtensionRequest(models.Model):
     """Represents a user's request to extend the lifespan of their content."""
@@ -138,32 +164,17 @@ class ContentExtensionRequest(models.Model):
         ('approved', 'Approved'),
         ('denied', 'Denied'),
     ]
-    
+
     content_id = models.UUIDField()
-    content_type = models.CharField(max_length=20, default='')
+    content_type = models.CharField(max_length=50)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     request_date = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
-    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reviewed_requests')
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reviewed_extensions')
     reviewed_at = models.DateTimeField(null=True, blank=True)
 
-    def __str__(self):
-        return f"Extension request for content {self.content_id} by {self.user.username} ({self.status})"
-
-class TrustedInstance(models.Model):
-    pubkey = models.TextField(blank=True, unique=True)
-    web_ui_onion_url = models.URLField(blank=True, help_text="Full .onion URL for the peer's web interface (e.g., http://<hash>.onion)")
-    p2p_onion_address = models.CharField(max_length=255, blank=True, help_text="The peer's .onion address and port for BitTorrent (e.g. <hash>.onion:6881)")
-    encrypted_private_key = models.TextField(blank=True)
-    added_at = models.DateTimeField(auto_now_add=True)
-    last_synced_at = models.DateTimeField(null=True, blank=True, help_text="The timestamp of the last successful sync with this peer.")
-
-    def save(self, *args, **kwargs):
-        if self.pubkey:
-            self.pubkey = self.pubkey.strip()
-        if self.encrypted_private_key:
-            self.encrypted_private_key = self.encrypted_private_key.strip()
-        super().save(*args, **kwargs)
+    class Meta:
+        unique_together = ('content_id', 'user')
 
     def __str__(self):
-        return self.web_ui_onion_url or self.pubkey
+        return f"Extension Request for {self.content_type} {self.content_id} by {self.user.username}"
