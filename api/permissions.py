@@ -29,6 +29,7 @@ class TrustedPeerPermission(permissions.BasePermission):
             if sender_pubkey_pem_b64:
                 try:
                     sender_pubkey_pem = base64.b64decode(sender_pubkey_pem_b64).decode()
+                    logger.debug(f"Decoded raw sender_pubkey_pem (length: {len(sender_pubkey_pem)}): checksum {generate_checksum(sender_pubkey_pem)}")
                 except Exception as e:
                     logger.warning(f"Failed to base64 decode X-Pubkey: {e}")
                     return False
@@ -43,7 +44,12 @@ class TrustedPeerPermission(permissions.BasePermission):
             return False
 
         if not all([signature_b64, sender_pubkey_pem, data_to_verify]):
+            logger.warning("Missing required fields for permission check: signature, pubkey, or data_to_verify")
             return False
+
+        # Log raw incoming pubkey checksum
+        raw_checksum = generate_checksum(sender_pubkey_pem)
+        logger.debug(f"Incoming raw pubkey checksum: {raw_checksum}")
 
         # Normalize the incoming public key by loading and re-serializing
         try:
@@ -52,9 +58,16 @@ class TrustedPeerPermission(permissions.BasePermission):
                 encoding=Encoding.PEM,
                 format=PublicFormat.SubjectPublicKeyInfo
             ).decode('utf-8').strip()
+            normalized_checksum = generate_checksum(cleaned_sender_pubkey)
+            if raw_checksum != normalized_checksum:
+                logger.debug(f"Pubkey normalized; original checksum {raw_checksum} -> normalized {normalized_checksum}")
         except Exception as e:
             logger.warning(f"Failed to normalize incoming public key: {e}")
             return False
+        
+        # Log expected pubkeys from DB for comparison
+        expected_checksums = [generate_checksum(inst.pubkey) for inst in TrustedInstance.objects.exclude(encrypted_private_key__isnull=False) if inst.pubkey]
+        logger.debug(f"Expected trusted peer checksums: {', '.join(expected_checksums) or 'None'}")
         
         # --- FINAL FIX: Query for the specific peer key, excluding our own identity ---
         if not TrustedInstance.objects.filter(pubkey=cleaned_sender_pubkey).exclude(encrypted_private_key__isnull=False).exists():
@@ -70,6 +83,7 @@ class TrustedPeerPermission(permissions.BasePermission):
             hasher.update(data_to_verify)
             digest = hasher.finalize()
             pubkey_obj.verify(signature, digest, PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH), hashes.SHA256())
+            logger.debug(f"Signature verification successful for pubkey checksum: {generate_checksum(cleaned_sender_pubkey)}")
             return True
         except Exception as e:
             logger.warning(f"Signature verification failed for {cleaned_sender_pubkey[:30]}: {str(e)}", exc_info=True)

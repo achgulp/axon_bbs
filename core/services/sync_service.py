@@ -87,6 +87,8 @@ class SyncService:
         # --- FINAL DEBUG LOGGING ---
         local_key_checksum = generate_checksum(local_pubkey)
         logger.info(f"SYNC-OUT: Loaded local key for signing. Checksum: {local_key_checksum}")
+        # Log full local pubkey for debugging (sanitized)
+        logger.debug(f"Local pubkey (length: {len(local_pubkey)}): {local_pubkey[:50]}...{local_pubkey[-50:]}")
         # --- END DEBUG LOGGING ---
 
         for peer in peers:
@@ -112,6 +114,7 @@ class SyncService:
 
                 # Base64 encode the pubkey to avoid newline issues in headers
                 header_pubkey_b64 = base64.b64encode(local_pubkey.encode()).decode('utf-8')
+                logger.debug(f"Encoded pubkey_b64 for header (length: {len(header_pubkey_b64)}): {header_pubkey_b64[:50]}...{header_pubkey_b64[-50:]}")
 
                 headers = {
                     'X-Pubkey': header_pubkey_b64,
