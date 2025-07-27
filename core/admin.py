@@ -1,4 +1,4 @@
-# axon_bbs/core/admin.py
+# Full path: axon_bbs/core/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest
@@ -49,7 +49,7 @@ class ContentExtensionRequestAdmin(admin.ModelAdmin):
 
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
-    list_display = ('web_ui_onion_url', 'p2p_onion_address', 'pubkey_checksum', 'added_at')
+    list_display = ('web_ui_onion_url', 'pubkey_checksum', 'added_at')
     # --- FINAL FIX: Make the checksum the clickable link ---
     list_display_links = ('pubkey_checksum',)
     readonly_fields = ('pubkey_checksum',)

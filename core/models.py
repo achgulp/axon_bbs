@@ -135,7 +135,6 @@ class PrivateMessage(Content):
 class TrustedInstance(models.Model):
     """Represents a trusted peer BBS instance."""
     web_ui_onion_url = models.URLField(max_length=255, blank=True, null=True)
-    p2p_onion_address = models.CharField(max_length=56, blank=True, null=True)
     pubkey = models.TextField(blank=True, null=True)
     encrypted_private_key = models.TextField(blank=True, null=True)
     added_at = models.DateTimeField(auto_now_add=True)
