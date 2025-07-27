@@ -3,7 +3,7 @@ import logging
 from django.conf import settings
 from .tor_service import TorService
 from .bittorrent_service import BitTorrentService
-from .sync_service import SyncService # Import the new service
+from .sync_service import SyncService
 import asyncio
 import threading
 
@@ -16,7 +16,7 @@ class ServiceManager:
             cls._instance = super(ServiceManager, cls).__new__(cls)
             cls._instance.tor_service = None
             cls._instance.bittorrent_service = None
-            cls._instance.sync_service = None # Add the sync service instance
+            cls._instance.sync_service = None
             cls._instance.loop = None
         return cls._instance
 
@@ -40,11 +40,14 @@ class ServiceManager:
         if not self.bittorrent_service:
             print("--> Initializing BitTorrent service...")
             self.bittorrent_service = BitTorrentService(tor_service=self.tor_service)
+            
+            # --- FIX: Explicitly load/generate the key on startup ---
+            self.bittorrent_service.prime_identity()
+            
             thread = threading.Thread(target=self._run_async_services, daemon=True)
             thread.start()
             print("--> BitTorrent thread started.")
 
-        # Initialize and start the sync service
         if not self.sync_service:
             print("--> Initializing Peer Sync service...")
             self.sync_service = SyncService()
