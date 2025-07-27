@@ -295,6 +295,7 @@ class SyncView(views.APIView):
         if not since_str:
             return Response({"error": "'since' timestamp is required."}, status=status.HTTP_400_BAD_REQUEST)
         try:
+            since_str = since_str.replace(' ', '+')  # Fix space instead of '+' in timezone
             since_dt = timezone.datetime.fromisoformat(since_str)
             new_messages = Message.objects.filter(created_at__gt=since_dt)
             
