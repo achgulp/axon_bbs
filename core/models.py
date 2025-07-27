@@ -151,6 +151,9 @@ class TrustedInstance(models.Model):
                 ).decode('utf-8').strip()  # Ensure no extra whitespace
             except Exception as e:
                 raise ValidationError(f"Invalid public key format: {e}")
+        # If encrypted_private_key is empty string, set to None for proper NULL in DB
+        if self.encrypted_private_key == '':
+            self.encrypted_private_key = None
         super().save(*args, **kwargs)
 
     def __str__(self):
