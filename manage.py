@@ -1,11 +1,12 @@
-# axon_bbs/manage.py
+# Full path: axon_bbs/manage.py
+
 #!/usr/bin/env python
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
 
 # --- Application Version ---
-APP_VERSION = "8.4.0"
+APP_VERSION = "8.5.0"
 
 def main():
     """Run administrative tasks."""
