@@ -7,8 +7,8 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 import base64
 import logging
-from datetime import datetime, timedelta
-from django.utils import timezone
+from datetime import datetime, timedelta, timezone
+from django.utils import timezone as django_timezone
 
 from core.models import TrustedInstance
 from core.services.encryption_utils import generate_checksum
@@ -37,7 +37,11 @@ class TrustedPeerPermission(permissions.BasePermission):
             if not timestamp_str: return False
             try:
                 timestamp = datetime.fromisoformat(timestamp_str)
-                if timezone.now() - timestamp > timedelta(minutes=5): return False
+                # FIX: Ensure the incoming timestamp is timezone-aware before comparing
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                
+                if django_timezone.now() - timestamp > timedelta(minutes=5): return False
             except ValueError: return False
             data_to_verify = timestamp_str.encode()
         else:

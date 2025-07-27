@@ -7,7 +7,7 @@ import json
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 from cryptography.hazmat.primitives import serialization
-from datetime import datetime
+from datetime import datetime, timezone
 
 # --- CONFIGURATION ---
 # The .onion address of the HOST machine you are testing against.
@@ -73,7 +73,8 @@ def run_test():
         return
 
     # 2. Prepare data for signing (the timestamp)
-    timestamp = datetime.utcnow().isoformat()
+    #    FIX: Generate a timezone-aware timestamp using timezone.utc
+    timestamp = datetime.now(timezone.utc).isoformat()
     hasher = hashes.Hash(hashes.SHA256())
     hasher.update(timestamp.encode())
     digest = hasher.finalize()
