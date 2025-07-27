@@ -6,6 +6,7 @@ import logging
 import os
 import tempfile
 import time
+import re # Import the regular expression module
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives import hashes
@@ -19,13 +20,16 @@ from core.models import TrustedInstance
 
 logger = logging.getLogger(__name__)
 
+def sanitize_filename(name):
+    """Removes invalid characters for a filename."""
+    return re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+
 class BitTorrentService:
     def __init__(self, tor_service=None):
         self.tor_service = tor_service
         self.session = None
         self.identity_primed = False
         self.private_key = None
-        # Use a persistent directory for torrent files
         self.torrent_save_path = os.path.join(settings.BASE_DIR, 'data', 'torrents')
         os.makedirs(self.torrent_save_path, exist_ok=True)
 
@@ -66,43 +70,52 @@ class BitTorrentService:
         return self.private_key
 
     def create_torrent(self, data, name):
-        # Create a unique filename for the data blob
-        blob_filename = f"{name}_{int(time.time())}.dat"
+        sanitized_name = sanitize_filename(name)
+        blob_filename = f"{sanitized_name}_{int(time.time())}.dat"
         blob_filepath = os.path.join(self.torrent_save_path, blob_filename)
+        
+        logger.debug(f"Creating torrent for '{name}' with sanitized filename '{blob_filename}'")
 
         enc_data, metadata = self.encrypt_and_wrap(data)
-        with open(blob_filepath, 'wb') as f:
-            f.write(enc_data)
-
-        fs = lt.file_storage()
-        fs.add_file(blob_filename, len(enc_data))
-        t = lt.create_torrent(fs)
-        t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
-        t.set_creator('Axon BBS')
-        t.set_comment(json.dumps(metadata))
-        
-        # Hash the pieces from the newly created file
-        lt.set_piece_hashes(t, self.torrent_save_path)
-        
-        torrent_dict = t.generate()
-
-        if 'info' not in torrent_dict:
-            logger.error(f"Failed to generate 'info' dictionary for torrent '{name}'.")
+        try:
+            with open(blob_filepath, 'wb') as f:
+                f.write(enc_data)
+            logger.debug(f"Wrote {len(enc_data)} bytes to {blob_filepath}")
+        except Exception as e:
+            logger.error(f"Failed to write torrent data to disk: {e}")
             return None, None
 
-        torrent_file_data = lt.bencode(torrent_dict)
-        info = lt.torrent_info(torrent_file_data)
-        
-        # Add the torrent to the session to begin seeding from the persistent path
-        params = {
-            'ti': info,
-            'save_path': self.torrent_save_path,
-        }
-        self.session.add_torrent(params)
-        logger.info(f"Added torrent '{info.name()}' to session for seeding.")
+        try:
+            fs = lt.file_storage()
+            fs.add_file(blob_filename, len(enc_data))
+            t = lt.create_torrent(fs)
+            t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
+            t.set_creator('Axon BBS')
+            t.set_comment(json.dumps(metadata))
+            
+            lt.set_piece_hashes(t, self.torrent_save_path)
+            
+            torrent_dict = t.generate()
 
-        magnet = lt.make_magnet_uri(info)
-        return magnet, torrent_file_data
+            if 'info' not in torrent_dict:
+                logger.error(f"Failed to generate 'info' dictionary for torrent '{name}'. Hashing might have failed.")
+                os.remove(blob_filepath) # Clean up orphaned file
+                return None, None
+
+            torrent_file_data = lt.bencode(torrent_dict)
+            info = lt.torrent_info(torrent_file_data)
+            
+            params = {'ti': info, 'save_path': self.torrent_save_path}
+            self.session.add_torrent(params)
+            logger.info(f"Added torrent '{info.name()}' to session for seeding.")
+
+            magnet = lt.make_magnet_uri(info)
+            return magnet, torrent_file_data
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during torrent creation: {e}", exc_info=True)
+            if os.path.exists(blob_filepath):
+                os.remove(blob_filepath)
+            return None, None
 
     def encrypt_and_wrap(self, data):
         chunks = self.chunk_data(data)
