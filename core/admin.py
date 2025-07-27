@@ -49,10 +49,18 @@ class ContentExtensionRequestAdmin(admin.ModelAdmin):
 
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
-    list_display = ('web_ui_onion_url', 'pubkey_checksum', 'added_at')
-    # --- FINAL FIX: Make the checksum the clickable link ---
+    list_display = ('web_ui_onion_url', 'pubkey_checksum', 'is_trusted_peer', 'added_at')
     list_display_links = ('pubkey_checksum',)
-    readonly_fields = ('pubkey_checksum',)
+    list_filter = ('is_trusted_peer',)
+    readonly_fields = ('pubkey_checksum', 'added_at', 'last_synced_at')
+    fieldsets = (
+        (None, {
+            'fields': ('web_ui_onion_url', 'pubkey', 'encrypted_private_key', 'is_trusted_peer')
+        }),
+        ('Timestamps (Read-Only)', {
+            'fields': ('added_at', 'last_synced_at')
+        }),
+    )
 
     @admin.display(description='Pubkey Checksum')
     def pubkey_checksum(self, obj):
@@ -75,6 +83,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             encrypted_private = f.encrypt(private_pem.encode()).decode()
             instance.pubkey = public_key_pem
             instance.encrypted_private_key = encrypted_private
+            instance.is_trusted_peer = False  # Ensure local is not marked as trusted peer
             instance.save()
         self.message_user(request, "Keys generated and encrypted for selected instances.")
     generate_keys.short_description = "Generate and encrypt keys for selected instances"

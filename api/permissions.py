@@ -66,15 +66,14 @@ class TrustedPeerPermission(permissions.BasePermission):
             return False
         
         # Log expected pubkeys from DB for comparison
-        expected_checksums = [generate_checksum(inst.pubkey) for inst in TrustedInstance.objects.exclude(encrypted_private_key__isnull=False) if inst.pubkey]
+        expected_checksums = [generate_checksum(inst.pubkey) for inst in TrustedInstance.objects.filter(is_trusted_peer=True) if inst.pubkey]
         logger.info(f"Expected trusted peer checksums: {', '.join(expected_checksums) or 'None'}")
         
-        # --- FINAL FIX: Query for the specific peer key, excluding our own identity ---
-        if not TrustedInstance.objects.filter(pubkey=cleaned_sender_pubkey).exclude(encrypted_private_key__isnull=False).exists():
+        # Query for the specific peer key using is_trusted_peer
+        if not TrustedInstance.objects.filter(pubkey=cleaned_sender_pubkey, is_trusted_peer=True).exists():
             incoming_checksum = generate_checksum(cleaned_sender_pubkey)
-            logger.warning(f"Rejected request from untrusted or self-identifying public key with checksum: {incoming_checksum}. Expected: {', '.join(expected_checksums) or 'None'}")
+            logger.warning(f"Rejected request from untrusted public key with checksum: {incoming_checksum}. Expected: {', '.join(expected_checksums) or 'None'}")
             return False
-        # --- END FIX ---
 
         try:
             pubkey_obj = load_pem_public_key(cleaned_sender_pubkey.encode())
