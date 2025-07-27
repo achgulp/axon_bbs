@@ -1,4 +1,4 @@
-# axon_bbs/core/services/sync_service.py
+# Full path: axon_bbs/core/services/sync_service.py
 import threading
 import time
 import requests
@@ -110,10 +110,11 @@ class SyncService:
                 )
                 signature_b64 = base64.b64encode(signature).decode('utf-8')
 
-                header_pubkey = local_pubkey.strip().replace("\n", "").replace("\r", "")
+                # Base64 encode the pubkey to avoid newline issues in headers
+                header_pubkey_b64 = base64.b64encode(local_pubkey.encode()).decode('utf-8')
 
                 headers = {
-                    'X-Pubkey': header_pubkey,
+                    'X-Pubkey': header_pubkey_b64,
                     'X-Timestamp': timestamp,
                     'X-Signature': signature_b64
                 }
