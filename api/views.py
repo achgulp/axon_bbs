@@ -1,6 +1,4 @@
 # Full path: axon_bbs/api/views.py
-
-# axon_bbs/api/views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 from django.http import HttpResponse, Http404
