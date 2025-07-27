@@ -38,14 +38,12 @@ class TrustedPeerPermission(permissions.BasePermission):
         if not all([signature_b64, sender_pubkey_pem, data_to_verify]):
             return False
 
-        # --- FINAL FIX: The logic to find the peer is corrected here ---
-        # Clean the incoming key, just in case.
         cleaned_sender_pubkey = sender_pubkey_pem.strip()
         
-        # Now, check if a trusted instance with this exact public key exists.
-        if not TrustedInstance.objects.filter(pubkey=cleaned_sender_pubkey).exists():
+        # --- FINAL FIX: Query for the specific peer key, excluding our own identity ---
+        if not TrustedInstance.objects.filter(pubkey=cleaned_sender_pubkey).exclude(encrypted_private_key__isnull=False).exists():
             incoming_checksum = generate_checksum(cleaned_sender_pubkey)
-            logger.warning(f"Rejected request from untrusted public key with checksum: {incoming_checksum}")
+            logger.warning(f"Rejected request from untrusted or self-identifying public key with checksum: {incoming_checksum}")
             return False
         # --- END FIX ---
 
