@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 
 from core.models import TrustedInstance, Message, MessageBoard
+from .encryption_utils import generate_checksum
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,11 @@ class SyncService:
             return
             
         local_pubkey = local_instance.pubkey
+        
+        # --- FINAL DEBUG LOGGING ---
+        local_key_checksum = generate_checksum(local_pubkey)
+        logger.info(f"SYNC-OUT: Loaded local key for signing. Checksum: {local_key_checksum}")
+        # --- END DEBUG LOGGING ---
 
         for peer in peers:
             if not peer.web_ui_onion_url:
@@ -104,7 +110,6 @@ class SyncService:
                 )
                 signature_b64 = base64.b64encode(signature).decode('utf-8')
 
-                # Ensure the key is a clean, single-line string for the header
                 header_pubkey = local_pubkey.strip().replace("\n", "").replace("\r", "")
 
                 headers = {
