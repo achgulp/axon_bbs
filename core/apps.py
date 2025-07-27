@@ -1,10 +1,12 @@
-# axon_bbs/core/apps.py
+# Full path: axon_bbs/core/apps.py
 from django.apps import AppConfig
 import logging
 import os
 from django.conf import settings
 from django.db.models.signals import post_migrate
 from django.dispatch import receiver
+
+from .services.encryption_utils import generate_checksum
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,20 @@ class CoreConfig(AppConfig):
             
             # Initialize all services defined in the ServiceManager
             service_manager.initialize_services()
+
+            # Log trusted peers count and checksums on boot
+            from .models import TrustedInstance
+            peers = TrustedInstance.objects.filter(is_trusted_peer=True)
+            num_peers = peers.count()
+            logger.info(f"Number of trusted peers: {num_peers}")
+            if num_peers > 0:
+                logger.info("Trusted peer checksums (one per line):")
+                for peer in peers:
+                    if peer.pubkey:
+                        checksum = generate_checksum(peer.pubkey)
+                        logger.info(f"{checksum} ({peer.web_ui_onion_url or 'No URL'})")
+                    else:
+                        logger.info("No pubkey for peer")
 
             # Handle first-time start (e.g., setup flag)
             flag_path = os.path.join(settings.BASE_DIR, 'data', 'first_start.flag')

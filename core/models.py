@@ -139,6 +139,7 @@ class TrustedInstance(models.Model):
     encrypted_private_key = models.TextField(blank=True, null=True)
     added_at = models.DateTimeField(auto_now_add=True)
     last_synced_at = models.DateTimeField(blank=True, null=True)
+    is_trusted_peer = models.BooleanField(default=False, help_text="Check if this is a trusted peer (uncheck for local).")
 
     def save(self, *args, **kwargs):
         if self.pubkey:
@@ -151,9 +152,6 @@ class TrustedInstance(models.Model):
                 ).decode('utf-8').strip()  # Ensure no extra whitespace
             except Exception as e:
                 raise ValidationError(f"Invalid public key format: {e}")
-        # If encrypted_private_key is empty string, set to None for proper NULL in DB
-        if self.encrypted_private_key == '':
-            self.encrypted_private_key = None
         super().save(*args, **kwargs)
 
     def __str__(self):
