@@ -1,17 +1,13 @@
 # Full path: axon_bbs/api/views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
-from django.http import HttpResponse, Http404 # <-- CORRECTED THIS LINE
+from django.http import HttpResponse, Http404
 from django.contrib.auth import get_user_model
 from django.conf import settings
 import os
 import logging
 import asyncio
 import threading
-import traceback # Import traceback for debugging
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
 import json
 import base64
 import requests
@@ -173,7 +169,6 @@ class ReceiveMagnetView(views.APIView):
             subject, body, pubkey = content.get('subject'), content.get('body'), content.get('pubkey')
             board_name, nickname, nick_sig = content.get('board', 'general'), content.get('nickname'), content.get('nick_sig')
 
-            # Check if pubkey is banned
             banned = BannedPubkey.objects.filter(pubkey=pubkey).first()
             if banned:
                 if not banned.is_temporary or (banned.is_temporary and banned.expires_at and banned.expires_at > timezone.now()):
@@ -308,8 +303,7 @@ class SyncView(views.APIView):
 
             return Response({"magnets": magnets}, status=status.HTTP_200_OK)
         except Exception as e:
-            logger.error(f"Error during sync operation: {e}")
-            traceback.print_exc() # ADD THIS LINE TO PRINT THE ERROR TO THE CONSOLE
+            logger.error(f"Error during sync operation: {e}", exc_info=True)
             return Response({"error": "Failed to process sync request."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class TorrentFileView(views.APIView):
