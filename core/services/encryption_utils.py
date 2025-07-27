@@ -1,4 +1,4 @@
-# axon_bbs/core/services/encryption_utils.py
+# Full path: axon_bbs/core/services/encryption_utils.py
 import os
 import logging
 from cryptography.fernet import Fernet
@@ -6,6 +6,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 import hashlib
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +42,17 @@ def generate_short_id(pubkey_pem: str, length: int = 16) -> str:
     return hash_obj.hexdigest()[:length]
 
 def generate_checksum(data_string: str) -> str:
-    """Generates an MD5 checksum for a given string."""
+    """Generates an MD5 checksum for a given string, normalizing if it's a public key."""
     if not data_string:
         return "None"
-    # Normalize by stripping whitespace and encoding to bytes
-    normalized_data = data_string.strip().encode('utf-8')
+    try:
+        # Attempt to normalize if it's a public key
+        pubkey_obj = load_pem_public_key(data_string.encode())
+        normalized_data = pubkey_obj.public_bytes(
+            encoding=Encoding.PEM,
+            format=PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8').strip().encode('utf-8')
+    except Exception:
+        # For non-keys, just strip whitespace
+        normalized_data = data_string.strip().encode('utf-8')
     return hashlib.md5(normalized_data).hexdigest()
