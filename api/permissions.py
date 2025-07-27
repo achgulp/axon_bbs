@@ -69,7 +69,6 @@ class TrustedPeerPermission(permissions.BasePermission):
         expected_checksums = [generate_checksum(inst.pubkey) for inst in TrustedInstance.objects.filter(is_trusted_peer=True) if inst.pubkey]
         logger.info(f"Expected trusted peer checksums: {', '.join(expected_checksums) or 'None'}")
         
-        # Query for the specific peer key using is_trusted_peer
         if not TrustedInstance.objects.filter(pubkey=cleaned_sender_pubkey, is_trusted_peer=True).exists():
             incoming_checksum = generate_checksum(cleaned_sender_pubkey)
             logger.warning(f"Rejected request from untrusted public key with checksum: {incoming_checksum}. Expected: {', '.join(expected_checksums) or 'None'}")
