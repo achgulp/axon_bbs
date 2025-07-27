@@ -49,7 +49,7 @@ class TrustedPeerPermission(permissions.BasePermission):
 
         # Log raw incoming pubkey checksum
         raw_checksum = generate_checksum(sender_pubkey_pem)
-        logger.debug(f"Incoming raw pubkey checksum: {raw_checksum}")
+        logger.info(f"Incoming raw pubkey checksum: {raw_checksum}")
 
         # Normalize the incoming public key by loading and re-serializing
         try:
@@ -60,19 +60,19 @@ class TrustedPeerPermission(permissions.BasePermission):
             ).decode('utf-8').strip()
             normalized_checksum = generate_checksum(cleaned_sender_pubkey)
             if raw_checksum != normalized_checksum:
-                logger.debug(f"Pubkey normalized; original checksum {raw_checksum} -> normalized {normalized_checksum}")
+                logger.info(f"Pubkey normalized; original checksum {raw_checksum} -> normalized {normalized_checksum}")
         except Exception as e:
             logger.warning(f"Failed to normalize incoming public key: {e}")
             return False
         
         # Log expected pubkeys from DB for comparison
         expected_checksums = [generate_checksum(inst.pubkey) for inst in TrustedInstance.objects.exclude(encrypted_private_key__isnull=False) if inst.pubkey]
-        logger.debug(f"Expected trusted peer checksums: {', '.join(expected_checksums) or 'None'}")
+        logger.info(f"Expected trusted peer checksums: {', '.join(expected_checksums) or 'None'}")
         
         # --- FINAL FIX: Query for the specific peer key, excluding our own identity ---
         if not TrustedInstance.objects.filter(pubkey=cleaned_sender_pubkey).exclude(encrypted_private_key__isnull=False).exists():
             incoming_checksum = generate_checksum(cleaned_sender_pubkey)
-            logger.warning(f"Rejected request from untrusted or self-identifying public key with checksum: {incoming_checksum}")
+            logger.warning(f"Rejected request from untrusted or self-identifying public key with checksum: {incoming_checksum}. Expected: {', '.join(expected_checksums) or 'None'}")
             return False
         # --- END FIX ---
 
