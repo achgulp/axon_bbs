@@ -1,4 +1,4 @@
-# axon_bbs/api/permissions.py
+# Full path: axon_bbs/api/permissions.py
 from rest_framework import permissions
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -24,7 +24,13 @@ class TrustedPeerPermission(permissions.BasePermission):
             data_to_verify = request.data.get('magnet', '').encode()
         elif request.method == 'GET':
             signature_b64 = request.headers.get('X-Signature')
-            sender_pubkey_pem = request.headers.get('X-Pubkey')
+            sender_pubkey_pem_b64 = request.headers.get('X-Pubkey')
+            if sender_pubkey_pem_b64:
+                try:
+                    sender_pubkey_pem = base64.b64decode(sender_pubkey_pem_b64).decode()
+                except Exception as e:
+                    logger.warning(f"Failed to base64 decode X-Pubkey: {e}")
+                    return False
             timestamp_str = request.headers.get('X-Timestamp')
             if not timestamp_str: return False
             try:
