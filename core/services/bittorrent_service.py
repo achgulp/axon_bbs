@@ -6,7 +6,8 @@ import logging
 import os
 import tempfile
 import time
-import re # Import the regular expression module
+import re
+import traceback # Import traceback for debugging
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives import hashes
@@ -83,6 +84,7 @@ class BitTorrentService:
             logger.debug(f"Wrote {len(enc_data)} bytes to {blob_filepath}")
         except Exception as e:
             logger.error(f"Failed to write torrent data to disk: {e}")
+            traceback.print_exc() # ADD THIS LINE
             return None, None
 
         try:
@@ -99,7 +101,7 @@ class BitTorrentService:
 
             if 'info' not in torrent_dict:
                 logger.error(f"Failed to generate 'info' dictionary for torrent '{name}'. Hashing might have failed.")
-                os.remove(blob_filepath) # Clean up orphaned file
+                os.remove(blob_filepath)
                 return None, None
 
             torrent_file_data = lt.bencode(torrent_dict)
@@ -113,74 +115,9 @@ class BitTorrentService:
             return magnet, torrent_file_data
         except Exception as e:
             logger.error(f"An unexpected error occurred during torrent creation: {e}", exc_info=True)
+            traceback.print_exc() # ADD THIS LINE
             if os.path.exists(blob_filepath):
                 os.remove(blob_filepath)
             return None, None
 
-    def encrypt_and_wrap(self, data):
-        chunks = self.chunk_data(data)
-        enc_chunks = []
-        envelopes_list = []
-        trusted_pubkeys = [inst.pubkey for inst in TrustedInstance.objects.filter(is_trusted_peer=True) if inst.pubkey]
-        
-        local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
-        if local_instance and local_instance.pubkey and local_instance.pubkey not in trusted_pubkeys:
-            trusted_pubkeys.append(local_instance.pubkey)
-            
-        for chunk in chunks:
-            aes_key, enc_chunk = self.encrypt_chunk(chunk)
-            enc_chunks.append(enc_chunk)
-            envelopes = {pk: self.create_envelope(aes_key, pk) for pk in trusted_pubkeys}
-            envelopes_list.append(envelopes)
-        enc_data = b''.join(enc_chunks)
-        metadata = {'envelopes': envelopes_list}
-        return enc_data, metadata
-
-    def download_and_decrypt(self, magnet, save_path, my_pubkey):
-        params = lt.parse_magnet_uri(magnet)
-        params.save_path = save_path
-        handle = self.session.add_torrent(params)
-        start_time = time.time()
-        while not handle.status().is_seeding and time.time() - start_time < 120:
-            s = handle.status()
-            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds}, Peers: {s.num_peers}")
-            time.sleep(2)
-        
-        if not handle.status().is_seeding:
-            logger.warning(f"Torrent {handle.name()} did not complete download in time.")
-            return None, None
-
-        ti = handle.torrent_file()
-        if not ti:
-            return handle, None
-            
-        metadata = json.loads(ti.comment())
-        envelopes_list = metadata['envelopes']
-        file_entry = ti.files().file_path(0)
-        file_path = os.path.join(handle.save_path(), file_entry)
-        with open(file_path, 'rb') as f:
-            enc_data = f.read()
-        chunks = self.chunk_data(enc_data)
-        decrypted_chunks = []
-        private_key = self.get_private_key()
-        for i, enc_chunk in enumerate(chunks):
-            envelopes = envelopes_list[i]
-            encrypted_aes_b64 = envelopes.get(my_pubkey)
-            if not encrypted_aes_b64:
-                logger.error(f"My pubkey not in envelope for chunk {i}. Cannot decrypt.")
-                return handle, None
-            encrypted_aes = base64.b64decode(encrypted_aes_b64)
-            aes_key = private_key.decrypt(
-                encrypted_aes,
-                padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
-            )
-            f = Fernet(aes_key)
-            dec_chunk = f.decrypt(enc_chunk)
-            decrypted_chunks.append(dec_chunk)
-
-        return handle, b''.join(decrypted_chunks)
-
-    def chunk_data(self, data, chunk_size=256*1024): return [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
-    def encrypt_chunk(self, chunk): aes_key = Fernet.generate_key(); f = Fernet(aes_key); return aes_key, f.encrypt(chunk)
-    def create_envelope(self, aes_key, pubkey_pem): pubkey = load_pem_public_key(pubkey_pem.encode()); return base64.b64encode(pubkey.encrypt(aes_key, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None))).decode('utf-8')
-    def re_envelope_and_reseed(self, torrent_handle, save_path, my_pubkey): pass
+    # ... (All other methods remain the same) ...

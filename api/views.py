@@ -1,14 +1,14 @@
 # Full path: axon_bbs/api/views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse, Http404 # <-- CORRECTED THIS LINE
 from django.contrib.auth import get_user_model
 from django.conf import settings
 import os
 import logging
 import asyncio
 import threading
-import traceback
+import traceback # Import traceback for debugging
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.padding import PSS, MGF1
@@ -295,7 +295,7 @@ class SyncView(views.APIView):
         if not since_str:
             return Response({"error": "'since' timestamp is required."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            since_str = since_str.replace(' ', '+')  # Fix space instead of '+' in timezone
+            since_str = since_str.replace(' ', '+')
             since_dt = timezone.datetime.fromisoformat(since_str)
             new_messages = Message.objects.filter(created_at__gt=since_dt)
             
@@ -309,6 +309,7 @@ class SyncView(views.APIView):
             return Response({"magnets": magnets}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Error during sync operation: {e}")
+            traceback.print_exc() # ADD THIS LINE TO PRINT THE ERROR TO THE CONSOLE
             return Response({"error": "Failed to process sync request."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class TorrentFileView(views.APIView):
@@ -324,16 +325,14 @@ class TorrentFileView(views.APIView):
             if not os.path.exists(file_path): raise Http404("Torrent data file not found on disk.")
             file_size = os.path.getsize(file_path)
 
-            # Handle Range requests for web seeding
             range_header = request.META.get('HTTP_RANGE')
             if range_header:
-                # Parse Range: bytes=start-end
                 try:
                     range_match = range_header.split('=')[1].split('-')
                     start = int(range_match[0])
                     end = int(range_match[1]) if range_match[1] else file_size - 1
                     if start >= file_size or end < start or end >= file_size:
-                        return HttpResponse(status=416)  # Range Not Satisfiable
+                        return HttpResponse(status=416)
                     content_length = end - start + 1
                     with open(file_path, 'rb') as f:
                         f.seek(start)
@@ -343,9 +342,8 @@ class TorrentFileView(views.APIView):
                     response['Content-Length'] = content_length
                     return response
                 except (IndexError, ValueError):
-                    return HttpResponse(status=416)  # Invalid Range
+                    return HttpResponse(status=416)
             else:
-                # Serve full file if no Range
                 with open(file_path, 'rb') as f:
                     response = HttpResponse(f.read(), content_type='application/octet-stream')
                     response['Content-Length'] = file_size
