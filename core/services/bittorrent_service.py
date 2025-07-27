@@ -1,6 +1,4 @@
 # Full path: axon_bbs/core/services/bittorrent_service.py
-
-# axon_bbs/core/services/bittorrent_service.py
 import asyncio
 import base64
 import json
@@ -12,6 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.serialization import load_pem_public_key # <-- ADDED THIS LINE
 from cryptography.fernet import Fernet
 from django.conf import settings
 import libtorrent as lt
@@ -73,25 +72,48 @@ class BitTorrentService:
             t = lt.create_torrent(fs)
             t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
             t.set_creator('Axon BBS')
+            # The comment field will store our encrypted keys (envelopes)
+            t.set_comment(json.dumps(metadata))
             lt.set_piece_hashes(t, temp_dir)
+            
             torrent_dict = t.generate()
             info_benc = lt.bencode(torrent_dict['info'])
             info_hash = lt.sha1_hash(info_benc)
             str_info_hash = info_hash.hex()
-            trusted_instances = TrustedInstance.objects.all()
-            web_seeds = [f"{inst.web_ui_onion_url.strip('/')}/api/torrents/{str_info_hash}/" for inst in trusted_instances if inst.web_ui_onion_url]
-            torrent_dict['url-list'] = web_seeds
+            
+            # Add web seeds for all trusted instances, including the local one
+            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
+            if local_instance and local_instance.web_ui_onion_url:
+                 web_seeds = [f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{str_info_hash}/"]
+                 if 'url-list' in torrent_dict:
+                     if isinstance(torrent_dict['url-list'], list):
+                         torrent_dict['url-list'].extend(web_seeds)
+                     else: # if it's a single string
+                         torrent_dict['url-list'] = [torrent_dict['url-list']] + web_seeds
+                 else:
+                     torrent_dict['url-list'] = web_seeds
+
             torrent_file = lt.bencode(torrent_dict)
-            magnet = f"magnet:?xt=urn:btih:{str_info_hash}"
-            if web_seeds:
-                magnet += '&' + '&'.join([f"ws={ws}" for ws in web_seeds])
+
+            # Add the torrent to the local session to begin seeding
+            params = lt.read_torrent_info(torrent_file)
+            params.save_path = temp_dir # This should be a persistent directory in a real scenario
+            self.session.add_torrent(params)
+
+            magnet = lt.make_magnet_uri(lt.torrent_info(torrent_file))
             return magnet, torrent_file
 
     def encrypt_and_wrap(self, data):
         chunks = self.chunk_data(data)
         enc_chunks = []
         envelopes_list = []
-        trusted_pubkeys = [inst.pubkey for inst in TrustedInstance.objects.all() if inst.pubkey]
+        # Encrypt for all trusted peers AND the local instance
+        trusted_pubkeys = [inst.pubkey for inst in TrustedInstance.objects.filter(is_trusted_peer=True) if inst.pubkey]
+        
+        local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
+        if local_instance and local_instance.pubkey and local_instance.pubkey not in trusted_pubkeys:
+            trusted_pubkeys.append(local_instance.pubkey)
+            
         for chunk in chunks:
             aes_key, enc_chunk = self.encrypt_chunk(chunk)
             enc_chunks.append(enc_chunk)
@@ -106,11 +128,12 @@ class BitTorrentService:
         params.save_path = save_path
         handle = self.session.add_torrent(params)
         start_time = time.time()
-        while not handle.status().is_seeding and time.time() - start_time < 60:
+        while not handle.status().is_seeding and time.time() - start_time < 120: # Increased timeout
             s = handle.status()
-            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds}")
+            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds}, Peers: {s.num_peers}")
             time.sleep(2)
-        else:
+        
+        if not handle.status().is_seeding:
             logger.warning(f"Torrent {handle.name()} did not complete download in time.")
             return None, None
 
@@ -131,6 +154,7 @@ class BitTorrentService:
             envelopes = envelopes_list[i]
             encrypted_aes_b64 = envelopes.get(my_pubkey)
             if not encrypted_aes_b64:
+                logger.error(f"My pubkey not in envelope for chunk {i}. Cannot decrypt.")
                 return handle, None
             encrypted_aes = base64.b64decode(encrypted_aes_b64)
             aes_key = private_key.decrypt(
