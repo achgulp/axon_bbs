@@ -41,7 +41,7 @@ class ServiceManager:
             print("--> Initializing BitTorrent service...")
             self.bittorrent_service = BitTorrentService(tor_service=self.tor_service)
             
-            # --- FIX: Explicitly load/generate the key on startup ---
+            # Explicitly load/generate the key on startup
             self.bittorrent_service.prime_identity()
             
             thread = threading.Thread(target=self._run_async_services, daemon=True)
