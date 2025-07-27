@@ -50,7 +50,7 @@ class ContentExtensionRequestAdmin(admin.ModelAdmin):
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
     list_display = ('web_ui_onion_url', 'p2p_onion_address', 'pubkey_checksum', 'added_at')
-    actions = ['generate_keys']
+    list_display_links = ('web_ui_onion_url',)
     readonly_fields = ('pubkey_checksum',)
 
     @admin.display(description='Pubkey Checksum')
