@@ -88,7 +88,7 @@ class SyncService:
         local_key_checksum = generate_checksum(local_pubkey)
         logger.info(f"SYNC-OUT: Loaded local key for signing. Checksum: {local_key_checksum}")
         # Log full local pubkey for debugging (sanitized)
-        logger.debug(f"Local pubkey (length: {len(local_pubkey)}): {local_pubkey[:50]}...{local_pubkey[-50:]}")
+        logger.debug(f"Local pubkey (length: {len(local_pubkey)}): {local_pubkey[:100]}...{local_pubkey[-100:]}")
         # --- END DEBUG LOGGING ---
 
         for peer in peers:
@@ -111,6 +111,7 @@ class SyncService:
                     digest, PSS(mgf=MGF1(hashes.SHA256()), salt_length=PSS.MAX_LENGTH), hashes.SHA256()
                 )
                 signature_b64 = base64.b64encode(signature).decode('utf-8')
+                logger.debug(f"Generated signature_b64 (length: {len(signature_b64)}): {signature_b64[:50]}...{signature_b64[-50:]}")
 
                 # Base64 encode the pubkey to avoid newline issues in headers
                 header_pubkey_b64 = base64.b64encode(local_pubkey.encode()).decode('utf-8')
@@ -121,6 +122,7 @@ class SyncService:
                     'X-Timestamp': timestamp,
                     'X-Signature': signature_b64
                 }
+                logger.debug(f"Sending request to {peer.web_ui_onion_url} with headers: X-Pubkey checksum {local_key_checksum}, X-Timestamp {timestamp}")
 
                 target_url = f"{peer.web_ui_onion_url.strip('/')}/api/sync/?since={last_sync.isoformat()}"
                 
