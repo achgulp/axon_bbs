@@ -72,34 +72,52 @@ class BitTorrentService:
         blob_filename = f"{sanitized_name}_{int(time.time())}.dat"
         blob_filepath = os.path.join(self.torrent_save_path, blob_filename)
         
-        logger.debug(f"Creating torrent for '{name}' with sanitized filename '{blob_filename}'")
-
+        # --- START DEBUG PRINTS ---
+        print(f"--- [DEBUG] Starting torrent creation for: {name}")
+        print(f"--- [DEBUG] Saving data to: {blob_filepath}")
+        
         enc_data, metadata = self.encrypt_and_wrap(data)
         try:
             with open(blob_filepath, 'wb') as f:
                 f.write(enc_data)
-            logger.debug(f"Wrote {len(enc_data)} bytes to {blob_filepath}")
+            
+            if not os.path.exists(blob_filepath):
+                print(f"--- [DEBUG] FATAL: File was not written to disk at {blob_filepath}")
+                return None, None
+            print(f"--- [DEBUG] File successfully written to disk. Size: {os.path.getsize(blob_filepath)}")
+
         except Exception as e:
-            logger.error(f"Failed to write torrent data to disk: {e}")
+            print(f"--- [DEBUG] FATAL: Failed to write torrent data to disk: {e}")
             return None, None
 
         try:
             fs = lt.file_storage()
             fs.add_file(blob_filename, len(enc_data))
+            
+            # Create the torrent object
             t = lt.create_torrent(fs)
+            
+            # FIX: Set all metadata BEFORE hashing
             t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
             t.set_creator('Axon BBS')
             t.set_comment(json.dumps(metadata))
             
+            # Now, hash the pieces
+            print(f"--- [DEBUG] Hashing pieces from directory: {self.torrent_save_path}")
             lt.set_piece_hashes(t, self.torrent_save_path)
             
+            # Generate the final torrent dictionary
+            print("--- [DEBUG] Generating torrent dictionary...")
             torrent_dict = t.generate()
+            print(f"--- [DEBUG] Generated dictionary keys: {torrent_dict.keys()}")
+
 
             if 'info' not in torrent_dict:
-                logger.error(f"Failed to generate 'info' dictionary for torrent '{name}'. Hashing might have failed.")
+                print(f"--- [DEBUG] FATAL: 'info' key not in generated dictionary. Hashing failed.")
                 os.remove(blob_filepath)
                 return None, None
 
+            print("--- [DEBUG] Torrent creation successful, creating magnet link.")
             torrent_file_data = lt.bencode(torrent_dict)
             info = lt.torrent_info(torrent_file_data)
             
@@ -110,7 +128,7 @@ class BitTorrentService:
             magnet = lt.make_magnet_uri(info)
             return magnet, torrent_file_data
         except Exception as e:
-            logger.error(f"An unexpected error occurred during torrent creation: {e}", exc_info=True)
+            print(f"--- [DEBUG] FATAL: An exception occurred during torrent creation: {e}")
             if os.path.exists(blob_filepath):
                 os.remove(blob_filepath)
             return None, None
