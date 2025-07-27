@@ -1,3 +1,5 @@
+# Full path: axon_bbs/api/views.py
+
 # axon_bbs/api/views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
@@ -172,6 +174,14 @@ class ReceiveMagnetView(views.APIView):
             content = json.loads(decrypted_content.decode())
             subject, body, pubkey = content.get('subject'), content.get('body'), content.get('pubkey')
             board_name, nickname, nick_sig = content.get('board', 'general'), content.get('nickname'), content.get('nick_sig')
+
+            # Check if pubkey is banned
+            banned = BannedPubkey.objects.filter(pubkey=pubkey).first()
+            if banned:
+                if not banned.is_temporary or (banned.is_temporary and banned.expires_at and banned.expires_at > timezone.now()):
+                    logger.warning(f"Rejected content from banned pubkey: {pubkey[:12]}...")
+                    return Response({"error": "Sender banned."}, status=status.HTTP_403_FORBIDDEN)
+
             board, _ = MessageBoard.objects.get_or_create(name=board_name, defaults={'description': 'Auto-created board'})
             Message.objects.create(board=board, subject=subject, body=body, pubkey=pubkey)
             if nickname and nick_sig and pubkey:
@@ -313,10 +323,35 @@ class TorrentFileView(views.APIView):
             if not ti or ti.num_files() == 0: raise Http404("Torrent metadata is invalid.")
             file_path = os.path.join(handle.save_path(), ti.files().file_path(0))
             if not os.path.exists(file_path): raise Http404("Torrent data file not found on disk.")
-            with open(file_path, 'rb') as f:
-                response = HttpResponse(f.read(), content_type='application/octet-stream')
-                response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
-                return response
+            file_size = os.path.getsize(file_path)
+
+            # Handle Range requests for web seeding
+            range_header = request.META.get('HTTP_RANGE')
+            if range_header:
+                # Parse Range: bytes=start-end
+                try:
+                    range_match = range_header.split('=')[1].split('-')
+                    start = int(range_match[0])
+                    end = int(range_match[1]) if range_match[1] else file_size - 1
+                    if start >= file_size or end < start or end >= file_size:
+                        return HttpResponse(status=416)  # Range Not Satisfiable
+                    content_length = end - start + 1
+                    with open(file_path, 'rb') as f:
+                        f.seek(start)
+                        content = f.read(content_length)
+                    response = HttpResponse(content, status=206, content_type='application/octet-stream')
+                    response['Content-Range'] = f'bytes {start}-{end}/{file_size}'
+                    response['Content-Length'] = content_length
+                    return response
+                except (IndexError, ValueError):
+                    return HttpResponse(status=416)  # Invalid Range
+            else:
+                # Serve full file if no Range
+                with open(file_path, 'rb') as f:
+                    response = HttpResponse(f.read(), content_type='application/octet-stream')
+                    response['Content-Length'] = file_size
+                    response['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
+                    return response
         except Exception as e:
             logger.error(f"Error serving torrent file for hash {info_hash}: {e}")
             raise Http404("Could not serve torrent file.")
