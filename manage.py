@@ -6,7 +6,7 @@ import os
 import sys
 
 # --- Application Version ---
-APP_VERSION = "8.5.0"
+APP_VERSION = "8.6.0"
 
 def main():
     """Run administrative tasks."""
@@ -18,7 +18,7 @@ def main():
         from django.core.management import execute_from_command_line
     except ImportError as exc:
         raise ImportError(
-           "Couldn't import Django. Are you sure it's installed and "
+            "Couldn't import Django. Are you sure it's installed and "
             "available on your PYTHONPATH environment variable? Did you "
             "forget to activate a virtual environment?"
         ) from exc
@@ -26,6 +26,7 @@ def main():
     # Custom message for runserver command
     if 'runserver' in sys.argv and os.environ.get('RUN_MAIN') == 'true':  # Only in the child process
         print("Starting development server at http://127.0.0.1:8000/")
+    
     
     print("Admin site available at http://127.0.0.1:8000/admin/")
 
