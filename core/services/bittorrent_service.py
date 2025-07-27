@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.padding import OAEP, MGF1
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.serialization import load_pem_public_key # <-- ADDED THIS LINE
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.fernet import Fernet
 from django.conf import settings
 import libtorrent as lt
@@ -25,6 +25,10 @@ class BitTorrentService:
         self.session = None
         self.identity_primed = False
         self.private_key = None
+        # Use a persistent directory for torrent files
+        self.torrent_save_path = os.path.join(settings.BASE_DIR, 'data', 'torrents')
+        os.makedirs(self.torrent_save_path, exist_ok=True)
+
 
     async def start_session(self):
         settings_pack = {
@@ -62,52 +66,48 @@ class BitTorrentService:
         return self.private_key
 
     def create_torrent(self, data, name):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_file = os.path.join(temp_dir, f"{name}.dat")
-            enc_data, metadata = self.encrypt_and_wrap(data)
-            with open(temp_file, 'wb') as f:
-                f.write(enc_data)
-            fs = lt.file_storage()
-            fs.add_file(os.path.basename(temp_file), len(enc_data))
-            t = lt.create_torrent(fs)
-            t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
-            t.set_creator('Axon BBS')
-            # The comment field will store our encrypted keys (envelopes)
-            t.set_comment(json.dumps(metadata))
-            lt.set_piece_hashes(t, temp_dir)
-            
-            torrent_dict = t.generate()
-            info_benc = lt.bencode(torrent_dict['info'])
-            info_hash = lt.sha1_hash(info_benc)
-            str_info_hash = info_hash.hex()
-            
-            # Add web seeds for all trusted instances, including the local one
-            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
-            if local_instance and local_instance.web_ui_onion_url:
-                 web_seeds = [f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{str_info_hash}/"]
-                 if 'url-list' in torrent_dict:
-                     if isinstance(torrent_dict['url-list'], list):
-                         torrent_dict['url-list'].extend(web_seeds)
-                     else: # if it's a single string
-                         torrent_dict['url-list'] = [torrent_dict['url-list']] + web_seeds
-                 else:
-                     torrent_dict['url-list'] = web_seeds
+        # Create a unique filename for the data blob
+        blob_filename = f"{name}_{int(time.time())}.dat"
+        blob_filepath = os.path.join(self.torrent_save_path, blob_filename)
 
-            torrent_file = lt.bencode(torrent_dict)
+        enc_data, metadata = self.encrypt_and_wrap(data)
+        with open(blob_filepath, 'wb') as f:
+            f.write(enc_data)
 
-            # Add the torrent to the local session to begin seeding
-            params = lt.read_torrent_info(torrent_file)
-            params.save_path = temp_dir # This should be a persistent directory in a real scenario
-            self.session.add_torrent(params)
+        fs = lt.file_storage()
+        fs.add_file(blob_filename, len(enc_data))
+        t = lt.create_torrent(fs)
+        t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
+        t.set_creator('Axon BBS')
+        t.set_comment(json.dumps(metadata))
+        
+        # Hash the pieces from the newly created file
+        lt.set_piece_hashes(t, self.torrent_save_path)
+        
+        torrent_dict = t.generate()
 
-            magnet = lt.make_magnet_uri(lt.torrent_info(torrent_file))
-            return magnet, torrent_file
+        if 'info' not in torrent_dict:
+            logger.error(f"Failed to generate 'info' dictionary for torrent '{name}'.")
+            return None, None
+
+        torrent_file_data = lt.bencode(torrent_dict)
+        info = lt.torrent_info(torrent_file_data)
+        
+        # Add the torrent to the session to begin seeding from the persistent path
+        params = {
+            'ti': info,
+            'save_path': self.torrent_save_path,
+        }
+        self.session.add_torrent(params)
+        logger.info(f"Added torrent '{info.name()}' to session for seeding.")
+
+        magnet = lt.make_magnet_uri(info)
+        return magnet, torrent_file_data
 
     def encrypt_and_wrap(self, data):
         chunks = self.chunk_data(data)
         enc_chunks = []
         envelopes_list = []
-        # Encrypt for all trusted peers AND the local instance
         trusted_pubkeys = [inst.pubkey for inst in TrustedInstance.objects.filter(is_trusted_peer=True) if inst.pubkey]
         
         local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
@@ -128,7 +128,7 @@ class BitTorrentService:
         params.save_path = save_path
         handle = self.session.add_torrent(params)
         start_time = time.time()
-        while not handle.status().is_seeding and time.time() - start_time < 120: # Increased timeout
+        while not handle.status().is_seeding and time.time() - start_time < 120:
             s = handle.status()
             logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds}, Peers: {s.num_peers}")
             time.sleep(2)
