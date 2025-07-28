@@ -319,12 +319,11 @@ class TorrentFileView(views.APIView):
             if ti.num_files() == 0:
                 raise Http404("Torrent contains no files.")
             
-            # Find the filename from the torrent's metadata
             filename_in_torrent = ti.files().file_path(0)
             file_path = os.path.join(handle.save_path(), filename_in_torrent)
             
             if not os.path.exists(file_path):
-                raise Http404("Torrent data file not found on disk.")
+                raise Http404(f"Torrent data file not found on disk at {file_path}")
             
             file_size = os.path.getsize(file_path)
 
