@@ -84,37 +84,22 @@ class BitTorrentService:
         try:
             fs = lt.file_storage()
             fs.add_file(blob_filename, len(enc_data))
-            t = lt.create_torrent(fs)
-
-            # CORRECT ORDER: Set all metadata BEFORE hashing
-            t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
-            t.set_creator('Axon BBS')
-            t.set_comment(json.dumps(metadata))
             
-            # Generate a temporary info dict to get the hash for the URL
-            temp_info_dict = t.generate()
-            if b'info' not in temp_info_dict:
-                 raise RuntimeError("Could not generate temp info dict for hashing.")
-            info_hash_for_url = lt.sha1_hash(lt.bencode(temp_info_dict[b'info']))
-
-            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
-            if local_instance and local_instance.web_ui_onion_url:
-                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_for_url.hex()}/{blob_filename}"
-                t.add_url_seed(web_seed_url)
-
-            # Now, set the piece hashes
+            # Use the high-level API to prevent hashing errors
+            t = lt.create_torrent(fs, 0, 4 * 1024 * 1024, 0, "")
+            t.set_comment(json.dumps(metadata))
+            t.set_creator("Axon BBS")
+            
             lt.set_piece_hashes(t, self.torrent_save_path)
             
-            # Generate the final torrent dictionary
-            torrent_dict = t.generate()
-
-            if b'info' not in torrent_dict:
-                logger.error(f"Failed to generate final 'info' dictionary for torrent '{name}'.")
-                os.remove(blob_filepath)
-                return None, None
-            
-            torrent_file_data = lt.bencode(torrent_dict)
+            torrent_file_data = lt.bencode(t.generate())
             info = lt.torrent_info(torrent_file_data)
+            info_hash_hex = str(info.info_hashes().v1)
+            
+            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
+            if local_instance and local_instance.web_ui_onion_url:
+                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex}/{blob_filename}"
+                info.add_url_seed(web_seed_url)
 
             params = {'ti': info, 'save_path': self.torrent_save_path}
             self.session.add_torrent(params)
