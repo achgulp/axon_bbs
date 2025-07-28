@@ -89,6 +89,13 @@ class BitTorrentService:
             t.set_creator('Axon BBS')
             t.set_comment(json.dumps(metadata))
             
+            # Add this instance's own .onion URL as a web seed before hashing
+            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
+            if local_instance and local_instance.web_ui_onion_url:
+                info_hash_hex_for_url = lt.sha1_hash(lt.bencode(t.generate()[b'info'])).hex()
+                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex_for_url}/{blob_filename}"
+                t.add_url_seed(web_seed_url)
+
             lt.set_piece_hashes(t, self.torrent_save_path)
             
             torrent_dict = t.generate()
@@ -100,12 +107,6 @@ class BitTorrentService:
             
             torrent_file_data = lt.bencode(torrent_dict)
             info = lt.torrent_info(torrent_file_data)
-            info_hash_hex = str(info.info_hashes().v1)
-            
-            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
-            if local_instance and local_instance.web_ui_onion_url:
-                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex}/{blob_filename}"
-                info.add_url_seed(web_seed_url)
 
             params = {'ti': info, 'save_path': self.torrent_save_path}
             self.session.add_torrent(params)
@@ -148,7 +149,9 @@ class BitTorrentService:
             if time.time() - start_time > 60:
                 logger.warning(f"Timeout waiting for metadata for torrent {handle.name()}.")
                 return None, None
-            time.sleep(1)
+            s = handle.status()
+            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds} (web: {s.num_web_seeds}), Peers: {s.num_peers}")
+            time.sleep(2)
 
         logger.info(f"Metadata received for torrent: {handle.name()}. Starting download.")
         while not handle.status().is_seeding:
@@ -156,7 +159,7 @@ class BitTorrentService:
                  logger.warning(f"Torrent {handle.name()} did not complete download in time.")
                  return None, None
             s = handle.status()
-            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds}, Peers: {s.num_peers}")
+            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds} (web: {s.num_web_seeds}), Peers: {s.num_peers}")
             time.sleep(2)
         
         logger.info(f"Download complete for torrent: {handle.name()}.")
