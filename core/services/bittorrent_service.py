@@ -84,43 +84,41 @@ class BitTorrentService:
         try:
             fs = lt.file_storage()
             fs.add_file(blob_filename, len(enc_data))
-            
-            # CORRECTED: Use the simple, correct constructor for create_torrent
             t = lt.create_torrent(fs)
-            
+
             t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
             t.set_creator('Axon BBS')
             t.set_comment(json.dumps(metadata))
             
+            # Generate a temporary info dict to get the hash for the URL
+            temp_info_dict = t.generate()
+            if b'info' not in temp_info_dict:
+                 raise RuntimeError("Could not generate temp info dict for hashing.")
+            info_hash_for_url = lt.sha1_hash(lt.bencode(temp_info_dict[b'info']))
+
+            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
+            if local_instance and local_instance.web_ui_onion_url:
+                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_for_url.hex()}/{blob_filename}"
+                t.add_url_seed(web_seed_url)
+
             lt.set_piece_hashes(t, self.torrent_save_path)
             
             torrent_dict = t.generate()
 
             if b'info' not in torrent_dict:
-                logger.error(f"Failed to generate 'info' dictionary for torrent '{name}'.")
+                logger.error(f"Failed to generate final 'info' dictionary for torrent '{name}'.")
                 os.remove(blob_filepath)
                 return None, None
             
             torrent_file_data = lt.bencode(torrent_dict)
             info = lt.torrent_info(torrent_file_data)
-            info_hash_hex = str(info.info_hashes().v1)
-            
-            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
-            if local_instance and local_instance.web_ui_onion_url:
-                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex}/{blob_filename}"
-                # Add the web seed to the raw torrent dictionary before final bencoding
-                torrent_dict[b'url-list'] = web_seed_url.encode()
 
-            # Regenerate the final torrent data and info object with the web seed included
-            final_torrent_file_data = lt.bencode(torrent_dict)
-            final_info = lt.torrent_info(final_torrent_file_data)
-
-            params = {'ti': final_info, 'save_path': self.torrent_save_path}
+            params = {'ti': info, 'save_path': self.torrent_save_path}
             self.session.add_torrent(params)
-            logger.info(f"Added torrent '{final_info.name()}' to session for seeding.")
+            logger.info(f"Added torrent '{info.name()}' to session for seeding.")
 
-            magnet = lt.make_magnet_uri(final_info)
-            return magnet, final_torrent_file_data
+            magnet = lt.make_magnet_uri(info)
+            return magnet, torrent_file_data
         except Exception as e:
             logger.error(f"An unexpected error occurred during torrent creation: {e}", exc_info=True)
             if os.path.exists(blob_filepath):
@@ -157,7 +155,8 @@ class BitTorrentService:
                 logger.warning(f"Timeout waiting for metadata for torrent {handle.name()}.")
                 return None, None
             s = handle.status()
-            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds} (web: {s.num_web_seeds}), Peers: {s.num_peers}")
+            # CORRECTED: Removed non-existent 'num_web_seeds' attribute
+            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds}, Peers: {s.num_peers}")
             time.sleep(2)
 
         logger.info(f"Metadata received for torrent: {handle.name()}. Starting download.")
@@ -166,7 +165,8 @@ class BitTorrentService:
                  logger.warning(f"Torrent {handle.name()} did not complete download in time.")
                  return None, None
             s = handle.status()
-            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds} (web: {s.num_web_seeds}), Peers: {s.num_peers}")
+            # CORRECTED: Removed non-existent 'num_web_seeds' attribute
+            logger.debug(f"Status: {s.state}, Progress: {s.progress*100:.2f}%, Seeds: {s.num_seeds}, Peers: {s.num_peers}")
             time.sleep(2)
         
         logger.info(f"Download complete for torrent: {handle.name()}.")
