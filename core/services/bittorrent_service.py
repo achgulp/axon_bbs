@@ -85,23 +85,31 @@ class BitTorrentService:
             fs = lt.file_storage()
             fs.add_file(blob_filename, len(enc_data))
             t = lt.create_torrent(fs)
+
+            # CORRECT ORDER: Set all metadata BEFORE hashing
             t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
             t.set_creator('Axon BBS')
             t.set_comment(json.dumps(metadata))
             
-            # Add this instance's own .onion URL as a web seed before hashing
+            # Generate a temporary info dict to get the hash for the URL
+            temp_info = t.generate()
+            if b'info' not in temp_info:
+                 raise RuntimeError("Could not generate temp info dict for hashing.")
+            info_hash_hex_for_url = lt.sha1_hash(lt.bencode(temp_info[b'info'])).hex()
+
             local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
             if local_instance and local_instance.web_ui_onion_url:
-                info_hash_hex_for_url = lt.sha1_hash(lt.bencode(t.generate()[b'info'])).hex()
                 web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex_for_url}/{blob_filename}"
                 t.add_url_seed(web_seed_url)
 
+            # Now, set the piece hashes
             lt.set_piece_hashes(t, self.torrent_save_path)
             
+            # Generate the final torrent dictionary
             torrent_dict = t.generate()
 
             if b'info' not in torrent_dict:
-                logger.error(f"Failed to generate 'info' dictionary for torrent '{name}'.")
+                logger.error(f"Failed to generate final 'info' dictionary for torrent '{name}'.")
                 os.remove(blob_filepath)
                 return None, None
             
