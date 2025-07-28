@@ -88,11 +88,16 @@ class BitTorrentService:
             t.set_creator('Axon BBS')
             t.set_comment(json.dumps(metadata))
             
+            # Add this instance's own .onion URL as a web seed
+            local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
+            if local_instance and local_instance.web_ui_onion_url:
+                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{blob_filename}"
+                t.add_url_seed(web_seed_url)
+
             lt.set_piece_hashes(t, self.torrent_save_path)
             
             torrent_dict = t.generate()
 
-            # FIX: Check for the info key as BYTES, not a string
             if b'info' not in torrent_dict:
                 logger.error(f"Failed to generate 'info' dictionary for torrent '{name}'. Hashing failed.")
                 os.remove(blob_filepath)
