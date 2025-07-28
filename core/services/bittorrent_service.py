@@ -85,18 +85,13 @@ class BitTorrentService:
             fs = lt.file_storage()
             fs.add_file(blob_filename, len(enc_data))
             
-            # Use the simple constructor for create_torrent
             t = lt.create_torrent(fs)
-            
-            # CORRECT ORDER: Set all metadata BEFORE hashing
             t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
             t.set_creator('Axon BBS')
             t.set_comment(json.dumps(metadata))
             
-            # Now, set the piece hashes for the data
             lt.set_piece_hashes(t, self.torrent_save_path)
             
-            # Generate the torrent dictionary AFTER hashing
             torrent_dict = t.generate()
 
             if b'info' not in torrent_dict:
@@ -104,23 +99,22 @@ class BitTorrentService:
                 os.remove(blob_filepath)
                 return None, None
             
-            # Create the info object from the finalized torrent data
-            torrent_file_data = lt.bencode(torrent_dict)
-            info = lt.torrent_info(torrent_file_data)
-            info_hash_hex = str(info.info_hashes().v1)
+            info_hash_hex = str(lt.sha1_hash(lt.bencode(torrent_dict[b'info']))).lower()
             
-            # Add the web seed URL to the info object
             local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
             if local_instance and local_instance.web_ui_onion_url:
                 web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex}/{blob_filename}"
-                info.add_url_seed(web_seed_url)
+                torrent_dict[b'url-list'] = web_seed_url.encode()
+
+            final_torrent_file_data = lt.bencode(torrent_dict)
+            info = lt.torrent_info(final_torrent_file_data)
 
             params = {'ti': info, 'save_path': self.torrent_save_path}
             self.session.add_torrent(params)
             logger.info(f"Added torrent '{info.name()}' to session for seeding.")
 
             magnet = lt.make_magnet_uri(info)
-            return magnet, torrent_file_data
+            return magnet, final_torrent_file_data
         except Exception as e:
             logger.error(f"An unexpected error occurred during torrent creation: {e}", exc_info=True)
             if os.path.exists(blob_filepath):
