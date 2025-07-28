@@ -1,4 +1,4 @@
-# axon_bbs/axon_project/urls.py
+# Full path: axon_bbs/axon_project/urls.py
 """
 URL configuration for axon_project project.
 """
@@ -12,7 +12,7 @@ urlpatterns = [
     # Route for the Django admin interface
     path('admin/', admin.site.urls),
     
-    # CORRECT ORDER: Route for our application's API must come BEFORE the catch-all
+    # CORRECT ORDER: Route for the API must come BEFORE the catch-all
     path('api/', include('api.urls')),
     
     # Catch-all route to serve the React app's index.html
