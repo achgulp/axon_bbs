@@ -92,14 +92,14 @@ class BitTorrentService:
             t.set_comment(json.dumps(metadata))
             
             # Generate a temporary info dict to get the hash for the URL
-            temp_info = t.generate()
-            if b'info' not in temp_info:
+            temp_info_dict = t.generate()
+            if b'info' not in temp_info_dict:
                  raise RuntimeError("Could not generate temp info dict for hashing.")
-            info_hash_hex_for_url = lt.sha1_hash(lt.bencode(temp_info[b'info'])).hex()
+            info_hash_for_url = lt.sha1_hash(lt.bencode(temp_info_dict[b'info']))
 
             local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
             if local_instance and local_instance.web_ui_onion_url:
-                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex_for_url}/{blob_filename}"
+                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_for_url.hex()}/{blob_filename}"
                 t.add_url_seed(web_seed_url)
 
             # Now, set the piece hashes

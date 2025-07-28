@@ -17,53 +17,31 @@ from .encryption_utils import generate_checksum
 logger = logging.getLogger(__name__)
 
 class SyncService:
-    _instance = None
-    _lock = threading.Lock()
-
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            with cls._lock:
-                if not cls._instance:
-                    cls._instance = super(SyncService, cls).__new__(cls)
-        return cls._instance
-
     def __init__(self, poll_interval=60):
-        # Prevent re-initialization
-        if hasattr(self, '_initialized'):
-            return
         self.poll_interval = poll_interval
-        self.thread = None
-        self.stop_event = threading.Event()
-        self._initialized = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
-        if self.thread is None or not self.thread.is_alive():
-            self.stop_event.clear()
-            self.thread = threading.Thread(target=self._run, daemon=True)
-            self.thread.start()
-            logger.info("Peer Sync Service started.")
-
-    def stop(self):
-        self.stop_event.set()
-        if self.thread and self.thread.is_alive():
-            self.thread.join()
-        logger.info("Peer Sync Service stopped.")
+        self.thread.start()
+        logger.info("Peer Sync Service started.")
 
     def _run(self):
-        logger.info("SyncService polling thread is running.")
-        time.sleep(15)  # Initial delay before first poll
-        while not self.stop_event.is_set():
+        time.sleep(15)
+        while True:
             try:
                 self.poll_peers()
             except Exception as e:
                 logger.error(f"Error in sync service poll loop: {e}", exc_info=True)
-            self.stop_event.wait(self.poll_interval)
-        logger.info("SyncService polling thread has exited.")
-
+            time.sleep(self.poll_interval)
 
     def _process_magnet(self, magnet, peer_pubkey):
         from core.services.service_manager import service_manager
         
+        # Add a check to ensure magnet is a valid string
+        if not magnet:
+            logger.warning("Skipping processing of a null magnet link.")
+            return
+
         try:
             logger.info(f"Processing magnet: {magnet[:40]}...")
             handle, decrypted_content = service_manager.bittorrent_service.download_and_decrypt(
@@ -75,7 +53,6 @@ class SyncService:
                 board_name = content.get('board', 'general')
                 board, _ = MessageBoard.objects.get_or_create(name=board_name)
                 
-                # Check for duplicates before creating
                 if not Message.objects.filter(subject=content.get('subject'), pubkey=content.get('pubkey')).exists():
                     Message.objects.create(
                         board=board,
@@ -95,8 +72,7 @@ class SyncService:
         
         peers = TrustedInstance.objects.filter(is_trusted_peer=True)
         if not peers.exists():
-            # This is normal, so we can lower the log level
-            logger.debug("Sync service found no peers to poll.")
+            logger.info("Sync service found no peers to poll.")
             return
 
         logger.info(f"Polling {peers.count()} trusted peer(s) for new messages...")
@@ -140,7 +116,7 @@ class SyncService:
                     'X-Timestamp': timestamp,
                     'X-Signature': signature_b64
                 }
-
+                
                 target_url = f"{peer.web_ui_onion_url.strip('/')}/api/sync/?since={last_sync.isoformat()}"
                 
                 with requests.Session() as session:
