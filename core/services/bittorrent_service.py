@@ -104,6 +104,7 @@ class BitTorrentService:
             local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
             if local_instance and local_instance.web_ui_onion_url:
                 web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex}/{blob_filename}"
+                # Manually add the web seed to the torrent dictionary before creating the final objects
                 torrent_dict[b'url-list'] = web_seed_url.encode()
 
             final_torrent_file_data = lt.bencode(torrent_dict)
