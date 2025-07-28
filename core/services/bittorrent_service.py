@@ -85,28 +85,42 @@ class BitTorrentService:
             fs = lt.file_storage()
             fs.add_file(blob_filename, len(enc_data))
             
-            # Use the high-level API to prevent hashing errors
-            t = lt.create_torrent(fs, 0, 4 * 1024 * 1024, 0, "")
+            # CORRECTED: Use the simple, correct constructor for create_torrent
+            t = lt.create_torrent(fs)
+            
+            t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
+            t.set_creator('Axon BBS')
             t.set_comment(json.dumps(metadata))
-            t.set_creator("Axon BBS")
             
             lt.set_piece_hashes(t, self.torrent_save_path)
             
-            torrent_file_data = lt.bencode(t.generate())
+            torrent_dict = t.generate()
+
+            if b'info' not in torrent_dict:
+                logger.error(f"Failed to generate 'info' dictionary for torrent '{name}'.")
+                os.remove(blob_filepath)
+                return None, None
+            
+            torrent_file_data = lt.bencode(torrent_dict)
             info = lt.torrent_info(torrent_file_data)
             info_hash_hex = str(info.info_hashes().v1)
             
             local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
             if local_instance and local_instance.web_ui_onion_url:
                 web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex}/{blob_filename}"
-                info.add_url_seed(web_seed_url)
+                # Add the web seed to the raw torrent dictionary before final bencoding
+                torrent_dict[b'url-list'] = web_seed_url.encode()
 
-            params = {'ti': info, 'save_path': self.torrent_save_path}
+            # Regenerate the final torrent data and info object with the web seed included
+            final_torrent_file_data = lt.bencode(torrent_dict)
+            final_info = lt.torrent_info(final_torrent_file_data)
+
+            params = {'ti': final_info, 'save_path': self.torrent_save_path}
             self.session.add_torrent(params)
-            logger.info(f"Added torrent '{info.name()}' to session for seeding.")
+            logger.info(f"Added torrent '{final_info.name()}' to session for seeding.")
 
-            magnet = lt.make_magnet_uri(info)
-            return magnet, torrent_file_data
+            magnet = lt.make_magnet_uri(final_info)
+            return magnet, final_torrent_file_data
         except Exception as e:
             logger.error(f"An unexpected error occurred during torrent creation: {e}", exc_info=True)
             if os.path.exists(blob_filepath):
