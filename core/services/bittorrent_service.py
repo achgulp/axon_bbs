@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -48,15 +49,7 @@ class BitTorrentService:
     def prime_identity(self):
         local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
         if not local_instance:
-            logger.warning("No local instance identity found. Skipping priming.")
-            return
-        key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
-        f = Fernet(key)
-        try:
-            self.private_key = serialization.load_pem_private_key(
-                f.decrypt(local_instance.encrypted_private_key.encode()),
-                password=None
-            )# Full path: axon_bbs/core/services/bittorrent_service.py
+            logger.warning("No local instance identity# Full path: axon_bbs/core/services/bittorrent_service.py
 import asyncio
 import base64
 import json
@@ -64,6 +57,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -127,7 +121,6 @@ class BitTorrentService:
 
     def create_torrent(self, data, name):
         sanitized_name = sanitize_filename(name)
-        # Use a consistent filename based on a UUID for uniqueness
         blob_filename = f"{sanitized_name}_{uuid.uuid4().hex[:12]}.dat"
         blob_filepath = os.path.join(self.torrent_save_path, blob_filename)
         
@@ -158,10 +151,11 @@ class BitTorrentService:
             
             torrent_file_data = lt.bencode(torrent_dict)
             info = lt.torrent_info(torrent_file_data)
+            info_hash_hex = str(info.info_hashes().v1)
             
             local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
             if local_instance and local_instance.web_ui_onion_url:
-                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info.info_hashes().v1}/{blob_filename}"
+                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex}/{blob_filename}"
                 info.add_url_seed(web_seed_url)
 
             params = {'ti': info, 'save_path': self.torrent_save_path}
@@ -252,7 +246,15 @@ class BitTorrentService:
     def chunk_data(self, data, chunk_size=256*1024): return [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
     def encrypt_chunk(self, chunk): aes_key = Fernet.generate_key(); f = Fernet(aes_key); return aes_key, f.encrypt(chunk)
     def create_envelope(self, aes_key, pubkey_pem): pubkey = load_pem_public_key(pubkey_pem.encode()); return base64.b64encode(pubkey.encrypt(aes_key, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None))).decode('utf-8')
-    def re_envelope_and_reseed(self, torrent_handle, save_path, my_pubkey): pass
+    def re_envelope_and_reseed(self, torrent_handle, save_path, my_pubkey): pass found. Skipping priming.")
+            return
+        key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
+        f = Fernet(key)
+        try:
+            self.private_key = serialization.load_pem_private_key(
+                f.decrypt(local_instance.encrypted_private_key.encode()),
+                password=None
+            )
             self.identity_primed = True
             logger.info("Local identity primed successfully.")
         except Exception as e:
@@ -265,7 +267,6 @@ class BitTorrentService:
 
     def create_torrent(self, data, name):
         sanitized_name = sanitize_filename(name)
-        # Use a consistent filename based on a UUID for uniqueness
         blob_filename = f"{sanitized_name}_{uuid.uuid4().hex[:12]}.dat"
         blob_filepath = os.path.join(self.torrent_save_path, blob_filename)
         
@@ -296,10 +297,11 @@ class BitTorrentService:
             
             torrent_file_data = lt.bencode(torrent_dict)
             info = lt.torrent_info(torrent_file_data)
+            info_hash_hex = str(info.info_hashes().v1)
             
             local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
             if local_instance and local_instance.web_ui_onion_url:
-                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info.info_hashes().v1}/{blob_filename}"
+                web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex}/{blob_filename}"
                 info.add_url_seed(web_seed_url)
 
             params = {'ti': info, 'save_path': self.torrent_save_path}

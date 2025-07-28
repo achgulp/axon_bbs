@@ -308,7 +308,7 @@ class SyncView(views.APIView):
 
 class TorrentFileView(views.APIView):
     permission_classes = [permissions.AllowAny]
-    def get(self, request, info_hash, *args, **kwargs):
+    def get(self, request, info_hash, filename, *args, **kwargs):
       try:
             info_hash_obj = lt.sha1_hash(bytes.fromhex(info_hash))
             handle = service_manager.bittorrent_service.session.find_torrent(info_hash_obj)
@@ -319,6 +319,7 @@ class TorrentFileView(views.APIView):
             if ti.num_files() == 0:
                 raise Http404("Torrent contains no files.")
             
+            # Find the filename from the torrent's metadata
             filename_in_torrent = ti.files().file_path(0)
             file_path = os.path.join(handle.save_path(), filename_in_torrent)
             
