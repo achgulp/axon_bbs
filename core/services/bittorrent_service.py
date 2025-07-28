@@ -69,62 +69,55 @@ class BitTorrentService:
 
     def create_torrent(self, data, name):
         sanitized_name = sanitize_filename(name)
-        # The actual data blob is now named with its info hash for direct lookup
+        blob_filename = f"{sanitized_name}_{int(time.time())}.dat"
+        blob_filepath = os.path.join(self.torrent_save_path, blob_filename)
+        
         enc_data, metadata = self.encrypt_and_wrap(data)
+        try:
+            with open(blob_filepath, 'wb') as f:
+                f.write(enc_data)
+        except Exception as e:
+            logger.error(f"Failed to write torrent data to disk: {e}")
+            return None, None
 
         try:
             fs = lt.file_storage()
-            # Use a temporary name for hashing purposes
-            temp_filename = f"{sanitized_name}_{int(time.time())}.dat"
-            fs.add_file(temp_filename, len(enc_data))
-            
+            fs.add_file(blob_filename, len(enc_data))
             t = lt.create_torrent(fs)
             t.add_tracker("udp://tracker.opentrackr.org:1337/announce")
             t.set_creator('Axon BBS')
             t.set_comment(json.dumps(metadata))
-
-            # Temporarily write the data to calculate piece hashes
-            temp_filepath = os.path.join(self.torrent_save_path, temp_filename)
-            with open(temp_filepath, 'wb') as f:
-                f.write(enc_data)
-
+            
             lt.set_piece_hashes(t, self.torrent_save_path)
-            os.remove(temp_filepath) # Remove the temporary file
-
+            
             torrent_dict = t.generate()
 
             if b'info' not in torrent_dict:
                 logger.error(f"Failed to generate 'info' dictionary for torrent '{name}'.")
+                os.remove(blob_filepath)
                 return None, None
-
+            
             torrent_file_data = lt.bencode(torrent_dict)
             info = lt.torrent_info(torrent_file_data)
             info_hash_hex = str(info.info_hashes().v1)
-
-            # Now, save the data blob with its actual info hash as the name
-            final_filepath = os.path.join(self.torrent_save_path, info_hash_hex)
-            with open(final_filepath, 'wb') as f:
-                f.write(enc_data)
-
-            # Add this instance's own .onion URL as a web seed using the INFO HASH
+            
+            # Add this instance's own .onion URL as a web seed
             local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
             if local_instance and local_instance.web_ui_onion_url:
                 web_seed_url = f"{local_instance.web_ui_onion_url.strip('/')}/api/torrents/{info_hash_hex}/"
-                t.add_url_seed(web_seed_url)
-            
-            # Regenerate the torrent dictionary with the web seed included
-            final_torrent_dict = t.generate()
-            final_torrent_file_data = lt.bencode(final_torrent_dict)
-            final_info = lt.torrent_info(final_torrent_file_data)
-            
-            params = {'ti': final_info, 'save_path': self.torrent_save_path}
-            self.session.add_torrent(params)
-            logger.info(f"Added torrent '{final_info.name()}' to session for seeding.")
+                # We add the seed to the torrent_info object for the magnet link
+                info.add_url_seed(web_seed_url)
 
-            magnet = lt.make_magnet_uri(final_info)
-            return magnet, final_torrent_file_data
+            params = {'ti': info, 'save_path': self.torrent_save_path}
+            self.session.add_torrent(params)
+            logger.info(f"Added torrent '{info.name()}' to session for seeding.")
+
+            magnet = lt.make_magnet_uri(info)
+            return magnet, torrent_file_data
         except Exception as e:
             logger.error(f"An unexpected error occurred during torrent creation: {e}", exc_info=True)
+            if os.path.exists(blob_filepath):
+                os.remove(blob_filepath)
             return None, None
 
     def encrypt_and_wrap(self, data):
@@ -151,16 +144,16 @@ class BitTorrentService:
         params.save_path = save_path
         handle = self.session.add_torrent(params)
         start_time = time.time()
-        # Check for metadata first, then the data itself
+        
         while not handle.has_metadata():
             if time.time() - start_time > 60:
-                logger.warning(f"Torrent {handle.name()} timed out waiting for metadata.")
+                logger.warning(f"Timeout waiting for metadata for torrent {handle.name()}.")
                 return None, None
             time.sleep(1)
 
         logger.info(f"Metadata received for torrent: {handle.name()}. Starting download.")
         while not handle.status().is_seeding:
-            if time.time() - start_time > 180: # Total timeout
+            if time.time() - start_time > 180:
                  logger.warning(f"Torrent {handle.name()} did not complete download in time.")
                  return None, None
             s = handle.status()
@@ -168,15 +161,15 @@ class BitTorrentService:
             time.sleep(2)
         
         logger.info(f"Download complete for torrent: {handle.name()}.")
-
         ti = handle.torrent_file()
         if not ti:
             return handle, None
             
         metadata = json.loads(ti.comment())
         envelopes_list = metadata['envelopes']
-        # The file on disk will be named by its info hash
-        file_path = os.path.join(handle.save_path(), str(handle.info_hashes().v1))
+        
+        filename_in_torrent = ti.files().file_path(0)
+        file_path = os.path.join(handle.save_path(), filename_in_torrent)
         
         with open(file_path, 'rb') as f:
             enc_data = f.read()

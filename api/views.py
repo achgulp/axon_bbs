@@ -308,14 +308,24 @@ class SyncView(views.APIView):
 
 class TorrentFileView(views.APIView):
     permission_classes = [permissions.AllowAny]
-    def get(self, request, info_hash, filename, *args, **kwargs):
+    def get(self, request, info_hash, *args, **kwargs):
       try:
             info_hash_obj = lt.sha1_hash(bytes.fromhex(info_hash))
             handle = service_manager.bittorrent_service.session.find_torrent(info_hash_obj)
-            if not handle.is_valid(): raise Http404("Torrent not found in session.")
+            if not handle.is_valid() or not handle.has_metadata():
+                raise Http404("Torrent not found or metadata not available.")
             
-            file_path = os.path.join(handle.save_path(), info_hash)
-            if not os.path.exists(file_path): raise Http404("Torrent data file not found on disk.")
+            ti = handle.torrent_file()
+            if ti.num_files() == 0:
+                raise Http404("Torrent contains no files.")
+            
+            # Find the filename from the torrent's metadata
+            filename_in_torrent = ti.files().file_path(0)
+            file_path = os.path.join(handle.save_path(), filename_in_torrent)
+            
+            if not os.path.exists(file_path):
+                raise Http404("Torrent data file not found on disk.")
+            
             file_size = os.path.getsize(file_path)
 
             range_header = request.META.get('HTTP_RANGE')
@@ -340,7 +350,7 @@ class TorrentFileView(views.APIView):
                 with open(file_path, 'rb') as f:
                     response = HttpResponse(f.read(), content_type='application/octet-stream')
                     response['Content-Length'] = file_size
-                    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                    response['Content-Disposition'] = f'attachment; filename="{filename_in_torrent}"'
                     return response
       except Exception as e:
             logger.error(f"Error serving torrent file for hash {info_hash}: {e}")
