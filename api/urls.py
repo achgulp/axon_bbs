@@ -1,4 +1,4 @@
-# axon_bbs/api/urls.py
+# Full path: axon_bbs/api/urls.py
 from django.urls import path
 from .views import (
     RegisterView,
@@ -46,9 +46,8 @@ urlpatterns = [
     path('content/review-extension/<int:pk>/', ReviewContentExtensionView.as_view(), name='review-extension'),
     path('content/unpin/', UnpinContentView.as_view(), name='unpin-content'),
 
-    # CORRECTED: Endpoint for serving torrent files for web seeding.
-    # It now accepts an optional filename at the end of the URL.
-    path('torrents/<str:info_hash>/<str:filename>', TorrentFileView.as_view(), name='torrent-file'),
+    # Endpoint for serving torrent files for web seeding
+    path('torrents/<str:info_hash>/', TorrentFileView.as_view(), name='torrent-file'),
 
     # Endpoint for peers to poll for new messages
     path('sync/', SyncView.as_view(), name='sync'),
