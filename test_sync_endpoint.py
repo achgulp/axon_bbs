@@ -1,6 +1,6 @@
 # Full path: axon_bbs/test_sync_endpoint.py
 # A standalone script to test the GET /api/sync/ endpoint.
-# Run from your laptop to the host machine.
+# Run from your HOST to the LAPTOP machine.
 import requests
 import base64
 import json
@@ -10,47 +10,46 @@ from cryptography.hazmat.primitives import serialization
 from datetime import datetime, timezone
 
 # --- CONFIGURATION ---
-# The .onion address of the HOST machine you are testing against.
-TARGET_ONION_URL = "http://lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion"
+# The .onion address of the LAPTOP machine you are testing against.
+TARGET_ONION_URL = "http://irvgoajs5slszfroepj5fpit3lcxn5gxpeffim3shjstb6akbjuuzdid.onion"
 
-# The private and public keys of the LAPTOP (the machine running this script).
-# These must correspond to the public key you added as a TrustedInstance on the HOST.
+# The private and public keys of the HOST (the machine running this script).
 PRIVATE_KEY_PEM = """-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCX0Zvp5GicutPw
-lj6nOVxXJ6mZ2IBOVZduLsh//hpFgsHSPeVbjQ2toawm3eXaplKxDX2hqX22C4/L
-wVtTvYcCdztK1HgMDVopILBGm66qZ0E8mPzhnBZ8INAuEkq32023xljyPU4RkyMg
-Y9sUAs9FLqfYrjHCRAGeXXdV/n1YtQoCb1fP/bkm26lF2sDpxMoX6/sCduK0haGs
-Hl9FTfpL8yccBfFcciZb9YfPOwceL66Nvy9/FOXXGuRMfoCjUwRzBlc4WVB7FubA
-rKkskg4Ool5OSgRqbofmsAFd62w0VLTOmZxVmEtrRVbhhxl45156IyFFKxDWG8Dp
-FBL/Gu5vAgMBAAECggEAEgQErXe2VkrxVY5utudeptUFEkWXzDPp+WBB2LZtpawD
-lhBURE3zvpP92srgONcd3vbL3sA/M7ghgztZvBE0kT1W4uVdrYh0F4dSg757tqr0
-Gd3JvHgKTwaRzbXL+g9jJJi7+1r9BabhNznCSJigwgPsVREuxG/PhVxwCdteQoVi
-YqmhopSHEqDHnNmwrZB5QNo1akiTuAZO354Yn+0nHbRwPSqGicNLye5bHzb1NkYr
-jyl3IstT5sy3bKDpF44xRN3Vy0PYIYbwcqAtUsZnM0l2eoPZdB9tYWB7/CCMhfFC
-QsH81q8+pxI9aCD1DVE9zitZBCFovDsi2Jy4BpNo6QKBgQDQkdRHK0fXYY3COpTv
-1/9SimsDVU1FPTmOSmIOITKZdsHZHdjd+fVs4lS5I/nf152iCLSu5nEEc1Yws1Im
-ChIE01kFKdpuzEYWw9JJb8v+LrwQRgYgfGpBlNaMSVYmrbWRq1GHvzEK7La+JL9o
-7T7mzmggZGXYm/rd4z5LjRqDlQKBgQC6V/Ms8g+5tHSSn2RQWnLIt33McH7niy2y
-NidbYK6/tLe1f658BSvcXDpdtcCpfW54cgv5S+Tep0MQlEHskqDLYbCXLiQuPKe7
-bbTyyCOlwi+nJBHbTmc9xIF9WwJWypqFqNpYtGvh2I6lkCosTnzQkVNXAe/zeV4L
-jXhFrK3o8wKBgQClVSRQMkflvSgxclzD75Yu6RjBcKorG8h3OhGWn8xLiK9Lm/Rg
-qhdZ8+QzSwh136bOXlZUWsn2PDNzsYKKMutrtdnYVQAZWoao3xvgKOYtHQDpaYjL
-0bQtPn4AgNXxHTxUN9kOYYnP3itSeTDeTUrSjYZPPybY2XS41b15CGafLQKBgQCi
-y4loP8VbQPsCyXuS86IKFrwxaiqEUMRISCVUIIAqfVBtoTGnqcDq0CwxiELcD/f+
-A+zQC+zUVB40EsIRUvxlEmB7g1Uai+UhyrNl01HJU3/cLpfnF3T8sntKL8M4XeJn
-WOAA1QbXFSFyJSOi96L1d7Dud4PRGrv9rcdgX37D3wKBgEonGpYFqzB5ehdLSWh8
-9aEeoggDGqtYZ8PXRAOeIbCyxSkiRQIazi0BElt7UdQnDGzIfmMmcez5W1uIWnRy
-Z5t7PEorJedH5LSSxy6LdmRicGEaMYAMQqXcxlGUPSYdyC85BAvDhhxoYIMblfIM
-19BXxGirzP2ryKSSQe7sO4q8
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC7vI0Epq6ixLBV
+R28HWOljbFnLS+haDWIiZ7+3eG32d+eYd8W1tOIWn174qce7ap5sEM+rYn9ac8/L
+rxV9Osn0qHggekHFqu6eyvgBDC3mRksuAeYsWg4dL183qg74ySnTpNs32PDwxRHc
+DumrfAPgvjOdvOOp4ljC+rjnXcjO7x8JqTPghKV/G8pKqyM+xri3NDATGGnJmrNx
+En6EoezpkT22jWiQR8e0omz/EQYhGapfPWrOQIuQddKVxOy5MdERj9mgnpo2S7Oy
+Tgvw/wzOP1GqSmXTmCWkKF9N4hSkwT1z8CKtgrMoMKX58xF4SARjgOZW+fS3u+69
+k5SmTYKzAgMBAAECggEAI7eVKrfdjMkX9TmQdZjkWk6QbN2luJBIRdxwPKM0ZIpe
+bQMIgfAGfaBXjL6cads4hb3TDLvCF/7ln05Rq9AmAR6WMDOiVM2W9W4PLf/XsbJY
+9klVNcXyXnoXRvtbOtjm1MXOETt8Z4pOwguySDZhdH4rSszXkYgnM/1IdXhBzqCb
+M890MbRzqokfWFvfFL9krRJqjxWsLXQ3aPVolBYDQ3o3T8e9X1KFtQtr0QMLkRR5
+LlbWw9ZbnLis1fwDp54j1tJGVp1bHVrBOuNyhiBycQjzjvx62B8zLiKLcHHlBTGC
+zKr083LwlJdiY+et2gSkuOOTgpp18AKP3b87W++I7QKBgQDpur29GY0OdqFilQrh
+rtxPfoKIpNOS11YL6cxb9fqTjJtG2LD+WpRXZKFwgnk9s0apRGvKmalA3LdrRw1f
+Ul9gI141lt1NtxNMN0a+r9s+SGO5Xi4K+UqeLML7iA9XKtvA/BeROQrXNLgd96Vj
+JIfMJPU7FlYAJLwrmJNNAxSEtwKBgQDNn+yvfi3bpoPp7BJcy4pVlWSTP34rTGT5
+Yoaf2jAnt7OEhoSWVMnEMY16QVdVCb3PaVozZ3SyZWOExGsUOxqZz1e2ruXsOCRi
+UFwkBnNTI0Q+RvTdliWWtu/qdg+Q7kUKg2kML3P3wrqstrwlj6menWqn7tUTo6u9
+GhOBcPaN5QKBgQDEZKFh78JS0OOyjkHieKeuNENCxhzxWfd3czDAZOP0b0VaNmIi
+l8Hl3Sy5+Sge7DEHsfJQ/uT1F4EXp1BZNEHn6lAS/31c++Q/OoM7X1D9+J2y+Kv/
+lJFab4o3CJC7UcvtUOYMpL2zLx02MQzLTbq9kqBs0cvZuwRSLZY4M8pd6QKBgQCy
+RycZ3Md7unqCtSgShnKw0y75L8J/XePqCM96Bt1bgj1F+K85+9dXoDLuvXovg5ur
+GceX6+nUxm0rbnT8fGYK1ydQf4Ffdimth8jrfyA8A8amTDT/ba+3ZXLLkILcgIkh
+nV/VrcrZFF9vYZvs4QsKN6eCZGMffPdopBQnVT6fNQKBgCAMFhtaV8lYuo2ZrdXw
+SLrQ1fUPxQ8jQAT9cYsAmMvng9fDfPExJT4FYRAS/Fg86V2YADyhmgb3ODs1Zb7n
+DtQqheLx15rdzk3p4rusC0/QR6jj/so7aQUGxxENVCF+M6+esmFmK4mU3KBRR7wE
+Imp3da9c3VSuBQno2XNplUz7
 -----END PRIVATE KEY-----"""
 SENDER_PUBKEY_PEM = """-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAl9Gb6eRonLrT8JY+pzlc
-VyepmdiATlWXbi7If/4aRYLB0j3lW40NraGsJt3l2qZSsQ19oal9tguPy8FbU72H
-Anc7StR4DA1aKSCwRpuuqmdBPJj84ZwWfCDQLhJKt9tNt8ZY8j1OEZMjIGPbFALP
-RS6n2K4xwkQBnl13Vf59WLUKAm9Xz/25JtupRdrA6cTKF+v7AnbitIWhrB5fRU36
-S/MnHAXxXHImW/WHzzsHHi+ujb8vfxTl1xrkTH6Ao1MEcwZXOFlQexbmwKypLJIO
-DqJeTkoEam6H5rABXetsNFS0zpmcVZhLa0VW4YcZeOdeeiMhRSsQ1hvA6RQS/xru
-bwIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu7yNBKauosSwVUdvB1jp
+Y2xZy0voWg1iIme/t3ht9nfnmHfFtbTiFp9e+KnHu2qebBDPq2J/WnPPy68VfTrJ
+9Kh4IHpBxarunsr4AQwt5kZLLgHmLFoOHS9fN6oO+Mkp06TbN9jw8MUR3A7pq3wD
+4L4znbzjqeJYwvq4513Izu8fCakz4ISlfxvKSqsjPsa4tzQwExhpyZqzcRJ+hKHs
+6ZE9to1okEfHtKJs/xEGIRmqXz1qzkCLkHXSlcTsuTHREY/ZoJ6aNkuzsk4L8P8M
+zj9Rqkpl05glpChfTeIUpME9c/AirYKzKDCl+fMReEgEY4DmVvn0t7vuvZOUpk2C
+swIDAQAB
 -----END PUBLIC KEY-----"""
 # -----------------------------------------------------------------------
 
@@ -73,7 +72,6 @@ def run_test():
         return
 
     # 2. Prepare data for signing (the timestamp)
-    #    FIX: Generate a timezone-aware timestamp using timezone.utc
     timestamp = datetime.now(timezone.utc).isoformat()
     hasher = hashes.Hash(hashes.SHA256())
     hasher.update(timestamp.encode())
@@ -88,7 +86,6 @@ def run_test():
     signature_b64 = base64.b64encode(signature).decode('utf-8')
 
     # 4. Assemble headers for authentication
-    # The public key is also Base64 encoded to prevent issues with newlines in headers
     headers = {
         'X-Timestamp': timestamp,
         'X-Signature': signature_b64,
@@ -112,7 +109,7 @@ def run_test():
             target_url,
             headers=headers,
             proxies=proxies,
-            timeout=120  # Increased timeout for Tor
+            timeout=120
         )
 
         print("\n--- Response ---")
@@ -124,9 +121,6 @@ def run_test():
             print("[SUCCESS] The request was successful!")
         else:
             print(f"[FAILURE] The request failed with status code {response.status_code}.")
-            if response.status_code == 401:
-                print("Reason: 401 Unauthorized. This means the host server does not trust your public key.")
-                print("ACTION: Ensure the laptop's SENDER_PUBKEY_PEM is in the host's TrustedInstance table AND the 'is_trusted_peer' checkbox is checked.")
 
     except requests.exceptions.RequestException as e:
         print("\n[FAILURE] The connection failed.")
