@@ -6,10 +6,11 @@ import os
 import sys
 
 # --- Application Version ---
-APP_VERSION = "8.6.0"
+APP_VERSION = "9.0.0"
 
 def main():
     """Run administrative tasks."""
+    # This check prevents the version banner from printing twice when using the reloader.
     if os.environ.get('RUN_MAIN') != 'true':
         print(f"--- Axon BBS Management Utility v{APP_VERSION} ---")
     
@@ -24,14 +25,16 @@ def main():
         ) from exc
 
     # Custom message for runserver command
-    if 'runserver' in sys.argv and os.environ.get('RUN_MAIN') == 'true':  # Only in the child process
+    is_runserver = 'runserver' in sys.argv
+    is_reloader = os.environ.get('RUN_MAIN') == 'true'
+
+    if is_runserver and not is_reloader:
         print("Starting development server at http://127.0.0.1:8000/")
-    
-    
-    print("Admin site available at http://127.0.0.1:8000/admin/")
+        print("Admin site available at http://127.0.0.1:8000/admin/")
 
     execute_from_command_line(sys.argv)
 
 
 if __name__ == '__main__':
     main()
+
