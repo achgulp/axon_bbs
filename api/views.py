@@ -42,8 +42,7 @@ class UnlockIdentityView(views.APIView):
     def post(self, request, *args, **kwargs):
         user = request.user
         password = request.data.get('password')
-        if not password:
-            return Response({"error": "Password is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not password: return Response({"error": "Password is required."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
             salt_path = os.path.join(user_data_dir, 'salt.bin')
@@ -52,51 +51,71 @@ class UnlockIdentityView(views.APIView):
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(identity_storage_path, encryption_key)
             identity = identity_service.get_identity_by_name("default")
-            if not identity: return Response({"error": "No default identity found for user."}, status=status.HTTP_404_NOT_FOUND)
+            if not identity: return Response({"error": "No default identity found."}, status=status.HTTP_404_NOT_FOUND)
             request.session['unencrypted_priv_key'] = identity['private_key']
             logger.info(f"Identity unlocked for user {user.username}")
             return Response({"status": "identity unlocked"}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Failed to unlock identity for {user.username}: {e}", exc_info=True)
-            return Response({"error": "Failed to unlock identity. Check password or system logs."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Failed to unlock identity."}, status=status.HTTP_401_UNAUTHORIZED)
 
 class ImportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request, *args, **kwargs):
-        # Implementation can be added here later
         return Response(status=status.HTTP_501_NOT_IMPLEMENTED)
 
-# --- File Upload View ---
+# --- File Handling Views ---
 class FileUploadView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
-
     def post(self, request, *args, **kwargs):
-        if 'file' not in request.FILES:
-            return Response({"error": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
-
+        if 'file' not in request.FILES: return Response({"error": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
         uploaded_file = request.FILES['file']
-        file_data = uploaded_file.read()
-
-        if not service_manager.bitsync_service:
-            logger.error("BitSyncService is not available for file upload.")
-            return Response({"error": "Sync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        
+        if not service_manager.bitsync_service: return Response({"error": "Sync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         try:
-            manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(file_data)
+            manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(uploaded_file.read())
             attachment = FileAttachment.objects.create(
-                author=request.user,
-                filename=uploaded_file.name,
-                content_type=uploaded_file.content_type,
-                size=uploaded_file.size,
-                manifest=manifest
+                author=request.user, filename=uploaded_file.name, content_type=uploaded_file.content_type,
+                size=uploaded_file.size, manifest=manifest
             )
             serializer = FileAttachmentSerializer(attachment)
             logger.info(f"User {request.user.username} uploaded file '{attachment.filename}' ({attachment.id})")
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         except Exception as e:
             logger.error(f"Failed to process file upload for {request.user.username}: {e}", exc_info=True)
-            return Response({"error": "A server error occurred during file processing."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": "Server error during file processing."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class FileDownloadView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, file_id, *args, **kwargs):
+        private_key_pem = request.session.get('unencrypted_priv_key')
+        if not private_key_pem:
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            attachment = FileAttachment.objects.get(id=file_id)
+        except FileAttachment.DoesNotExist:
+            raise Http404("File not found.")
+
+        if not service_manager.sync_service:
+            return Response({"error": "Sync service is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            # This method needs to be implemented in the SyncService
+            decrypted_data = service_manager.sync_service.get_decrypted_content(attachment.manifest)
+            
+            if decrypted_data is None:
+                return Response({"error": "Failed to retrieve or decrypt file from the network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+            response = HttpResponse(decrypted_data, content_type=attachment.content_type)
+            response['Content-Disposition'] = f'attachment; filename="{attachment.filename}"'
+            return response
+
+        except Exception as e:
+            logger.error(f"Error during file download for file {file_id}: {e}", exc_info=True)
+            return Response({"error": "An error occurred while preparing the file for download."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 # --- Content & Moderation Views ---
 class MessageBoardListView(generics.ListAPIView):
@@ -115,40 +134,26 @@ class MessageListView(generics.ListAPIView):
 class PostMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request, *args, **kwargs):
-        user = request.user
-        subject = request.data.get('subject')
-        body = request.data.get('body')
-        board_name = request.data.get('board_name', 'general')
-        attachment_ids = request.data.get('attachment_ids', [])
-
-        if not all([subject, body]):
-            return Response({"error": "Subject and body are required."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not request.session.get('unencrypted_priv_key'):
-            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
-        
+        user, subject, body, board_name, attachment_ids = request.user, request.data.get('subject'), request.data.get('body'), request.data.get('board_name', 'general'), request.data.get('attachment_ids', [])
+        if not all([subject, body]): return Response({"error": "Subject and body are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not request.session.get('unencrypted_priv_key'): return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
         try:
             board, _ = MessageBoard.objects.get_or_create(name=board_name)
             message_content = {"subject": subject, "body": body, "board": board.name, "pubkey": user.pubkey}
             raw_data = json.dumps(message_content).encode('utf-8')
-
             if service_manager.bitsync_service:
                 manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(raw_data)
-                message = Message.objects.create(
-                    board=board, subject=subject, body=body, author=user, pubkey=user.pubkey, manifest=manifest
-                )
+                message = Message.objects.create(board=board, subject=subject, body=body, author=user, pubkey=user.pubkey, manifest=manifest)
                 if attachment_ids:
                     attachments = FileAttachment.objects.filter(id__in=attachment_ids, author=user)
                     message.attachments.set(attachments)
-                
                 logger.info(f"New message '{subject}' with {len(attachment_ids)} attachment(s) posted.")
                 return Response({"status": "message_posted_and_synced"}, status=status.HTTP_201_CREATED)
             else:
-                logger.error("BitSyncService is not available.")
                 return Response({"error": "Sync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
             logger.error(f"Failed to post message for {user.username}: {e}", exc_info=True)
-            return Response({"error": "A server error occurred while posting the message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": "Server error while posting message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class IgnorePubkeyView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -221,12 +226,21 @@ class SyncView(views.APIView):
     permission_classes = [TrustedPeerPermission]
     def get(self, request, *args, **kwargs):
         since_str = request.query_params.get('since')
-        if not since_str:
-            return Response({"error": "'since' timestamp is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not since_str: return Response({"error": "'since' timestamp is required."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             since_dt = timezone.datetime.fromisoformat(since_str.replace(' ', '+'))
+            
             new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
-            manifests = [msg.manifest for msg in new_messages]
+            new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
+
+            manifests = []
+            for msg in new_messages:
+                msg.manifest['content_type'] = 'message'
+                manifests.append(msg.manifest)
+            for f in new_files:
+                f.manifest['content_type'] = 'file'
+                manifests.append(f.manifest)
+
             return JsonResponse({"manifests": manifests}, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Error during sync operation: {e}", exc_info=True)
@@ -244,15 +258,12 @@ class BitSyncHasContentView(views.APIView):
 class BitSyncChunkView(views.APIView):
     permission_classes = [TrustedPeerPermission]
     def get(self, request, content_hash, chunk_index, *args, **kwargs):
-        if not service_manager.bitsync_service:
-            return Response({"error": "BitSync service not available"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        if not service_manager.bitsync_service: return Response({"error": "BitSync service not available"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         chunk_path = service_manager.bitsync_service.get_chunk_path(content_hash, chunk_index)
         if chunk_path:
             try:
                 with open(chunk_path, 'rb') as f:
                     return HttpResponse(f.read(), content_type='application/octet-stream')
-            except IOError:
-                raise Http404("Chunk file not readable or found on disk.")
-        else:
-            raise Http404("Chunk not found.")
+            except IOError: raise Http404("Chunk file not readable.")
+        else: raise Http404("Chunk not found.")
 
