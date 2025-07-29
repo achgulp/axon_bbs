@@ -22,59 +22,28 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('username', 'password')
 
     def create(self, validated_data):
-        # This logic remains correct and does not need changes.
+        """
+        Overrides the default create method to add identity creation.
+        """
+        # 1. Create the standard Django user
         user = User.objects.create_user(
             username=validated_data['username'],
             password=validated_data['password'],
         )
+        
+        # CORRECTED: The 'try...except' block is now complete.
         try:
+            # 2. Prepare for identity creation
             user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
             os.makedirs(user_data_dir, exist_ok=True)
+            
             salt = generate_salt()
             with open(os.path.join(user_data_dir, 'salt.bin'), 'wb') as f:
                 f.write(salt)
+
             encryption_key = derive_key_from_password(validated_data['password'], salt)
-            identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
-            identity_service = IdentityService(
-                storage_path=identity_storage_path,
-                encryption_key=encryption_key
-            )
-            identity = identity_service.generate_and_# Full path: axon_bbs/api/serializers.py
-from rest_framework import serializers
-from django.contrib.auth import get_user_model
-from django.conf import settings
-from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest
-from core.services.identity_service import IdentityService
-from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
-import os
-import logging
 
-logger = logging.getLogger(__name__)
-User = get_user_model()
-
-class UserSerializer(serializers.ModelSerializer):
-    """
-    Serializer for the User model. Handles creation of the user's identity on registration.
-    """
-    password = serializers.CharField(write_only=True)
-
-    class Meta:
-        model = User
-        fields = ('username', 'password')
-
-    def create(self, validated_data):
-        # This logic remains correct and does not need changes.
-        user = User.objects.create_user(
-            username=validated_data['username'],
-            password=validated_data['password'],
-        )
-        try:
-            user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
-            os.makedirs(user_data_dir, exist_ok=True)
-            salt = generate_salt()
-            with open(os.path.join(user_data_dir, 'salt.bin'), 'wb') as f:
-                f.write(salt)
-            encryption_key = derive_key_from_password(validated_data['password'], salt)
+            # 3. Create the user's identity service and generate keys
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(
                 storage_path=identity_storage_path,
@@ -83,10 +52,15 @@ class UserSerializer(serializers.ModelSerializer):
             identity = identity_service.generate_and_add_identity(name="default")
             user.pubkey = identity['public_key']
             user.save()
+            logger.info(f"Successfully created initial identity for {user.username}")
+
         except Exception as e:
-            logger.error(f"Failed to create identity for {user.username}. Rolling back. Error: {e}")
+            # If identity creation fails, roll back user creation to prevent orphaned users.
+            logger.error(f"Failed to create identity for {user.username}. Rolling back user creation. Error: {e}")
             user.delete()
+            # Re-raise the exception to ensure the API call fails correctly.
             raise e
+
         return user
 
 
@@ -97,8 +71,6 @@ class MessageBoardSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     author_display = serializers.SerializerMethodField()
-    # UPDATED: Explicitly define the format for the created_at field.
-    # This ensures a consistent, JavaScript-friendly ISO 8601 format with UTC timezone ('Z').
     created_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S.%fZ", read_only=True)
 
     class Meta:
@@ -117,58 +89,6 @@ class MessageSerializer(serializers.ModelSerializer):
             if alias:
                 return alias.nickname
             else:
-                # UPDATED: Use the "Moo-" prefix as requested for the fallback name.
-                short_id = generate_short_id(obj.pubkey, length=8)
-                return f"Moo-{short_id}"
-        
-        return 'Anonymous'
-
-class ContentExtensionRequestSerializer(serializers.ModelSerializer):
-    user = serializers.StringRelatedField()
-    reviewed_by = serializers.StringRelatedField()
-
-    class Meta:
-        model = ContentExtensionRequest
-        fields = ('id', 'content_id', 'content_type', 'user', 'request_date', 'status', 'reviewed_by', 'reviewed_at')
-        read_only_fields = ('id', 'user', 'request_date', 'status', 'reviewed_by', 'reviewed_at')
-add_identity(name="default")
-            user.pubkey = identity['public_key']
-            user.save()
-        except Exception as e:
-            logger.error(f"Failed to create identity for {user.username}. Rolling back. Error: {e}")
-            user.delete()
-            raise e
-        return user
-
-
-class MessageBoardSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = MessageBoard
-        fields = ('id', 'name', 'description')
-
-class MessageSerializer(serializers.ModelSerializer):
-    author_display = serializers.SerializerMethodField()
-    # UPDATED: Explicitly define the format for the created_at field.
-    # This ensures a consistent, JavaScript-friendly ISO 8601 format with UTC timezone ('Z').
-    created_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S.%fZ", read_only=True)
-
-    class Meta:
-        model = Message
-        fields = ('id', 'subject', 'body', 'created_at', 'author_display')
-
-    def get_author_display(self, obj):
-        """
-        Determines the correct display name for a message's author.
-        """
-        if obj.author:
-            return obj.author.nickname if obj.author.nickname else obj.author.username
-        
-        elif obj.pubkey:
-            alias = Alias.objects.filter(pubkey=obj.pubkey, verified=True).first()
-            if alias:
-                return alias.nickname
-            else:
-                # UPDATED: Use the "Moo-" prefix as requested for the fallback name.
                 short_id = generate_short_id(obj.pubkey, length=8)
                 return f"Moo-{short_id}"
         
