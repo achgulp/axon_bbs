@@ -19,8 +19,7 @@ from cryptography.hazmat.primitives.padding import PKCS7
 from core.models import TrustedInstance, Message, MessageBoard
 from .encryption_utils import generate_checksum
 
-# Import the service manager to access other services
-from .service_manager import service_manager
+# The circular import of service_manager has been removed.
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +37,7 @@ class SyncService:
     def _run(self):
         # Wait a moment for the app to fully initialize before the first poll
         time.sleep(15) 
+        logger.info("SyncService polling loop is now active.")
         while True:
             try:
                 # Refresh local instance identity in case it was generated after startup
@@ -90,7 +90,6 @@ class SyncService:
         """Polls all trusted peers for new content manifests."""
         peers = TrustedInstance.objects.filter(is_trusted_peer=True)
         
-        # --- NEW: More verbose logging ---
         if not peers.exists():
             logger.info("Polling complete. No trusted peers are configured to sync with.")
             return
