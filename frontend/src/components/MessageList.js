@@ -48,23 +48,23 @@ const MessageList = ({ board, onBack }) => {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [showPostForm, setShowPostForm] = useState(false);
   const [needsUnlock, setNeedsUnlock] = useState(false);
+  
+  // State for the new message form
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
 
+  // --- NEW: State for file attachments ---
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [attachments, setAttachments] = useState([]); // Holds successfully uploaded files for the new post
+
   const fetchMessages = useCallback(async () => {
     try {
       const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
-      const msgs = response.data.map(msg => ({
-        id: msg.id,
-        subject: msg.subject,
-        body: msg.body,
-        author_display: msg.author_display,
-        // CORRECTED: Ensure the date string is correctly parsed by the browser.
-        // new Date() can handle ISO 8601 strings directly.
-        postedAt: new Date(msg.created_at).toLocaleString(),
-      }));
-      setMessages(msgs);
+      // The backend now provides a fully formatted date string
+      setMessages(response.data);
     } catch (err) {
       console.error("Failed to fetch messages:", err);
     }
@@ -81,8 +81,20 @@ const MessageList = ({ board, onBack }) => {
       return;
     }
     try {
-      await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name });
-      setSubject(''); setBody(''); setShowPostForm(false);
+      // Get the IDs from the successfully uploaded attachments
+      const attachment_ids = attachments.map(att => att.id);
+
+      await apiClient.post('/api/messages/post/', { 
+        subject, 
+        body, 
+        board_name: board.name,
+        attachment_ids, // Send the attachment IDs with the post
+      });
+      // Reset form state after successful post
+      setSubject(''); 
+      setBody(''); 
+      setAttachments([]);
+      setShowPostForm(false);
       fetchMessages();
     } catch (err) {
       if (err.response && err.response.data.error === 'identity_locked') {
@@ -91,11 +103,39 @@ const MessageList = ({ board, onBack }) => {
         setError(err.response?.data?.error || 'Could not post message.');
       }
     }
-  }, [subject, body, board.name, fetchMessages]);
+  }, [subject, body, board.name, attachments, fetchMessages]);
 
   const handleUnlockSuccess = () => {
     setNeedsUnlock(false);
     handlePostMessage();
+  };
+
+  // --- NEW: Handler for file uploads ---
+  const handleFileUpload = async () => {
+    if (!selectedFile) {
+      setUploadError('Please select a file first.');
+      return;
+    }
+    setIsUploading(true);
+    setUploadError('');
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+      const response = await apiClient.post('/api/files/upload/', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      // Add the new attachment to our list for this post
+      setAttachments(prev => [...prev, response.data]);
+      setSelectedFile(null); // Clear the file input
+    } catch (err) {
+      setUploadError(err.response?.data?.error || 'File upload failed.');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   if (selectedMessage) {
@@ -106,8 +146,23 @@ const MessageList = ({ board, onBack }) => {
         </button>
         <div className="bg-gray-800 p-4 rounded border border-gray-700">
           <h3 className="text-xl font-bold text-white mb-1">{selectedMessage.subject}</h3>
-          <p className="text-sm text-gray-400 mb-2">by {selectedMessage.author_display} on {selectedMessage.postedAt}</p>
-          <p className="text-gray-300 whitespace-pre-wrap">{selectedMessage.body}</p>
+          <p className="text-sm text-gray-400 mb-2">by {selectedMessage.author_display} on {new Date(selectedMessage.created_at).toLocaleString()}</p>
+          <p className="text-gray-300 whitespace-pre-wrap mb-4">{selectedMessage.body}</p>
+          
+          {/* Display attachments on a selected message */}
+          {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
+            <div className="border-t border-gray-700 pt-4 mt-4">
+              <h4 className="font-bold text-gray-300 mb-2">Attachments:</h4>
+              <ul className="list-disc list-inside text-blue-400">
+                {selectedMessage.attachments.map(att => (
+                  <li key={att.id}>
+                    <span className="text-gray-300">{att.filename} ({Math.round(att.size / 1024)} KB)</span>
+                    {/* In the future, this could be a download link */}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -130,22 +185,36 @@ const MessageList = ({ board, onBack }) => {
       {showPostForm && (
         <div className="bg-gray-800 p-4 rounded mb-6 border border-gray-700">
           <form onSubmit={(e) => { e.preventDefault(); handlePostMessage(); }}>
-            <input
-              type="text"
-              placeholder="Subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              required
-              className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <textarea
-              placeholder="Your message..."
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              required
-              rows="5"
-              className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <input type="text" placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <textarea placeholder="Your message..." value={body} onChange={(e) => setBody(e.target.value)} required rows="5" className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            
+            {/* --- NEW: File Upload Section --- */}
+            <div className="bg-gray-700 p-3 rounded mb-4">
+              <label className="block text-gray-300 text-sm font-bold mb-2">Attach Files</label>
+              <div className="flex items-center gap-4">
+                <input type="file" onChange={(e) => setSelectedFile(e.target.files[0])} className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"/>
+                <button type="button" onClick={handleFileUpload} disabled={isUploading || !selectedFile} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-500">
+                  {isUploading ? 'Uploading...' : 'Upload'}
+                </button>
+              </div>
+              {uploadError && <p className="text-red-500 text-xs italic mt-2">{uploadError}</p>}
+              
+              {/* Display list of successfully uploaded files */}
+              {attachments.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="text-sm font-bold text-gray-300">Attached:</h4>
+                  <ul className="list-disc list-inside text-gray-400">
+                    {attachments.map((att, index) => (
+                      <li key={att.id}>
+                        {att.filename}
+                        <button type="button" onClick={() => setAttachments(prev => prev.filter(a => a.id !== att.id))} className="ml-2 text-red-500 hover:text-red-400">[remove]</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
             {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
             <div className="text-right">
               <button type="submit" className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Submit Post</button>
@@ -165,14 +234,13 @@ const MessageList = ({ board, onBack }) => {
           </thead>
           <tbody>
             {messages.map(msg => (
-              <tr
-                key={msg.id}
-                className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700 cursor-pointer"
-                onClick={() => setSelectedMessage(msg)}
-              >
-                <td className="p-3 text-gray-200">{msg.subject}</td>
+              <tr key={msg.id} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700 cursor-pointer" onClick={() => setSelectedMessage(msg)}>
+                <td className="p-3 text-gray-200">
+                  {msg.subject}
+                  {msg.attachments && msg.attachments.length > 0 && <span className="ml-2 text-xs text-blue-400">[+{msg.attachments.length} file(s)]</span>}
+                </td>
                 <td className="p-3 text-gray-400">{msg.author_display}</td>
-                <td className="p-3 text-gray-400">{msg.postedAt}</td>
+                <td className="p-3 text-gray-400">{new Date(msg.created_at).toLocaleString()}</td>
               </tr>
             ))}
           </tbody>

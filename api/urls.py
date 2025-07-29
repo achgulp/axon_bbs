@@ -17,6 +17,9 @@ from .views import (
     ReviewContentExtensionView,
     UnpinContentView,
 
+    # File Handling
+    FileUploadView, # NEW
+
     # BitSync P2P Protocol Endpoints
     SyncView,
     BitSyncHasContentView,
@@ -46,14 +49,12 @@ urlpatterns = [
     path('content/review-extension/<int:pk>/', ReviewContentExtensionView.as_view(), name='review-extension'),
     path('content/unpin/', UnpinContentView.as_view(), name='unpin-content'),
 
-    # --- BitSync P2P Protocol ---
-    # Endpoint for peers to poll for new message manifests
-    path('sync/', SyncView.as_view(), name='sync'),
-    
-    # Endpoint for peers to check if this node has a piece of content
-    path('bitsync/has_content/<str:content_hash>/', BitSyncHasContentView.as_view(), name='bitsync-has-content'),
+    # --- NEW: File Handling ---
+    path('files/upload/', FileUploadView.as_view(), name='file-upload'),
 
-    # Endpoint for peers to download a specific content chunk
+    # --- BitSync P2P Protocol ---
+    path('sync/', SyncView.as_view(), name='sync'),
+    path('bitsync/has_content/<str:content_hash>/', BitSyncHasContentView.as_view(), name='bitsync-has-content'),
     path('bitsync/chunk/<str:content_hash>/<int:chunk_index>/', BitSyncChunkView.as_view(), name='bitsync-chunk'),
 ]
 

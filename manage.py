@@ -6,11 +6,10 @@ import os
 import sys
 
 # --- Application Version ---
-APP_VERSION = "9.2.2"
+APP_VERSION = "9.2.3"
 
 def main():
     """Run administrative tasks."""
-    # This check prevents the version banner from printing twice when using the reloader.
     if os.environ.get('RUN_MAIN') != 'true':
         print(f"--- Axon BBS Management Utility v{APP_VERSION} ---")
     
@@ -24,7 +23,6 @@ def main():
             "forget to activate a virtual environment?"
         ) from exc
 
-    # Custom message for runserver command
     is_runserver = 'runserver' in sys.argv
     is_reloader = os.environ.get('RUN_MAIN') == 'true'
 
