@@ -33,7 +33,7 @@ class SyncService:
 
     def start(self):
         self.thread.start()
-        logger.info("BitSync Service started. Polling peers every %s seconds.", self.poll_interval)
+        logger.info("BitSync Service thread started. Polling will begin shortly.")
 
     def _run(self):
         # Wait a moment for the app to fully initialize before the first poll
@@ -45,7 +45,7 @@ class SyncService:
                 if self.local_instance and self.private_key:
                     self.poll_peers()
                 else:
-                    logger.warning("Sync service cannot run without a configured local instance identity.")
+                    logger.warning("Sync service cannot run without a configured local instance identity. Will check again in %s seconds.", self.poll_interval)
             except Exception as e:
                 logger.error(f"Error in sync service poll loop: {e}", exc_info=True)
             time.sleep(self.poll_interval)
@@ -89,14 +89,19 @@ class SyncService:
     def poll_peers(self):
         """Polls all trusted peers for new content manifests."""
         peers = TrustedInstance.objects.filter(is_trusted_peer=True)
+        
+        # --- NEW: More verbose logging ---
         if not peers.exists():
+            logger.info("Polling complete. No trusted peers are configured to sync with.")
             return
 
-        logger.info(f"Polling {peers.count()} trusted peer(s) for new manifests...")
+        logger.info(f"Beginning poll of {peers.count()} trusted peer(s)...")
         for peer in peers:
             if not peer.web_ui_onion_url:
+                logger.warning(f"Skipping peer ID {peer.id} because it has no .onion URL set.")
                 continue
 
+            logger.info(f"--> Checking peer: {peer.web_ui_onion_url}")
             last_sync = peer.last_synced_at or datetime.min.replace(tzinfo=timezone.utc)
             proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
             
@@ -106,15 +111,17 @@ class SyncService:
 
                 if response.status_code == 200:
                     manifests = response.json().get('manifests', [])
-                    logger.info(f"Received {len(manifests)} new manifest(s) from peer {peer.web_ui_onion_url}")
+                    logger.info(f"<-- Received {len(manifests)} new manifest(s) from peer {peer.web_ui_onion_url}")
                     for manifest in manifests:
                         self._process_manifest(manifest)
                     peer.last_synced_at = django_timezone.now()
                     peer.save()
                 else:
-                    logger.warning(f"Failed to sync with peer {peer.web_ui_onion_url}: Status {response.status_code}")
+                    logger.warning(f"<-- Failed to sync with peer {peer.web_ui_onion_url}: Status {response.status_code}")
             except requests.exceptions.RequestException as e:
-                logger.error(f"Network error while syncing with peer {peer.web_ui_onion_url}: {e}")
+                logger.error(f"<-- Network error while contacting peer {peer.web_ui_onion_url}: {e}")
+        
+        logger.info("Polling cycle complete.")
 
     def _process_manifest(self, manifest: dict):
         """Processes a single manifest, discovering seeders and initiating the download."""
@@ -123,7 +130,6 @@ class SyncService:
             logger.warning("Received a manifest with no content_hash, skipping.")
             return
 
-        # Check if we already have this content
         if Message.objects.filter(manifest__content_hash=content_hash).exists():
             logger.info(f"Content {content_hash[:10]}... already exists, skipping download.")
             return
@@ -185,10 +191,7 @@ class SyncService:
         
         if len(downloaded_chunks) == num_chunks:
             logger.info(f"All {num_chunks} chunks for {content_hash[:10]}... downloaded. Reassembling...")
-            # Reassemble the encrypted data
             encrypted_data = b"".join(downloaded_chunks[i] for i in range(num_chunks))
-            
-            # Decrypt and save the message
             self._decrypt_and_save(encrypted_data, manifest)
         else:
             logger.error(f"Failed to download all chunks for {content_hash[:10]}... Downloaded {len(downloaded_chunks)}/{num_chunks}.")
@@ -207,14 +210,12 @@ class SyncService:
     def _decrypt_and_save(self, encrypted_data: bytes, manifest: dict):
         """Decrypts the reassembled data and saves it as a new Message."""
         try:
-            # Find our encrypted AES key in the manifest
             local_checksum = generate_checksum(self.local_instance.pubkey)
             encrypted_aes_key_b64 = manifest['encrypted_aes_keys'].get(local_checksum)
             if not encrypted_aes_key_b64:
                 logger.error("Could not find an encryption envelope for our key in the manifest.")
                 return
 
-            # Decrypt the AES key
             encrypted_aes_key = base64.b64decode(encrypted_aes_key_b64)
             aes_key = self.private_key.decrypt(
                 encrypted_aes_key,
@@ -225,7 +226,6 @@ class SyncService:
                 )
             )
             
-            # Decrypt the content
             iv = base64.b64decode(manifest['encryption_iv'])
             cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
             unpadder = PKCS7(algorithms.AES.block_size).unpadder()
@@ -234,14 +234,13 @@ class SyncService:
             
             content = json.loads(raw_data.decode('utf-8'))
             
-            # Save the new message
             board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
             Message.objects.create(
                 board=board,
                 subject=content.get('subject'),
                 body=content.get('body'),
                 pubkey=content.get('pubkey'),
-                manifest=manifest # Store the manifest for future seeding
+                manifest=manifest
             )
             logger.info(f"Successfully synced and saved new message: '{content.get('subject')}'")
 
