@@ -110,6 +110,9 @@ class Message(Content):
     subject = models.CharField(max_length=255)
     body = models.TextField()
     pubkey = models.TextField(blank=True, null=True)
+    # NEW FIELD FOR BITSVNC
+    manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for P2P content distribution.")
+
 
     def __str__(self):
         return f"'{self.subject}' by {self.author.username if self.author else 'system'}"
@@ -178,3 +181,4 @@ class ContentExtensionRequest(models.Model):
 
     def __str__(self):
         return f"Extension Request for {self.content_type} {self.content_id} by {self.user.username}"
+
