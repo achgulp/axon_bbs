@@ -8,6 +8,9 @@ import base64
 import logging
 from datetime import datetime, timedelta, timezone
 
+# CORRECTED: Import Django's timezone utility
+from django.utils import timezone as django_timezone
+
 from core.models import TrustedInstance
 from core.services.encryption_utils import generate_checksum
 
@@ -42,8 +45,10 @@ class TrustedPeerPermission(permissions.BasePermission):
                 # Ensure timestamp is timezone-aware for comparison
                 timestamp = datetime.fromisoformat(timestamp_str)
                 if timestamp.tzinfo is None:
-                    timestamp = timestamp.replace(tzinfo=timezone.utc) # Assume UTC if not specified
-                if abs(timezone.now() - timestamp) > timedelta(minutes=5):
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                
+                # CORRECTED: Use Django's timezone.now() for a safe, timezone-aware comparison.
+                if abs(django_timezone.now() - timestamp) > timedelta(minutes=5):
                     logger.warning("Request rejected due to expired timestamp.")
                     return False
             except ValueError:
@@ -52,9 +57,11 @@ class TrustedPeerPermission(permissions.BasePermission):
             data_to_verify = timestamp_str.encode('utf-8')
 
         elif request.method == 'POST':
+            # This logic remains for potential future use, but is not used by BitSync sync.
             signature_b64 = request.data.get('signature')
             sender_pubkey_pem = request.data.get('sender_pubkey')
-            data_to_verify = request.data.get('magnet', '').encode('utf-8')
+            # The data to verify in a POST would be the content identifier (e.g., a hash or magnet)
+            data_to_verify = request.data.get('content_hash', '').encode('utf-8')
         
         else:
             return False # Reject other methods
@@ -75,13 +82,9 @@ class TrustedPeerPermission(permissions.BasePermission):
             return False
         
         # --- VERIFICATION STEP 1: Check if the sender is a trusted peer ---
-        # This query is the most critical part for fixing the 401 error.
         trusted_peers = TrustedInstance.objects.filter(is_trusted_peer=True)
-        
-        # Create a list of trusted pubkeys for comparison
         trusted_pubkeys = [p.pubkey for p in trusted_peers if p.pubkey]
         
-        # Log for diagnostics
         expected_checksums = [generate_checksum(key) for key in trusted_pubkeys]
         logger.info(f"Permission check: Found {len(expected_checksums)} trusted peer checksum(s) in DB: {', '.join(expected_checksums) or 'None'}")
 
@@ -95,9 +98,14 @@ class TrustedPeerPermission(permissions.BasePermission):
         # --- VERIFICATION STEP 2: Verify the signature ---
         try:
             signature = base64.b64decode(signature_b64)
-            hasher = hashes.Hash(hashes.SHA256())
-            hasher.update(data_to_verify)
-            digest = hasher.finalize()
+            # For GET requests, the signature is of the timestamp hash.
+            # For POST, it's of the content hash.
+            if request.method == 'GET':
+                hasher = hashes.Hash(hashes.SHA256())
+                hasher.update(data_to_verify) # data_to_verify is the timestamp string here
+                digest = hasher.finalize()
+            else: # Fallback for POST or other methods if ever needed
+                digest = data_to_verify # Assumes data is already a hash
             
             pubkey_obj.verify(
                 signature,
