@@ -1,4 +1,4 @@
-# axon_bbs/axon_project/settings.py
+# Full path: axon_bbs/axon_project/settings.py
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -87,7 +87,6 @@ STATIC_URL = 'static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# Tell Django where to find React's static files (JS, CSS)
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'frontend', 'build', 'static'),
 ]
@@ -100,7 +99,7 @@ AUTH_USER_MODEL = 'core.User'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
-CORS_ALLOW_CREDENTIALS = True  # Allow cookies with CORS
+CORS_ALLOW_CREDENTIALS = True
 
 # --- CSRF Trusted Origins ---
 CSRF_TRUSTED_ORIGINS = [
@@ -121,22 +120,45 @@ REST_FRAMEWORK = {
 TOR_SOCKS_HOST = "127.0.0.1"
 TOR_SOCKS_PORT = 9050
 
-# --- Logging Configuration ---
+# --- UPDATED Logging Configuration ---
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
+        'console': {
+            'level': 'INFO', # Changed to INFO to see startup messages
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
         'file': {
             'level': 'DEBUG',
             'class': 'logging.FileHandler',
             'filename': BASE_DIR / 'logs/bbs.log',
+            'formatter': 'verbose',
         },
     },
     'loggers': {
-        'core.services.bittorrent_service': {
-            'handlers': ['file'],
-            'level': 'DEBUG',
+        'django': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
             'propagate': True,
+        },
+        # Logger for all our custom services
+        'core.services': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO', # Set to INFO for production, DEBUG for verbose
+            'propagate': False,
         },
     },
 }
+
