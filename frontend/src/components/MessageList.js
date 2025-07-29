@@ -1,10 +1,8 @@
-// axon_bbs/frontend/src/components/MessageList.js
+// Full path: axon_bbs/frontend/src/components/MessageList.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
-// --- UPDATED UNLOCKFORM COMPONENT ---
-// It now calls onUnlock which will handle closing the modal AND retrying the post.
 const UnlockForm = ({ onUnlock, onCancel }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -14,7 +12,7 @@ const UnlockForm = ({ onUnlock, onCancel }) => {
     setError('');
     try {
       await apiClient.post('/api/identity/unlock/', { password });
-      onUnlock(); // Signal to the parent component that unlock was successful
+      onUnlock();
     } catch (err) {
       setError('Unlock failed. Please check your password.');
     }
@@ -44,7 +42,6 @@ const UnlockForm = ({ onUnlock, onCancel }) => {
     </div>
   );
 };
-// --- END OF UPDATED COMPONENT ---
 
 const MessageList = ({ board, onBack }) => {
   const [messages, setMessages] = useState([]);
@@ -63,7 +60,9 @@ const MessageList = ({ board, onBack }) => {
         subject: msg.subject,
         body: msg.body,
         author_display: msg.author_display,
-        postedAt: new Date(msg.created_at + 'Z').toLocaleString(), // Assume UTC, add 'Z' for timezone
+        // CORRECTED: Ensure the date string is correctly parsed by the browser.
+        // new Date() can handle ISO 8601 strings directly.
+        postedAt: new Date(msg.created_at).toLocaleString(),
       }));
       setMessages(msgs);
     } catch (err) {
@@ -77,7 +76,6 @@ const MessageList = ({ board, onBack }) => {
 
   const handlePostMessage = useCallback(async () => {
     setError('');
-    // Guard against empty posts which cause the 400 error
     if (!subject || !body) {
       setError("Subject and body cannot be empty.");
       return;
@@ -85,7 +83,7 @@ const MessageList = ({ board, onBack }) => {
     try {
       await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name });
       setSubject(''); setBody(''); setShowPostForm(false);
-      fetchMessages(); // Refetch messages after posting
+      fetchMessages();
     } catch (err) {
       if (err.response && err.response.data.error === 'identity_locked') {
         setNeedsUnlock(true);
@@ -95,12 +93,10 @@ const MessageList = ({ board, onBack }) => {
     }
   }, [subject, body, board.name, fetchMessages]);
 
-  // --- NEW FUNCTION TO HANDLE THE POST-UNLOCK LOGIC ---
   const handleUnlockSuccess = () => {
-    setNeedsUnlock(false); // First, close the modal
-    handlePostMessage();   // Then, re-try the post
+    setNeedsUnlock(false);
+    handlePostMessage();
   };
-  // --- END NEW FUNCTION ---
 
   if (selectedMessage) {
     return (
@@ -119,7 +115,6 @@ const MessageList = ({ board, onBack }) => {
 
   return (
     <div>
-      {/* --- UPDATE: Pass the new handler to the UnlockForm --- */}
       {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => setNeedsUnlock(false)} />}
       
       <div className="flex justify-between items-center mb-4">
@@ -189,3 +184,4 @@ const MessageList = ({ board, onBack }) => {
 };
 
 export default MessageList;
+
