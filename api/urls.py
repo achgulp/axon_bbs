@@ -18,7 +18,8 @@ from .views import (
     UnpinContentView,
 
     # File Handling
-    FileUploadView, # NEW
+    FileUploadView,
+    FileDownloadView, # NEW
 
     # BitSync P2P Protocol Endpoints
     SyncView,
@@ -49,8 +50,10 @@ urlpatterns = [
     path('content/review-extension/<int:pk>/', ReviewContentExtensionView.as_view(), name='review-extension'),
     path('content/unpin/', UnpinContentView.as_view(), name='unpin-content'),
 
-    # --- NEW: File Handling ---
+    # --- File Handling ---
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
+    # NEW: Endpoint to download a processed file
+    path('files/download/<uuid:file_id>/', FileDownloadView.as_view(), name='file-download'),
 
     # --- BitSync P2P Protocol ---
     path('sync/', SyncView.as_view(), name='sync'),
