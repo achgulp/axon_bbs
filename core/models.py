@@ -14,15 +14,10 @@ def get_default_expires_at():
     return timezone.now() + timedelta(days=30)
 
 class User(AbstractUser):
-    """
-    Custom user model that extends Django's default AbstractUser.
-    This is the central model for all registered users of the BBS.
-    """
     access_level = models.PositiveIntegerField(default=10, help_text="User's security access level.")
     is_banned = models.BooleanField(default=False, help_text="Designates if the user is banned from the local instance.")
     pubkey = models.TextField(blank=True, null=True, help_text="User's public key (PEM).")
     nickname = models.CharField(max_length=50, unique=True, blank=True, null=True, help_text="User's chosen nickname.")
-
     groups = models.ManyToManyField(
         'auth.Group',
         verbose_name='groups',
@@ -39,31 +34,24 @@ class User(AbstractUser):
         related_name="core_user_set",
         related_query_name="user",
     )
-
     def __str__(self):
         return self.username
 
 class IgnoredPubkey(models.Model):
-    """Represents a public key being ignored by a user."""
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='ignored_pubkeys')
     pubkey = models.TextField()
-
     class Meta:
         unique_together = ('user', 'pubkey')
-
     def __str__(self):
         return f"{self.user.username} ignores pubkey starting with {self.pubkey[:12]}..."
 
 class BannedPubkey(models.Model):
-    """Represents a banned public key on the platform."""
     pubkey = models.TextField(unique=True)
     is_temporary = models.BooleanField(default=False)
     expires_at = models.DateTimeField(null=True, blank=True, help_text="If the ban is temporary, this is when it expires.")
-
     def __str__(self):
         status = "Temporarily Banned" if self.is_temporary and self.expires_at and self.expires_at > timezone.now() else "Banned"
         return f"[{status}] pubkey starting with {self.pubkey[:12]}..."
-
     def save(self, *args, **kwargs):
         if self.is_temporary and not self.expires_at:
             self.expires_at = timezone.now() + timedelta(hours=72)
@@ -76,33 +64,40 @@ class Alias(models.Model):
     nickname = models.CharField(max_length=50)
     verified = models.BooleanField(default=False)
     added_at = models.DateTimeField(auto_now_add=True)
-
     class Meta:
         verbose_name_plural = "aliases"
-
     def __str__(self):
         return f"{self.nickname} ({self.pubkey[:12]}...)"
 
 class Content(models.Model):
-    """Abstract base class for user-generated content."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='authored_%(class)ss', null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(default=get_default_expires_at, null=True)
     is_pinned = models.BooleanField(default=False)
     pinned_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='pinned_%(class)ss')
-
     class Meta:
         abstract = True
 
 class MessageBoard(models.Model):
-    """Represents a single message board or forum."""
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     required_access_level = models.PositiveIntegerField(default=10)
-
     def __str__(self):
         return self.name
+
+# --- NEW: FileAttachment Model ---
+class FileAttachment(Content):
+    """
+    Represents a single file uploaded by a user, prepared for BitSync distribution.
+    """
+    filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100)
+    size = models.PositiveIntegerField()
+    manifest = models.JSONField(help_text="BitSync manifest for P2P file distribution.")
+    
+    def __str__(self):
+        return f"{self.filename} ({self.id})"
 
 class Message(Content):
     """Represents a single post within a MessageBoard."""
@@ -110,64 +105,48 @@ class Message(Content):
     subject = models.CharField(max_length=255)
     body = models.TextField()
     pubkey = models.TextField(blank=True, null=True)
-    # NEW FIELD FOR BITSVNC
     manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for P2P content distribution.")
-
+    # UPDATED: Link to FileAttachments
+    attachments = models.ManyToManyField(FileAttachment, blank=True, related_name='messages')
 
     def __str__(self):
         return f"'{self.subject}' by {self.author.username if self.author else 'system'}"
 
-class UploadedFile(Content):
-    """Represents a single file uploaded by a user."""
-    file = models.FileField(upload_to='uploads/')
-    description = models.CharField(max_length=255, blank=True)
-
-    def __str__(self):
-        return self.file.name
-
 class PrivateMessage(Content):
-    """Represents a private mail message between two users."""
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail')
     subject = models.CharField(max_length=255)
     body = models.TextField()
     is_read = models.BooleanField(default=False)
-
     def __str__(self):
         return f"'{self.subject}' to {self.recipient.username} from {self.author.username if self.author else 'system'}"
 
 class TrustedInstance(models.Model):
-    """Represents a trusted peer BBS instance."""
     web_ui_onion_url = models.URLField(max_length=255, blank=True, null=True)
     pubkey = models.TextField(blank=True, null=True)
     encrypted_private_key = models.TextField(blank=True, null=True)
     added_at = models.DateTimeField(auto_now_add=True)
     last_synced_at = models.DateTimeField(blank=True, null=True)
     is_trusted_peer = models.BooleanField(default=False, help_text="Check if this is a trusted peer (uncheck for local).")
-
     def save(self, *args, **kwargs):
         if self.pubkey:
             try:
-                # Normalize the public key by loading and re-serializing it
                 pubkey_obj = serialization.load_pem_public_key(self.pubkey.encode())
                 self.pubkey = pubkey_obj.public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
-                ).decode('utf-8').strip()  # Ensure no extra whitespace
+                ).decode('utf-8').strip()
             except Exception as e:
                 raise ValidationError(f"Invalid public key format: {e}")
         super().save(*args, **kwargs)
-
     def __str__(self):
         return self.web_ui_onion_url or "Local Instance"
 
 class ContentExtensionRequest(models.Model):
-    """Represents a user's request to extend the lifespan of their content."""
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('approved', 'Approved'),
         ('denied', 'Denied'),
     ]
-
     content_id = models.UUIDField()
     content_type = models.CharField(max_length=50)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -175,10 +154,8 @@ class ContentExtensionRequest(models.Model):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reviewed_extensions')
     reviewed_at = models.DateTimeField(null=True, blank=True)
-
     class Meta:
         unique_together = ('content_id', 'user')
-
     def __str__(self):
         return f"Extension Request for {self.content_type} {self.content_id} by {self.user.username}"
 
