@@ -22,7 +22,7 @@ from .encryption_utils import generate_checksum
 logger = logging.getLogger(__name__)
 
 class SyncService:
-    def __init__(self, poll_interval=300): # Poll every 5 minutes
+    def __init__(self, poll_interval=120): # UPDATED: Poll every 2 minutes
         self.poll_interval = poll_interval
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.local_instance = None
@@ -66,7 +66,6 @@ class SyncService:
         timestamp = datetime.now(timezone.utc).isoformat()
         hasher = hashlib.sha256()
         hasher.update(timestamp.encode('utf-8'))
-        # CORRECTED METHOD: Use digest() instead of finalize()
         digest = hasher.digest()
         
         signature = self.private_key.sign(
