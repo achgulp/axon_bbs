@@ -19,8 +19,6 @@ from cryptography.hazmat.primitives.padding import PKCS7
 from core.models import TrustedInstance, Message, MessageBoard
 from .encryption_utils import generate_checksum
 
-# The circular import of service_manager has been removed.
-
 logger = logging.getLogger(__name__)
 
 class SyncService:
@@ -35,12 +33,10 @@ class SyncService:
         logger.info("BitSync Service thread started. Polling will begin shortly.")
 
     def _run(self):
-        # Wait a moment for the app to fully initialize before the first poll
         time.sleep(15) 
         logger.info("SyncService polling loop is now active.")
         while True:
             try:
-                # Refresh local instance identity in case it was generated after startup
                 self._load_identity()
                 if self.local_instance and self.private_key:
                     self.poll_peers()
@@ -70,7 +66,8 @@ class SyncService:
         timestamp = datetime.now(timezone.utc).isoformat()
         hasher = hashlib.sha256()
         hasher.update(timestamp.encode('utf-8'))
-        digest = hasher.finalize()
+        # CORRECTED METHOD: Use digest() instead of finalize()
+        digest = hasher.digest()
         
         signature = self.private_key.sign(
             digest,
