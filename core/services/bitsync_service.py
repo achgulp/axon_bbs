@@ -63,11 +63,16 @@ class BitSyncService:
 
         # 6. Create encrypted "envelopes" for the AES key for the local instance AND each trusted peer.
         encrypted_aes_keys = {}
-        # ✅ FIX: Query for the local instance OR any trusted peer.
-        instances_to_encrypt_for = TrustedInstance.objects.filter(
-            Q(is_trusted_peer=True) | Q(encrypted_private_key__isnull=False)
-        )
         
+        # ✅ FIX: Explicitly get the local instance and all trusted peers.
+        # This is more robust than the previous Q object approach.
+        local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
+        trusted_peers = TrustedInstance.objects.filter(is_trusted_peer=True)
+        
+        instances_to_encrypt_for = list(trusted_peers)
+        if local_instance and local_instance not in instances_to_encrypt_for:
+            instances_to_encrypt_for.append(local_instance)
+
         for instance in instances_to_encrypt_for:
             if instance.pubkey:
                 try:
@@ -83,6 +88,7 @@ class BitSyncService:
                     # Use the instance's pubkey checksum as a consistent dictionary key.
                     instance_checksum = generate_checksum(instance.pubkey)
                     encrypted_aes_keys[instance_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
+                    logger.info(f"Created encryption envelope for instance with checksum: {instance_checksum}")
                 except Exception as e:
                     logger.error(f"Failed to encrypt AES key for instance {instance.web_ui_onion_url or 'local'}: {e}")
 
