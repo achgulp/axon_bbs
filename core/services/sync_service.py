@@ -16,13 +16,13 @@ from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 
-from core.models import TrustedInstance, Message, MessageBoard
+from core.models import TrustedInstance, Message, MessageBoard, FileAttachment
 from .encryption_utils import generate_checksum
 
 logger = logging.getLogger(__name__)
 
 class SyncService:
-    def __init__(self, poll_interval=120): # UPDATED: Poll every 2 minutes
+    def __init__(self, poll_interval=120):
         self.poll_interval = poll_interval
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.local_instance = None
@@ -67,14 +67,8 @@ class SyncService:
         hasher = hashlib.sha256()
         hasher.update(timestamp.encode('utf-8'))
         digest = hasher.digest()
-        
         signature = self.private_key.sign(
-            digest,
-            rsa_padding.PSS(
-                mgf=rsa_padding.MGF1(hashes.SHA256()),
-                salt_length=rsa_padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
+            digest, rsa_padding.PSS(mgf=rsa_padding.MGF1(hashes.SHA256()), salt_length=rsa_padding.PSS.MAX_LENGTH), hashes.SHA256()
         )
         return {
             'X-Pubkey': base64.b64encode(self.local_instance.pubkey.encode('utf-8')).decode('utf-8'),
@@ -85,7 +79,6 @@ class SyncService:
     def poll_peers(self):
         """Polls all trusted peers for new content manifests."""
         peers = TrustedInstance.objects.filter(is_trusted_peer=True)
-        
         if not peers.exists():
             logger.info("Polling complete. No trusted peers are configured to sync with.")
             return
@@ -95,15 +88,12 @@ class SyncService:
             if not peer.web_ui_onion_url:
                 logger.warning(f"Skipping peer ID {peer.id} because it has no .onion URL set.")
                 continue
-
             logger.info(f"--> Checking peer: {peer.web_ui_onion_url}")
             last_sync = peer.last_synced_at or datetime.min.replace(tzinfo=timezone.utc)
             proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-            
             try:
                 target_url = f"{peer.web_ui_onion_url.strip('/')}/api/sync/?since={last_sync.isoformat()}"
                 response = requests.get(target_url, headers=self._get_auth_headers(), proxies=proxies, timeout=120)
-
                 if response.status_code == 200:
                     manifests = response.json().get('manifests', [])
                     logger.info(f"<-- Received {len(manifests)} new manifest(s) from peer {peer.web_ui_onion_url}")
@@ -115,38 +105,50 @@ class SyncService:
                     logger.warning(f"<-- Failed to sync with peer {peer.web_ui_onion_url}: Status {response.status_code}")
             except requests.exceptions.RequestException as e:
                 logger.error(f"<-- Network error while contacting peer {peer.web_ui_onion_url}: {e}")
-        
         logger.info("Polling cycle complete.")
 
     def _process_manifest(self, manifest: dict):
-        """Processes a single manifest, discovering seeders and initiating the download."""
+        """Processes a single manifest, discovering seeders and saving the content metadata."""
         content_hash = manifest.get('content_hash')
-        if not content_hash:
-            logger.warning("Received a manifest with no content_hash, skipping.")
+        content_type = manifest.get('content_type')
+        if not all([content_hash, content_type]):
+            logger.warning("Received a manifest with no content_hash or content_type, skipping.")
             return
 
-        if Message.objects.filter(manifest__content_hash=content_hash).exists():
-            logger.info(f"Content {content_hash[:10]}... already exists, skipping download.")
+        # Check if we already have this content
+        if Message.objects.filter(manifest__content_hash=content_hash).exists() or \
+           FileAttachment.objects.filter(manifest__content_hash=content_hash).exists():
+            logger.info(f"Content {content_hash[:10]}... already exists, skipping.")
             return
 
-        logger.info(f"Processing new content {content_hash[:10]}...")
-        seeders = self._find_seeders(content_hash)
-        if not seeders:
-            logger.warning(f"No seeders found for content {content_hash[:10]}... Will retry on next poll.")
-            return
+        logger.info(f"Processing new synced content {content_hash[:10]}... of type '{content_type}'")
         
-        self._download_content(manifest, seeders)
+        # Save the metadata now, so we know it exists, even if we don't have the chunks yet
+        if content_type == 'message':
+            content = json.loads(self._decrypt_data(self._download_content(manifest), manifest))
+            board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
+            Message.objects.create(
+                board=board, subject=content.get('subject'), body=content.get('body'),
+                pubkey=content.get('pubkey'), manifest=manifest
+            )
+            logger.info(f"Successfully synced and saved new message: '{content.get('subject')}'")
+        elif content_type == 'file':
+            # For files, we create the attachment object but don't need to decrypt the data yet.
+            # The data will be fetched and decrypted on-demand when a user clicks download.
+            FileAttachment.objects.create(
+                filename=manifest.get('filename', 'unknown'),
+                content_type=manifest.get('content_type_val', 'application/octet-stream'),
+                size=manifest.get('size', 0),
+                manifest=manifest
+            )
+            logger.info(f"Successfully synced metadata for new file: '{manifest.get('filename')}'")
 
     def _find_seeders(self, content_hash: str) -> list:
         """Queries all trusted peers to see who has the specified content."""
         logger.info(f"Discovering seeders for content {content_hash[:10]}...")
-        available_seeders = []
-        peers = TrustedInstance.objects.filter(is_trusted_peer=True)
-        proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-
+        available_seeders, peers, proxies = [], TrustedInstance.objects.filter(is_trusted_peer=True), {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         for peer in peers:
-            if not peer.web_ui_onion_url:
-                continue
+            if not peer.web_ui_onion_url: continue
             try:
                 url = f"{peer.web_ui_onion_url.strip('/')}/api/bitsync/has_content/{content_hash}/"
                 response = requests.get(url, headers=self._get_auth_headers(), proxies=proxies, timeout=60)
@@ -155,90 +157,79 @@ class SyncService:
                     logger.info(f"Peer {peer.web_ui_onion_url} has content {content_hash[:10]}...")
             except requests.RequestException:
                 logger.warning(f"Could not contact peer {peer.web_ui_onion_url} to check for content.")
-        
         return available_seeders
 
-    def _download_content(self, manifest: dict, seeders: list):
-        """Orchestrates the parallel download of chunks from a list of available seeders."""
-        content_hash = manifest['content_hash']
-        chunk_hashes = manifest['chunk_hashes']
+    def _download_content(self, manifest: dict) -> bytes | None:
+        """Orchestrates the parallel download of chunks from available seeders."""
+        content_hash, chunk_hashes = manifest['content_hash'], manifest['chunk_hashes']
         num_chunks = len(chunk_hashes)
-        proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-        
-        downloaded_chunks = {}
+        seeders = self._find_seeders(content_hash)
+        if not seeders:
+            logger.error(f"Cannot download content {content_hash[:10]}: No seeders found.")
+            return None
         
         logger.info(f"Starting swarm download for {content_hash[:10]}... from {len(seeders)} peer(s).")
-
+        downloaded_chunks, proxies = {}, {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         with ThreadPoolExecutor(max_workers=len(seeders) * 2) as executor:
             futures = {
                 executor.submit(self._download_chunk, seeder_url, content_hash, i, proxies): i
-                for i, seeder_url in enumerate(seeders * (num_chunks // len(seeders) + 1))
-                if i < num_chunks
+                for i, seeder_url in enumerate(seeders * (num_chunks // len(seeders) + 1)) if i < num_chunks
             }
-            
             for future in as_completed(futures):
                 chunk_index, chunk_data = future.result()
                 if chunk_data and hashlib.sha256(chunk_data).hexdigest() == chunk_hashes[chunk_index]:
                     downloaded_chunks[chunk_index] = chunk_data
-                    logger.info(f"Successfully downloaded and verified chunk {chunk_index + 1}/{num_chunks} for {content_hash[:10]}...")
-                else:
-                    logger.error(f"Failed to download or verify chunk {chunk_index} for {content_hash[:10]}...")
+                    logger.info(f"Successfully downloaded chunk {chunk_index + 1}/{num_chunks} for {content_hash[:10]}...")
+                else: logger.error(f"Failed to download or verify chunk {chunk_index} for {content_hash[:10]}...")
         
         if len(downloaded_chunks) == num_chunks:
-            logger.info(f"All {num_chunks} chunks for {content_hash[:10]}... downloaded. Reassembling...")
-            encrypted_data = b"".join(downloaded_chunks[i] for i in range(num_chunks))
-            self._decrypt_and_save(encrypted_data, manifest)
+            logger.info(f"All {num_chunks} chunks for {content_hash[:10]}... downloaded.")
+            return b"".join(downloaded_chunks[i] for i in range(num_chunks))
         else:
-            logger.error(f"Failed to download all chunks for {content_hash[:10]}... Downloaded {len(downloaded_chunks)}/{num_chunks}.")
+            logger.error(f"Failed to download all chunks for {content_hash[:10]}...")
+            return None
 
     def _download_chunk(self, seeder_url, content_hash, chunk_index, proxies):
         """Downloads a single chunk from a given seeder."""
         try:
             url = f"{seeder_url.strip('/')}/api/bitsync/chunk/{content_hash}/{chunk_index}/"
             response = requests.get(url, headers=self._get_auth_headers(), proxies=proxies, timeout=120)
-            if response.status_code == 200:
-                return chunk_index, response.content
+            if response.status_code == 200: return chunk_index, response.content
         except requests.RequestException as e:
             logger.warning(f"Failed to download chunk {chunk_index} from {seeder_url}: {e}")
         return chunk_index, None
 
-    def _decrypt_and_save(self, encrypted_data: bytes, manifest: dict):
-        """Decrypts the reassembled data and saves it as a new Message."""
+    def _decrypt_data(self, encrypted_data: bytes, manifest: dict) -> bytes | None:
+        """Decrypts a block of data using the AES key from the manifest."""
+        if not encrypted_data: return None
         try:
             local_checksum = generate_checksum(self.local_instance.pubkey)
             encrypted_aes_key_b64 = manifest['encrypted_aes_keys'].get(local_checksum)
             if not encrypted_aes_key_b64:
                 logger.error("Could not find an encryption envelope for our key in the manifest.")
-                return
-
+                return None
             encrypted_aes_key = base64.b64decode(encrypted_aes_key_b64)
             aes_key = self.private_key.decrypt(
                 encrypted_aes_key,
-                rsa_padding.OAEP(
-                    mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()),
-                    algorithm=hashes.SHA256(),
-                    label=None
-                )
+                rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
             )
-            
             iv = base64.b64decode(manifest['encryption_iv'])
             cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
             unpadder = PKCS7(algorithms.AES.block_size).unpadder()
             padded_data = cipher.decryptor().update(encrypted_data)
-            raw_data = unpadder.update(padded_data) + unpadder.finalize()
-            
-            content = json.loads(raw_data.decode('utf-8'))
-            
-            board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
-            Message.objects.create(
-                board=board,
-                subject=content.get('subject'),
-                body=content.get('body'),
-                pubkey=content.get('pubkey'),
-                manifest=manifest
-            )
-            logger.info(f"Successfully synced and saved new message: '{content.get('subject')}'")
-
+            return unpadder.update(padded_data) + unpadder.finalize()
         except Exception as e:
-            logger.error(f"Failed to decrypt or save content {manifest['content_hash'][:10]}...: {e}", exc_info=True)
+            logger.error(f"Failed to decrypt content {manifest['content_hash'][:10]}...: {e}", exc_info=True)
+            return None
+
+    # --- NEW: Method for the FileDownloadView ---
+    def get_decrypted_content(self, manifest: dict) -> bytes | None:
+        """
+        Main entry point for retrieving content. It ensures all chunks are downloaded,
+        then reassembles and decrypts the data.
+        """
+        encrypted_data = self._download_content(manifest)
+        if encrypted_data:
+            return self._decrypt_data(encrypted_data, manifest)
+        return None
 
