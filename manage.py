@@ -1,4 +1,4 @@
-// Full path: axon_bbs/manage.py
+# Full path: axon_bbs/manage.py
 
 #!/usr/bin/env python
 """Django's command-line utility for administrative tasks."""

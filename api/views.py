@@ -1,4 +1,4 @@
-// Full path: axon_bbs/api/views.py
+# Full path: axon_bbs/api/views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -20,7 +20,7 @@ from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, Trus
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password
 from core.services.service_manager import service_manager
-from core.services.content_validator import is_file_type_valid // UPDATED: Import the validator
+from core.services.content_validator import is_file_type_valid # UPDATED: Import the validator
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -105,7 +105,7 @@ class FileDownloadView(views.APIView):
             # Before serving the file, validate its type based on magic numbers.
             if not is_file_type_valid(decrypted_data):
                 logger.warning(f"Blocked download of file '{attachment.filename}' ({attachment.id}) due to invalid file type.")
-                # The PRD suggests warning moderators , for now we will just block the request.
+                # The PRD suggests warning moderators, for now we will just block the request.
                 return Response({"error": "This file type is not permitted on the server."}, status=status.HTTP_403_FORBIDDEN)
             # --- END UPDATE ---
 
