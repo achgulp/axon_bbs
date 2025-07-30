@@ -103,15 +103,21 @@ class SyncService:
         logger.info("Polling cycle complete.")
 
     def _process_manifests_in_order(self, manifests: list):
-        # Pass 1: Process all file attachments
-        for manifest in manifests:
-            if manifest.get('content_type') == 'file':
+        # ✅ UPDATED: Process manifests sequentially to handle dependencies correctly.
+        # First, create placeholders for all content to establish relationships.
+        all_content_hashes = {m['content_hash']: m for m in manifests}
+        for content_hash, manifest in all_content_hashes.items():
+            content_type = manifest.get('content_type')
+            if content_type == 'file':
                 self._process_file_manifest(manifest)
-
-        # Pass 2: Process all messages
-        for manifest in manifests:
-            if manifest.get('content_type') == 'message':
+            elif content_type == 'message':
+                # For messages, ensure their attachments are processed first.
+                attachment_hashes = manifest.get('attachment_hashes', [])
+                for att_hash in attachment_hashes:
+                    if att_hash in all_content_hashes:
+                        self._process_file_manifest(all_content_hashes[att_hash])
                 self._process_message_manifest(manifest)
+
 
     def _process_file_manifest(self, manifest: dict):
         content_hash = manifest.get('content_hash')
@@ -134,14 +140,11 @@ class SyncService:
             if not decrypted_data: return
 
             content = json.loads(decrypted_data)
-            
-            # ✅ UPDATED: Use case-insensitive logic to find or create the board.
+
             board_name_from_sync = content.get('board', 'general')
             try:
-                # First, try to find a board with a case-insensitive match.
                 board = MessageBoard.objects.get(name__iexact=board_name_from_sync)
             except ObjectDoesNotExist:
-                # If no board is found, create a new one with the exact name from the sync.
                 board = MessageBoard.objects.create(name=board_name_from_sync)
 
             message = Message.objects.create(
