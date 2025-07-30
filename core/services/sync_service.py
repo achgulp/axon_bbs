@@ -6,7 +6,7 @@ import logging
 import json
 import base64
 import hashlib
-import os # NEW: Import the 'os' module
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
@@ -102,9 +102,12 @@ class SyncService:
         logger.info("Polling cycle complete.")
 
     def _process_manifests_in_order(self, manifests: list):
+        # Pass 1: Process all file attachments
         for manifest in manifests:
             if manifest.get('content_type') == 'file':
                 self._process_file_manifest(manifest)
+        
+        # Pass 2: Process all messages
         for manifest in manifests:
             if manifest.get('content_type') == 'message':
                 self._process_message_manifest(manifest)
