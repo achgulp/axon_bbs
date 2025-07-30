@@ -20,6 +20,7 @@ from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, Trus
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password
 from core.services.service_manager import service_manager
+from core.services.content_validator import is_file_type_valid # ✅ IMPORT THE NEW VALIDATOR
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -99,6 +100,15 @@ class FileDownloadView(views.APIView):
             decrypted_data = service_manager.sync_service.get_decrypted_content(attachment.manifest)
             if decrypted_data is None:
                 return Response({"error": "Failed to retrieve or decrypt file from the network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+            # ✅ NEW: Perform content validation before serving the file.
+            if not is_file_type_valid(decrypted_data):
+                # For now, block for everyone. Per PRD, mods could have an override.
+                return Response(
+                    {"error": "This file type is not allowed on this server."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
             response = HttpResponse(decrypted_data, content_type=attachment.content_type)
             response['Content-Disposition'] = f'attachment; filename="{attachment.filename}"'
             return response
@@ -108,7 +118,6 @@ class FileDownloadView(views.APIView):
 
 # --- Content & Moderation Views ---
 class MessageBoardListView(generics.ListAPIView):
-    # ✅ UPDATED: Added .order_by('name') to sort the boards alphabetically.
     queryset = MessageBoard.objects.all().order_by('name')
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = MessageBoardSerializer
@@ -259,5 +268,5 @@ class BitSyncChunkView(views.APIView):
             try:
                 with open(chunk_path, 'rb') as f:
                     return HttpResponse(f.read(), content_type='application/octet-stream')
-            except IOError: raise Http404("Chunk file not readable.")
+            except IOError: raise Http44("Chunk file not readable.")
         else: raise Http404("Chunk not found.")
