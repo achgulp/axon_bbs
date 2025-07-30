@@ -49,21 +49,18 @@ const MessageList = ({ board, onBack }) => {
   const [showPostForm, setShowPostForm] = useState(false);
   const [needsUnlock, setNeedsUnlock] = useState(false);
   
-  // State for the new message form
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
 
-  // --- NEW: State for file attachments ---
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const [attachments, setAttachments] = useState([]); // Holds successfully uploaded files for the new post
+  const [attachments, setAttachments] = useState([]);
 
   const fetchMessages = useCallback(async () => {
     try {
       const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
-      // The backend now provides a fully formatted date string
       setMessages(response.data);
     } catch (err) {
       console.error("Failed to fetch messages:", err);
@@ -81,19 +78,11 @@ const MessageList = ({ board, onBack }) => {
       return;
     }
     try {
-      // Get the IDs from the successfully uploaded attachments
       const attachment_ids = attachments.map(att => att.id);
-
       await apiClient.post('/api/messages/post/', { 
-        subject, 
-        body, 
-        board_name: board.name,
-        attachment_ids, // Send the attachment IDs with the post
+        subject, body, board_name: board.name, attachment_ids,
       });
-      // Reset form state after successful post
-      setSubject(''); 
-      setBody(''); 
-      setAttachments([]);
+      setSubject(''); setBody(''); setAttachments([]);
       setShowPostForm(false);
       fetchMessages();
     } catch (err) {
@@ -110,7 +99,6 @@ const MessageList = ({ board, onBack }) => {
     handlePostMessage();
   };
 
-  // --- NEW: Handler for file uploads ---
   const handleFileUpload = async () => {
     if (!selectedFile) {
       setUploadError('Please select a file first.');
@@ -118,19 +106,14 @@ const MessageList = ({ board, onBack }) => {
     }
     setIsUploading(true);
     setUploadError('');
-
     const formData = new FormData();
     formData.append('file', selectedFile);
-
     try {
       const response = await apiClient.post('/api/files/upload/', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-      // Add the new attachment to our list for this post
       setAttachments(prev => [...prev, response.data]);
-      setSelectedFile(null); // Clear the file input
+      setSelectedFile(null);
     } catch (err) {
       setUploadError(err.response?.data?.error || 'File upload failed.');
     } finally {
@@ -149,15 +132,20 @@ const MessageList = ({ board, onBack }) => {
           <p className="text-sm text-gray-400 mb-2">by {selectedMessage.author_display} on {new Date(selectedMessage.created_at).toLocaleString()}</p>
           <p className="text-gray-300 whitespace-pre-wrap mb-4">{selectedMessage.body}</p>
           
-          {/* Display attachments on a selected message */}
+          {/* UPDATED: Display attachments as clickable download links */}
           {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
             <div className="border-t border-gray-700 pt-4 mt-4">
               <h4 className="font-bold text-gray-300 mb-2">Attachments:</h4>
-              <ul className="list-disc list-inside text-blue-400">
+              <ul className="list-disc list-inside">
                 {selectedMessage.attachments.map(att => (
                   <li key={att.id}>
-                    <span className="text-gray-300">{att.filename} ({Math.round(att.size / 1024)} KB)</span>
-                    {/* In the future, this could be a download link */}
+                    <a href={`/api/files/download/${att.id}/`} 
+                       className="text-blue-400 hover:text-blue-300 hover:underline"
+                       target="_blank" // Opens in a new tab
+                       rel="noopener noreferrer">
+                      {att.filename}
+                    </a>
+                    <span className="text-gray-400 text-sm ml-2">({Math.round(att.size / 1024)} KB)</span>
                   </li>
                 ))}
               </ul>
@@ -171,7 +159,6 @@ const MessageList = ({ board, onBack }) => {
   return (
     <div>
       {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => setNeedsUnlock(false)} />}
-      
       <div className="flex justify-between items-center mb-4">
         <Header text={board.name} />
         <div>
@@ -181,14 +168,11 @@ const MessageList = ({ board, onBack }) => {
           </button>
         </div>
       </div>
-
       {showPostForm && (
         <div className="bg-gray-800 p-4 rounded mb-6 border border-gray-700">
           <form onSubmit={(e) => { e.preventDefault(); handlePostMessage(); }}>
             <input type="text" placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <textarea placeholder="Your message..." value={body} onChange={(e) => setBody(e.target.value)} required rows="5" className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            
-            {/* --- NEW: File Upload Section --- */}
             <div className="bg-gray-700 p-3 rounded mb-4">
               <label className="block text-gray-300 text-sm font-bold mb-2">Attach Files</label>
               <div className="flex items-center gap-4">
@@ -198,8 +182,6 @@ const MessageList = ({ board, onBack }) => {
                 </button>
               </div>
               {uploadError && <p className="text-red-500 text-xs italic mt-2">{uploadError}</p>}
-              
-              {/* Display list of successfully uploaded files */}
               {attachments.length > 0 && (
                 <div className="mt-4">
                   <h4 className="text-sm font-bold text-gray-300">Attached:</h4>
@@ -214,7 +196,6 @@ const MessageList = ({ board, onBack }) => {
                 </div>
               )}
             </div>
-
             {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
             <div className="text-right">
               <button type="submit" className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">Submit Post</button>
@@ -222,7 +203,6 @@ const MessageList = ({ board, onBack }) => {
           </form>
         </div>
       )}
-
       <div className="bg-gray-800 rounded border border-gray-700">
         <table className="w-full text-left table-auto">
           <thead className="border-b border-gray-600">
