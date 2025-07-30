@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import apiClient from './apiClient';
 import LoginScreen from './components/LoginScreen';
 import RegisterScreen from './components/RegisterScreen';
-import MessageList, { UnlockForm } from './components/MessageList'; // Import the UnlockForm
+import MessageList from './components/MessageList';
+import UnlockForm from './components/UnlockForm'; // CORRECTED: Import UnlockForm from its own file
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const SideBarButton = ({ onClick, children, className = '' }) => (
@@ -13,12 +14,12 @@ const SideBarButton = ({ onClick, children, className = '' }) => (
 );
 const MessageBoardList = ({ onSelectBoard }) => {
   const [boards, setBoards] = useState([]);
-  useEffect(() => {
+useEffect(() => {
     apiClient.get('/api/boards/')
       .then(response => setBoards(response.data))
       .catch(err => console.error(err));
   }, []);
-  return (
+return (
     <div>
       <Header text="Message Boards" />
       <div className="space-y-2">
@@ -41,43 +42,41 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [authView, setAuthView] = useState('login');
   const [selectedBoard, setSelectedBoard] = useState(null);
-  const [isIdentityUnlocked, setIdentityUnlocked] = useState(false);
+const [isIdentityUnlocked, setIdentityUnlocked] = useState(false);
   const [needsUnlock, setNeedsUnlock] = useState(false);
-
-  const setAuthToken = (newToken) => {
+const setAuthToken = (newToken) => {
     if (newToken) {
       localStorage.setItem('token', newToken);
-    } else {
+} else {
       localStorage.removeItem('token');
-      setIdentityUnlocked(false); // Lock identity on logout
+      setIdentityUnlocked(false);
+// Lock identity on logout
     }
     setToken(newToken);
   };
-  useEffect(() => {
+useEffect(() => {
     const storedToken = localStorage.getItem('token');
     if (storedToken) {
       setToken(storedToken);
     }
   }, []);
-  const handleLogout = async () => {
+const handleLogout = async () => {
     try {
       await apiClient.post('/api/logout/');
-    } catch (err) {
+} catch (err) {
       console.error("Failed to clear server session, logging out client-side anyway.", err);
-    } finally {
+} finally {
       setAuthToken(null);
     }
   };
-  const handleSelectBoard = (boardId, boardName) => {
+const handleSelectBoard = (boardId, boardName) => {
     setSelectedBoard({ id: boardId, name: boardName });
   };
-
-  const handleUnlockSuccess = () => {
+const handleUnlockSuccess = () => {
     setIdentityUnlocked(true);
     setNeedsUnlock(false);
   };
-
-  if (!token) {
+if (!token) {
     return (
       <div className="bg-gray-800">
         {authView === 'login' ? (
@@ -87,12 +86,12 @@ function App() {
         )}
       </div>
     );
-  }
+}
 
   const renderMainContent = () => {
     if (selectedBoard) {
       return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} isIdentityUnlocked={isIdentityUnlocked} setNeedsUnlock={setNeedsUnlock} />;
-    }
+}
     return <MessageBoardList onSelectBoard={handleSelectBoard} />;
   };
 
@@ -124,7 +123,7 @@ function App() {
           </nav>
         </div>
         <main className="flex-1 p-6">
-          {renderMainContent()}
+           {renderMainContent()}
         </main>
       </div>
     </div>
