@@ -58,7 +58,6 @@ class FileAttachmentSerializer(serializers.ModelSerializer):
 class MessageSerializer(serializers.ModelSerializer):
     author_display = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S.%fZ", read_only=True)
-    # ✅ UPDATED: Changed from a nested serializer to a manual method to force serialization.
     attachments = serializers.SerializerMethodField()
 
     class Meta:
@@ -77,8 +76,11 @@ class MessageSerializer(serializers.ModelSerializer):
                 return f"Moo-{short_id}"
         return 'Anonymous'
 
-    # ✅ NEW: This method manually builds the attachment list for the API response.
     def get_attachments(self, obj):
+        # ✅ ADDED LOGGING
+        num_attachments = obj.attachments.count()
+        logger.info(f"Serializing message '{obj.subject}'. Found {num_attachments} attachments in database.")
+        
         attachments_data = []
         for attachment in obj.attachments.all():
             attachments_data.append({
