@@ -4,15 +4,14 @@ import apiClient from './apiClient';
 import LoginScreen from './components/LoginScreen';
 import RegisterScreen from './components/RegisterScreen';
 import MessageList from './components/MessageList';
+import { UnlockForm } from './components/MessageList'; // Import the UnlockForm
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
-
-const SideBarButton = ({ onClick, children }) => (
-  <button onClick={onClick} className="w-full text-left py-2 px-4 rounded hover:bg-gray-700 text-gray-300 transition duration-150 ease-in-out">
+const SideBarButton = ({ onClick, children, className = '' }) => (
+  <button onClick={onClick} className={`w-full text-left py-2 px-4 rounded hover:bg-gray-700 text-gray-300 transition duration-150 ease-in-out ${className}`}>
     {children}
   </button>
 );
-
 const MessageBoardList = ({ onSelectBoard }) => {
   const [boards, setBoards] = useState([]);
   useEffect(() => {
@@ -43,23 +42,24 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [authView, setAuthView] = useState('login');
   const [selectedBoard, setSelectedBoard] = useState(null);
-  
+  const [isIdentityUnlocked, setIdentityUnlocked] = useState(false); // NEW: Track lock state
+  const [needsUnlock, setNeedsUnlock] = useState(false); // NEW: Control modal visibility
+
   const setAuthToken = (newToken) => {
     if (newToken) {
       localStorage.setItem('token', newToken);
     } else {
       localStorage.removeItem('token');
+      setIdentityUnlocked(false); // Lock identity on logout
     }
     setToken(newToken);
   };
-
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
     if (storedToken) {
       setToken(storedToken);
     }
   }, []);
-
   const handleLogout = async () => {
     try {
       await apiClient.post('/api/logout/');
@@ -69,11 +69,15 @@ function App() {
       setAuthToken(null);
     }
   };
-
   const handleSelectBoard = (boardId, boardName) => {
     setSelectedBoard({ id: boardId, name: boardName });
   };
 
+  const handleUnlockSuccess = () => {
+    setIdentityUnlocked(true);
+    setNeedsUnlock(false);
+  };
+  
   if (!token) {
     return (
       <div className="bg-gray-800">
@@ -88,13 +92,17 @@ function App() {
 
   const renderMainContent = () => {
     if (selectedBoard) {
-      return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} />;
+      // Pass unlock state and handler down to MessageList
+      return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} isIdentityUnlocked={isIdentityUnlocked} setNeedsUnlock={setNeedsUnlock} />;
     }
     return <MessageBoardList onSelectBoard={handleSelectBoard} />;
   };
   
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300 font-sans">
+      {/* Conditionally render the UnlockForm modal */}
+      {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => setNeedsUnlock(false)} />}
+      
       <div className="flex flex-col md:flex-row">
         <div className="w-full md:w-60 bg-gray-800 p-4 border-r border-gray-700 flex-shrink-0">
           <div className="text-2xl font-bold text-white mb-6">Axon BBS</div>
@@ -107,6 +115,13 @@ function App() {
             </div>
             <div className="p-2">
               <h3 className="font-semibold text-gray-400 mb-2">User</h3>
+              {/* NEW: Proactive Unlock Button */}
+              <SideBarButton
+                onClick={() => setNeedsUnlock(true)}
+                className={isIdentityUnlocked ? 'text-green-400' : 'text-yellow-400'}
+              >
+                {isIdentityUnlocked ? '✓ Identity Unlocked' : '✗ Unlock Identity'}
+              </SideBarButton>
               <SideBarButton onClick={() => alert("Profile not yet implemented.")}>Profile</SideBarButton>
               <SideBarButton onClick={handleLogout}>Logout</SideBarButton>
             </div>

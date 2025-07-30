@@ -1,12 +1,13 @@
 // Full path: axon_bbs/frontend/src/components/MessageList.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
+
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
-const UnlockForm = ({ onUnlock, onCancel }) => {
+// This form can now be used by App.js as well
+export const UnlockForm = ({ onUnlock, onCancel }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  
   const handleUnlock = async (e) => {
     e.preventDefault();
     setError('');
@@ -17,7 +18,6 @@ const UnlockForm = ({ onUnlock, onCancel }) => {
       setError('Unlock failed. Please check your password.');
     }
   };
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
       <div className="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm">
@@ -36,12 +36,11 @@ const UnlockForm = ({ onUnlock, onCancel }) => {
   );
 };
 
-const MessageList = ({ board, onBack }) => {
+const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [showPostForm, setShowPostForm] = useState(false);
-  const [needsUnlock, setNeedsUnlock] = useState(false);
-  const [postUnlockAction, setPostUnlockAction] = useState(null); // To store the action to perform after unlock
+  const [postUnlockAction, setPostUnlockAction] = useState(null);
   
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -58,27 +57,37 @@ const MessageList = ({ board, onBack }) => {
       setMessages(response.data);
     } catch (err) { console.error("Failed to fetch messages:", err); }
   }, [board.id]);
-
+  
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
+
+  // If the identity is unlocked, and there's a pending action, run it.
+  useEffect(() => {
+    if (isIdentityUnlocked && postUnlockAction) {
+      postUnlockAction();
+      setPostUnlockAction(null);
+    }
+  }, [isIdentityUnlocked, postUnlockAction]);
 
   const handlePostMessage = useCallback(async () => {
     setError('');
     if (!subject || !body) { setError("Subject and body cannot be empty."); return; }
+    
+    if (!isIdentityUnlocked) {
+      setPostUnlockAction(() => () => handlePostMessage());
+      setNeedsUnlock(true);
+      return;
+    }
+
     try {
       const attachment_ids = attachments.map(att => att.id);
       await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name, attachment_ids });
       setSubject(''); setBody(''); setAttachments([]); setShowPostForm(false);
       fetchMessages();
     } catch (err) {
-      if (err.response && err.response.data.error === 'identity_locked') {
-        setPostUnlockAction(() => () => handlePostMessage()); // Set the action to retry
-        setNeedsUnlock(true);
-      } else {
-        setError(err.response?.data?.error || 'Could not post message.');
-      }
+      setError(err.response?.data?.error || 'Could not post message.');
     }
-  }, [subject, body, board.name, attachments, fetchMessages]);
-
+  }, [subject, body, board.name, attachments, fetchMessages, isIdentityUnlocked, setNeedsUnlock]);
+  
   const handleFileUpload = async () => {
     if (!selectedFile) { setUploadError('Please select a file first.'); return; }
     setIsUploading(true); setUploadError('');
@@ -95,8 +104,13 @@ const MessageList = ({ board, onBack }) => {
     }
   };
 
-  // --- NEW: Handler for authenticated file downloads ---
   const handleFileDownload = useCallback(async (fileId, filename) => {
+    if (!isIdentityUnlocked) {
+      setPostUnlockAction(() => () => handleFileDownload(fileId, filename));
+      setNeedsUnlock(true);
+      return;
+    }
+    
     try {
       const response = await apiClient.get(`/api/files/download/${fileId}/`, {
         responseType: 'blob', // Important for handling file data
@@ -111,25 +125,11 @@ const MessageList = ({ board, onBack }) => {
       link.parentNode.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      if (err.response && err.response.status === 401) {
-        // If download fails due to auth, prompt for unlock and set the retry action
-        setPostUnlockAction(() => () => handleFileDownload(fileId, filename));
-        setNeedsUnlock(true);
-      } else {
-        console.error("Download failed:", err);
-        alert("Could not download the file. See console for details.");
-      }
+      console.error("Download failed:", err);
+      alert("Could not download the file. See console for details.");
     }
-  }, []);
+  }, [isIdentityUnlocked, setNeedsUnlock]);
   
-  const handleUnlockSuccess = () => {
-    setNeedsUnlock(false);
-    if (postUnlockAction) {
-      postUnlockAction(); // Execute the stored action (posting or downloading)
-      setPostUnlockAction(null); // Clear the action
-    }
-  };
-
   if (selectedMessage) {
     return (
       <div>
@@ -147,7 +147,6 @@ const MessageList = ({ board, onBack }) => {
               <ul className="list-disc list-inside">
                 {selectedMessage.attachments.map(att => (
                   <li key={att.id}>
-                    {/* UPDATED: Use a button with an onClick handler */}
                     <button onClick={() => handleFileDownload(att.id, att.filename)} className="text-blue-400 hover:text-blue-300 hover:underline">
                       {att.filename}
                     </button>
@@ -164,7 +163,6 @@ const MessageList = ({ board, onBack }) => {
 
   return (
     <div>
-      {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => { setNeedsUnlock(false); setPostUnlockAction(null); }} />}
       <div className="flex justify-between items-center mb-4">
         <Header text={board.name} />
         <div>
@@ -238,4 +236,3 @@ const MessageList = ({ board, onBack }) => {
 };
 
 export default MessageList;
-
