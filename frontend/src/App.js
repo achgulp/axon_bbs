@@ -41,8 +41,8 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [authView, setAuthView] = useState('login');
   const [selectedBoard, setSelectedBoard] = useState(null);
-  const [isIdentityUnlocked, setIdentityUnlocked] = useState(false); // NEW: Track lock state
-  const [needsUnlock, setNeedsUnlock] = useState(false); // NEW: Control modal visibility
+  const [isIdentityUnlocked, setIdentityUnlocked] = useState(false);
+  const [needsUnlock, setNeedsUnlock] = useState(false);
 
   const setAuthToken = (newToken) => {
     if (newToken) {
@@ -91,7 +91,6 @@ function App() {
 
   const renderMainContent = () => {
     if (selectedBoard) {
-      // Pass unlock state and handler down to MessageList
       return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} isIdentityUnlocked={isIdentityUnlocked} setNeedsUnlock={setNeedsUnlock} />;
     }
     return <MessageBoardList onSelectBoard={handleSelectBoard} />;
@@ -99,7 +98,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300 font-sans">
-      {/* Conditionally render the UnlockForm modal */}
       {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => setNeedsUnlock(false)} />}
 
       <div className="flex flex-col md:flex-row">
@@ -109,12 +107,11 @@ function App() {
             <div className="p-2">
               <h3 className="font-semibold text-gray-400 mb-2">Menu</h3>
               <SideBarButton onClick={() => setSelectedBoard(null)}>Message Boards</SideBarButton>
-              <SideBarButton onClick={() => alert("File Areas not yet implemented.")}>File Areas</SideBarButton>
+              {/* ✅ REMOVED 'File Areas' Button */}
               <SideBarButton onClick={() => alert("Private Mail not yet implemented.")}>Private Mail</SideBarButton>
             </div>
             <div className="p-2">
               <h3 className="font-semibold text-gray-400 mb-2">User</h3>
-              {/* NEW: Proactive Unlock Button */}
               <SideBarButton
                 onClick={() => setNeedsUnlock(true)}
                 className={isIdentityUnlocked ? 'text-green-400' : 'text-yellow-400'}
