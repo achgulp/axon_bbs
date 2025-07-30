@@ -115,7 +115,6 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
       const response = await apiClient.get(`/api/files/download/${fileId}/`, {
         responseType: 'blob', // Important for handling file data
       });
-      // Create a temporary link to trigger the download
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -125,8 +124,25 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
       link.parentNode.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("Download failed:", err);
-      alert("Could not download the file. See console for details.");
+      // ✅ UPDATED: This block now intelligently displays the specific error from the server.
+      if (err.response && err.response.data) {
+        // Since the responseType is 'blob', the error data might also be a blob. We need to parse it.
+        if (err.response.data instanceof Blob) {
+          err.response.data.text().then(text => {
+            try {
+              const errorJson = JSON.parse(text);
+              alert(`Download failed: ${errorJson.error}`);
+            } catch (jsonErr) {
+              alert("Could not download the file. An unknown error occurred.");
+            }
+          });
+        } else { // If the error is already in JSON format
+          alert(`Download failed: ${err.response.data.error || 'An unknown error occurred.'}`);
+        }
+      } else {
+        console.error("Download failed:", err);
+        alert("Could not download the file. See console for details.");
+      }
     }
   }, [isIdentityUnlocked, setNeedsUnlock]);
 
@@ -212,8 +228,8 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
           <thead className="border-b border-gray-600">
             <tr>
               <th className="p-3 text-sm font-semibold text-gray-400 w-3/5">Thread / Subject</th>
-              <th className="p-3 text-sm font-semibold text-gray-400 w-1/f">Author</th>
-              <th className="p-3 text-sm font-semibold text-gray-400 w-1/f">Last Post</th>
+              <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Author</th>
+              <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Last Post</th>
             </tr>
           </thead>
           <tbody>
