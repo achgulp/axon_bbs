@@ -41,7 +41,7 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [showPostForm, setShowPostForm] = useState(false);
   const [postUnlockAction, setPostUnlockAction] = useState(null);
-  
+
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
@@ -57,7 +57,7 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
       setMessages(response.data);
     } catch (err) { console.error("Failed to fetch messages:", err); }
   }, [board.id]);
-  
+
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
   // If the identity is unlocked, and there's a pending action, run it.
@@ -71,7 +71,7 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
   const handlePostMessage = useCallback(async () => {
     setError('');
     if (!subject || !body) { setError("Subject and body cannot be empty."); return; }
-    
+
     if (!isIdentityUnlocked) {
       setPostUnlockAction(() => () => handlePostMessage());
       setNeedsUnlock(true);
@@ -87,7 +87,7 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
       setError(err.response?.data?.error || 'Could not post message.');
     }
   }, [subject, body, board.name, attachments, fetchMessages, isIdentityUnlocked, setNeedsUnlock]);
-  
+
   const handleFileUpload = async () => {
     if (!selectedFile) { setUploadError('Please select a file first.'); return; }
     setIsUploading(true); setUploadError('');
@@ -110,7 +110,7 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
       setNeedsUnlock(true);
       return;
     }
-    
+
     try {
       const response = await apiClient.get(`/api/files/download/${fileId}/`, {
         responseType: 'blob', // Important for handling file data
@@ -129,7 +129,7 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
       alert("Could not download the file. See console for details.");
     }
   }, [isIdentityUnlocked, setNeedsUnlock]);
-  
+
   if (selectedMessage) {
     return (
       <div>
@@ -140,7 +140,7 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
           <h3 className="text-xl font-bold text-white mb-1">{selectedMessage.subject}</h3>
           <p className="text-sm text-gray-400 mb-2">by {selectedMessage.author_display} on {new Date(selectedMessage.created_at).toLocaleString()}</p>
           <p className="text-gray-300 whitespace-pre-wrap mb-4">{selectedMessage.body}</p>
-          
+
           {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
             <div className="border-t border-gray-700 pt-4 mt-4">
               <h4 className="font-bold text-gray-300 mb-2">Attachments:</h4>
@@ -212,8 +212,8 @@ const MessageList = ({ board, onBack, isIdentityUnlocked, setNeedsUnlock }) => {
           <thead className="border-b border-gray-600">
             <tr>
               <th className="p-3 text-sm font-semibold text-gray-400 w-3/5">Thread / Subject</th>
-              <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Author</th>
-              <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Last Post</th>
+              <th className="p-3 text-sm font-semibold text-gray-400 w-1/f">Author</th>
+              <th className="p-3 text-sm font-semibold text-gray-400 w-1/f">Last Post</th>
             </tr>
           </thead>
           <tbody>

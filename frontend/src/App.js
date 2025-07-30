@@ -1,10 +1,9 @@
-// axon_bbs/frontend/src/App.js
+// Full path: axon_bbs/frontend/src/App.js
 import React, { useState, useEffect } from 'react';
 import apiClient from './apiClient';
 import LoginScreen from './components/LoginScreen';
 import RegisterScreen from './components/RegisterScreen';
-import MessageList from './components/MessageList';
-import { UnlockForm } from './components/MessageList'; // Import the UnlockForm
+import MessageList, { UnlockForm } from './components/MessageList'; // Import the UnlockForm
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const SideBarButton = ({ onClick, children, className = '' }) => (
@@ -77,7 +76,7 @@ function App() {
     setIdentityUnlocked(true);
     setNeedsUnlock(false);
   };
-  
+
   if (!token) {
     return (
       <div className="bg-gray-800">
@@ -97,12 +96,12 @@ function App() {
     }
     return <MessageBoardList onSelectBoard={handleSelectBoard} />;
   };
-  
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300 font-sans">
       {/* Conditionally render the UnlockForm modal */}
       {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => setNeedsUnlock(false)} />}
-      
+
       <div className="flex flex-col md:flex-row">
         <div className="w-full md:w-60 bg-gray-800 p-4 border-r border-gray-700 flex-shrink-0">
           <div className="text-2xl font-bold text-white mb-6">Axon BBS</div>
