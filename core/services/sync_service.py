@@ -6,6 +6,7 @@ import logging
 import json
 import base64
 import hashlib
+import os # NEW: Import the 'os' module
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
@@ -91,7 +92,6 @@ class SyncService:
                 if response.status_code == 200:
                     manifests = response.json().get('manifests', [])
                     logger.info(f"<-- Received {len(manifests)} new manifest(s) from peer {peer.web_ui_onion_url}")
-                    # UPDATED: Process manifests in two passes to ensure attachments exist before messages are linked
                     self._process_manifests_in_order(manifests)
                     peer.last_synced_at = django_timezone.now()
                     peer.save()
@@ -102,16 +102,9 @@ class SyncService:
         logger.info("Polling cycle complete.")
 
     def _process_manifests_in_order(self, manifests: list):
-        """
-        Processes manifests in two passes: files first, then messages.
-        This ensures that FileAttachment objects exist before a Message tries to link to them.
-        """
-        # Pass 1: Process all file attachments
         for manifest in manifests:
             if manifest.get('content_type') == 'file':
                 self._process_file_manifest(manifest)
-        
-        # Pass 2: Process all messages
         for manifest in manifests:
             if manifest.get('content_type') == 'message':
                 self._process_message_manifest(manifest)
@@ -152,13 +145,6 @@ class SyncService:
     def _find_seeders(self, content_hash: str) -> list:
         logger.info(f"Discovering seeders for content {content_hash[:10]}...")
         available_seeders = []
-        # UPDATED: Also check if the local instance has the file
-        if Message.objects.filter(manifest__content_hash=content_hash).exists() or \
-           FileAttachment.objects.filter(manifest__content_hash=content_hash).exists():
-            # In a real-world scenario, you'd add your own onion URL here. For local testing, this check is enough.
-            # We will rely on the FileDownloadView to check local chunks directly.
-            pass # This logic is primarily for downloading from peers.
-
         peers = TrustedInstance.objects.filter(is_trusted_peer=True)
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         for peer in peers:
@@ -177,7 +163,6 @@ class SyncService:
         content_hash, chunk_hashes = manifest['content_hash'], manifest['chunk_hashes']
         num_chunks = len(chunk_hashes)
         
-        # Check for local chunks first to avoid unnecessary network calls
         from .service_manager import service_manager
         local_chunks = {}
         for i in range(num_chunks):
@@ -190,7 +175,6 @@ class SyncService:
             logger.info(f"All chunks for {content_hash[:10]}... found locally.")
             return b"".join(local_chunks[i] for i in range(num_chunks))
 
-        # If chunks are missing, find seeders and download the rest
         seeders = self._find_seeders(content_hash)
         if not seeders:
             logger.error(f"Cannot download content {content_hash[:10]}: No seeders found.")
@@ -198,9 +182,7 @@ class SyncService:
         
         logger.info(f"Starting swarm download for {content_hash[:10]}... from {len(seeders)} peer(s).")
         downloaded_chunks, proxies = local_chunks.copy(), {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-        
         chunks_to_download = [i for i in range(num_chunks) if i not in downloaded_chunks]
-
         with ThreadPoolExecutor(max_workers=len(seeders) * 2) as executor:
             futures = {
                 executor.submit(self._download_chunk, seeders[i % len(seeders)], content_hash, chunk_idx, proxies): chunk_idx
