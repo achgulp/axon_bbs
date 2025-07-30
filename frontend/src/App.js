@@ -4,7 +4,7 @@ import apiClient from './apiClient';
 import LoginScreen from './components/LoginScreen';
 import RegisterScreen from './components/RegisterScreen';
 import MessageList from './components/MessageList';
-import UnlockForm from './components/UnlockForm'; // CORRECTED: Import UnlockForm from its own file
+import UnlockForm from './components/UnlockForm';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const SideBarButton = ({ onClick, children, className = '' }) => (
@@ -14,12 +14,12 @@ const SideBarButton = ({ onClick, children, className = '' }) => (
 );
 const MessageBoardList = ({ onSelectBoard }) => {
   const [boards, setBoards] = useState([]);
-useEffect(() => {
+  useEffect(() => {
     apiClient.get('/api/boards/')
       .then(response => setBoards(response.data))
       .catch(err => console.error(err));
   }, []);
-return (
+  return (
     <div>
       <Header text="Message Boards" />
       <div className="space-y-2">
@@ -42,43 +42,43 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [authView, setAuthView] = useState('login');
   const [selectedBoard, setSelectedBoard] = useState(null);
-const [isIdentityUnlocked, setIdentityUnlocked] = useState(false);
+  const [isIdentityUnlocked, setIdentityUnlocked] = useState(false);
   const [needsUnlock, setNeedsUnlock] = useState(false);
-const setAuthToken = (newToken) => {
+  const setAuthToken = (newToken) => {
     if (newToken) {
       localStorage.setItem('token', newToken);
-} else {
+    } else {
       localStorage.removeItem('token');
       setIdentityUnlocked(false);
-// Lock identity on logout
+      // Lock identity on logout
     }
     setToken(newToken);
   };
-useEffect(() => {
+  useEffect(() => {
     const storedToken = localStorage.getItem('token');
     if (storedToken) {
       setToken(storedToken);
     }
   }, []);
-const handleLogout = async () => {
+  const handleLogout = async () => {
     try {
       await apiClient.post('/api/logout/');
-} catch (err) {
+    } catch (err) {
       console.error("Failed to clear server session, logging out client-side anyway.", err);
-} finally {
+    } finally {
       setAuthToken(null);
     }
   };
-const handleSelectBoard = (boardId, boardName) => {
+  const handleSelectBoard = (boardId, boardName) => {
     setSelectedBoard({ id: boardId, name: boardName });
   };
-const handleUnlockSuccess = () => {
+  const handleUnlockSuccess = () => {
     setIdentityUnlocked(true);
     setNeedsUnlock(false);
   };
-if (!token) {
+  if (!token) {
     return (
-      <div className="bg-gray-800">
+      <div className="bg-gray-800 min-h-screen">
         {authView === 'login' ? (
           <LoginScreen onLogin={setAuthToken} onNavigateToRegister={() => setAuthView('register')} />
         ) : (
@@ -86,12 +86,12 @@ if (!token) {
         )}
       </div>
     );
-}
+  }
 
   const renderMainContent = () => {
     if (selectedBoard) {
       return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} isIdentityUnlocked={isIdentityUnlocked} setNeedsUnlock={setNeedsUnlock} />;
-}
+    }
     return <MessageBoardList onSelectBoard={handleSelectBoard} />;
   };
 
@@ -101,12 +101,14 @@ if (!token) {
 
       <div className="flex flex-col md:flex-row">
         <div className="w-full md:w-60 bg-gray-800 p-4 border-r border-gray-700 flex-shrink-0">
-          <div className="text-2xl font-bold text-white mb-6">Axon BBS</div>
+          <div className="flex items-center text-2xl font-bold text-white mb-6">
+            <img src="/axon.png" alt="Axon logo" className="h-8 w-8 mr-3"/>
+            <h2>Axon BBS</h2>
+          </div>
           <nav className="space-y-2">
             <div className="p-2">
               <h3 className="font-semibold text-gray-400 mb-2">Menu</h3>
               <SideBarButton onClick={() => setSelectedBoard(null)}>Message Boards</SideBarButton>
-              {/* ✅ REMOVED 'File Areas' Button */}
               <SideBarButton onClick={() => alert("Private Mail not yet implemented.")}>Private Mail</SideBarButton>
             </div>
             <div className="p-2">

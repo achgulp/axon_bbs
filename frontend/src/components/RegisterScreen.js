@@ -1,17 +1,14 @@
-// axon_bbs/frontend/src/components/RegisterScreen.js
+// Full path: axon_bbs/frontend/src/components/RegisterScreen.js
 import React, { useState } from 'react';
 import apiClient from '../apiClient';
-
 const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [error, setError] = useState('');
-
   const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
-
     if (password !== password2) {
       setError("Passwords do not match.");
       return;
@@ -33,10 +30,12 @@ const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }) => {
       console.error(err);
     }
   };
-
   return (
     <div className="max-w-md mx-auto mt-10 p-8 bg-gray-800 rounded-lg">
-      <div className="text-4xl font-bold text-white mb-6 pb-2 border-b-2 border-gray-600">Register</div>
+      <div className="flex items-center text-4xl font-bold text-white mb-6 pb-2 border-b-2 border-gray-600">
+        <img src="/axon.png" alt="Axon logo" className="h-10 w-10 mr-4"/>
+        <h1>Register</h1>
+      </div>
       <form onSubmit={handleRegister}>
         <div className="mb-4">
           <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="username">
@@ -99,4 +98,3 @@ const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }) => {
 };
 
 export default RegisterScreen;
-
