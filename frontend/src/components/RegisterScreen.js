@@ -33,7 +33,7 @@ const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }) => {
   return (
     <div className="max-w-md mx-auto mt-10 p-8 bg-gray-800 rounded-lg">
       <div className="flex items-center text-4xl font-bold text-white mb-6 pb-2 border-b-2 border-gray-600">
-        <img src="/axon.png" alt="Axon logo" className="h-10 w-10 mr-4"/>
+        <img src="/axon.png" alt="Axon logo" className="h-24 w-24 mr-4"/>
         <h1>Register</h1>
       </div>
       <form onSubmit={handleRegister}>

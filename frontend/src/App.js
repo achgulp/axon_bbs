@@ -102,7 +102,7 @@ function App() {
       <div className="flex flex-col md:flex-row">
         <div className="w-full md:w-60 bg-gray-800 p-4 border-r border-gray-700 flex-shrink-0">
           <div className="flex items-center text-2xl font-bold text-white mb-6">
-            <img src="/axon.png" alt="Axon logo" className="h-8 w-8 mr-3"/>
+            <img src="/axon.png" alt="Axon logo" className="h-12 w-12 mr-3"/>
             <h2>Axon BBS</h2>
           </div>
           <nav className="space-y-2">
