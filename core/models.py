@@ -69,6 +69,15 @@ class Alias(models.Model):
     def __str__(self):
         return f"{self.nickname} ({self.pubkey[:12]}...)"
 
+# ✅ NEW: Model for managing allowed file types by their magic numbers.
+class ValidFileType(models.Model):
+    mime_type = models.CharField(max_length=100, unique=True, help_text="e.g., 'image/jpeg'")
+    description = models.CharField(max_length=255, blank=True)
+    is_enabled = models.BooleanField(default=True, help_text="Disable to temporarily disallow this file type.")
+
+    def __str__(self):
+        return f"{self.mime_type} ({self.description})"
+
 class Content(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='authored_%(class)ss', null=True)
@@ -86,7 +95,6 @@ class MessageBoard(models.Model):
     def __str__(self):
         return self.name
 
-# --- NEW: FileAttachment Model ---
 class FileAttachment(Content):
     """
     Represents a single file uploaded by a user, prepared for BitSync distribution.
@@ -95,7 +103,7 @@ class FileAttachment(Content):
     content_type = models.CharField(max_length=100)
     size = models.PositiveIntegerField()
     manifest = models.JSONField(help_text="BitSync manifest for P2P file distribution.")
-    
+
     def __str__(self):
         return f"{self.filename} ({self.id})"
 
@@ -106,7 +114,6 @@ class Message(Content):
     body = models.TextField()
     pubkey = models.TextField(blank=True, null=True)
     manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for P2P content distribution.")
-    # UPDATED: Link to FileAttachments
     attachments = models.ManyToManyField(FileAttachment, blank=True, related_name='messages')
 
     def __str__(self):
@@ -158,4 +165,3 @@ class ContentExtensionRequest(models.Model):
         unique_together = ('content_id', 'user')
     def __str__(self):
         return f"Extension Request for {self.content_type} {self.content_id} by {self.user.username}"
-

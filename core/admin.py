@@ -1,7 +1,7 @@
 # Full path: axon_bbs/core/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest
+from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization
@@ -36,7 +36,7 @@ class PrivateMessageAdmin(admin.ModelAdmin):
     list_display = ('subject', 'author', 'recipient', 'created_at', 'is_read')
     list_filter = ('author', 'recipient', 'is_read')
     date_hierarchy = 'created_at'
-    
+
 @admin.register(BannedPubkey)
 class BannedPubkeyAdmin(admin.ModelAdmin):
     list_display = ('pubkey', 'is_temporary', 'expires_at')
@@ -46,6 +46,13 @@ class BannedPubkeyAdmin(admin.ModelAdmin):
 class ContentExtensionRequestAdmin(admin.ModelAdmin):
     list_display = ('content_id', 'content_type', 'user', 'request_date', 'status', 'reviewed_by')
     list_filter = ('status', 'content_type')
+
+# ✅ NEW: Admin interface for managing valid file types.
+@admin.register(ValidFileType)
+class ValidFileTypeAdmin(admin.ModelAdmin):
+    list_display = ('mime_type', 'description', 'is_enabled')
+    list_filter = ('is_enabled',)
+    search_fields = ('mime_type', 'description')
 
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
