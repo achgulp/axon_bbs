@@ -108,7 +108,8 @@ class FileDownloadView(views.APIView):
 
 # --- Content & Moderation Views ---
 class MessageBoardListView(generics.ListAPIView):
-    queryset = MessageBoard.objects.all()
+    # ✅ UPDATED: Added .order_by('name') to sort the boards alphabetically.
+    queryset = MessageBoard.objects.all().order_by('name')
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = MessageBoardSerializer
 
@@ -260,4 +261,3 @@ class BitSyncChunkView(views.APIView):
                     return HttpResponse(f.read(), content_type='application/octet-stream')
             except IOError: raise Http404("Chunk file not readable.")
         else: raise Http404("Chunk not found.")
-
