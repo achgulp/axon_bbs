@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from django.utils import timezone as django_timezone
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -34,7 +35,7 @@ class SyncService:
         logger.info("BitSync Service thread started. Polling will begin shortly.")
 
     def _run(self):
-        time.sleep(15) 
+        time.sleep(15)
         logger.info("SyncService polling loop is now active.")
         while True:
             try:
@@ -46,7 +47,7 @@ class SyncService:
             except Exception as e:
                 logger.error(f"Error in sync service poll loop: {e}", exc_info=True)
             time.sleep(self.poll_interval)
-    
+
     def _load_identity(self):
         try:
             self.local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False).first()
@@ -106,7 +107,7 @@ class SyncService:
         for manifest in manifests:
             if manifest.get('content_type') == 'file':
                 self._process_file_manifest(manifest)
-        
+
         # Pass 2: Process all messages
         for manifest in manifests:
             if manifest.get('content_type') == 'message':
@@ -131,9 +132,18 @@ class SyncService:
             if not encrypted_data: return
             decrypted_data = self._decrypt_data(encrypted_data, manifest)
             if not decrypted_data: return
-            
+
             content = json.loads(decrypted_data)
-            board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
+            
+            # ✅ UPDATED: Use case-insensitive logic to find or create the board.
+            board_name_from_sync = content.get('board', 'general')
+            try:
+                # First, try to find a board with a case-insensitive match.
+                board = MessageBoard.objects.get(name__iexact=board_name_from_sync)
+            except ObjectDoesNotExist:
+                # If no board is found, create a new one with the exact name from the sync.
+                board = MessageBoard.objects.create(name=board_name_from_sync)
+
             message = Message.objects.create(
                 board=board, subject=content.get('subject'), body=content.get('body'),
                 pubkey=content.get('pubkey'), manifest=manifest
@@ -165,7 +175,7 @@ class SyncService:
     def _download_content(self, manifest: dict) -> bytes | None:
         content_hash, chunk_hashes = manifest['content_hash'], manifest['chunk_hashes']
         num_chunks = len(chunk_hashes)
-        
+
         from .service_manager import service_manager
         local_chunks = {}
         for i in range(num_chunks):
@@ -173,7 +183,7 @@ class SyncService:
             if chunk_path and os.path.exists(chunk_path):
                 with open(chunk_path, 'rb') as f:
                     local_chunks[i] = f.read()
-        
+
         if len(local_chunks) == num_chunks:
             logger.info(f"All chunks for {content_hash[:10]}... found locally.")
             return b"".join(local_chunks[i] for i in range(num_chunks))
@@ -182,7 +192,7 @@ class SyncService:
         if not seeders:
             logger.error(f"Cannot download content {content_hash[:10]}: No seeders found.")
             return None
-        
+
         logger.info(f"Starting swarm download for {content_hash[:10]}... from {len(seeders)} peer(s).")
         downloaded_chunks, proxies = local_chunks.copy(), {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         chunks_to_download = [i for i in range(num_chunks) if i not in downloaded_chunks]
@@ -197,7 +207,7 @@ class SyncService:
                     downloaded_chunks[chunk_index] = chunk_data
                     logger.info(f"Successfully downloaded chunk {chunk_index + 1}/{num_chunks} for {content_hash[:10]}...")
                 else: logger.error(f"Failed to download or verify chunk {chunk_index} for {content_hash[:10]}...")
-        
+
         if len(downloaded_chunks) == num_chunks:
             return b"".join(downloaded_chunks[i] for i in range(num_chunks))
         else:
@@ -240,4 +250,3 @@ class SyncService:
         if encrypted_data:
             return self._decrypt_data(encrypted_data, manifest)
         return None
-
