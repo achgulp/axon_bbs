@@ -1,7 +1,6 @@
-// axon_bbs/frontend/src/components/LoginScreen.js
+// Full path: axon_bbs/frontend/src/components/LoginScreen.js
 import React, { useState } from 'react';
 import apiClient from '../apiClient';
-
 const LoginScreen = ({ onLogin, onNavigateToRegister }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -22,10 +21,12 @@ const LoginScreen = ({ onLogin, onNavigateToRegister }) => {
       console.error(err);
     }
   };
-
   return (
     <div className="max-w-md mx-auto mt-10 p-8 bg-gray-800 rounded-lg">
-      <div className="text-4xl font-bold text-white mb-6 pb-2 border-b-2 border-gray-600">Login</div>
+      <div className="flex items-center text-4xl font-bold text-white mb-6 pb-2 border-b-2 border-gray-600">
+        <img src="/axon.png" alt="Axon logo" className="h-10 w-10 mr-4"/>
+        <h1>Login</h1>
+      </div>
       <form onSubmit={handleLogin}>
         <div className="mb-4">
           <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="username">
