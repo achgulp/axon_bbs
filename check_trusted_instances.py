@@ -76,4 +76,3 @@ def check_instances():
 
 if __name__ == "__main__":
     check_instances()
-
