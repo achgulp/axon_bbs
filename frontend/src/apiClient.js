@@ -1,9 +1,9 @@
-# Full path: axon_bbs/frontend/src/apiClient.js
+// Full path: axon_bbs/frontend/src/apiClient.js
 import axios from 'axios';
 
 // Create an instance of axios for our API
 const apiClient = axios.create({
-  // By removing the hardcoded baseURL, requests will be sent to the 
+  // By removing the hardcoded baseURL, requests will be sent to the
   // same host that served the frontend files. This makes the app portable.
   timeout: 10000,
   headers: {
@@ -24,7 +24,7 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// ✅ NEW: Interceptor to handle 401 Unauthorized errors
+// NEW: Interceptor to handle 401 Unauthorized errors
 apiClient.interceptors.response.use(
   (response) => response, // Directly return successful responses
   (error) => {
@@ -34,12 +34,12 @@ apiClient.interceptors.response.use(
       if (error.config.url.includes('/api/token/')) {
         return Promise.reject(error);
       }
-      
+
       console.warn("Session expired or token is invalid. Logging out.");
       // Remove the invalid token from storage
       localStorage.removeItem('token');
       // Redirect to the login page by reloading the app
-      window.location.href = '/'; 
+      window.location.href = '/';
     }
     // For all other errors, just pass them along
     return Promise.reject(error);
