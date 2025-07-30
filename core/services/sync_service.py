@@ -103,28 +103,26 @@ class SyncService:
         logger.info("Polling cycle complete.")
 
     def _process_manifests_in_order(self, manifests: list):
-        # ✅ UPDATED: Process manifests sequentially to handle dependencies correctly.
-        # First, create placeholders for all content to establish relationships.
         all_content_hashes = {m['content_hash']: m for m in manifests}
         for content_hash, manifest in all_content_hashes.items():
             content_type = manifest.get('content_type')
             if content_type == 'file':
                 self._process_file_manifest(manifest)
             elif content_type == 'message':
-                # For messages, ensure their attachments are processed first.
                 attachment_hashes = manifest.get('attachment_hashes', [])
                 for att_hash in attachment_hashes:
                     if att_hash in all_content_hashes:
                         self._process_file_manifest(all_content_hashes[att_hash])
                 self._process_message_manifest(manifest)
 
-
     def _process_file_manifest(self, manifest: dict):
         content_hash = manifest.get('content_hash')
         if not FileAttachment.objects.filter(manifest__content_hash=content_hash).exists():
-            logger.info(f"Syncing metadata for new file: '{manifest.get('filename')}'")
+            # ✅ ADDED LOGGING
+            filename = manifest.get('filename', 'unknown')
+            logger.info(f"Discovered new file in manifest: '{filename}'. Creating database record.")
             FileAttachment.objects.create(
-                filename=manifest.get('filename', 'unknown'),
+                filename=filename,
                 content_type=manifest.get('content_type_val', 'application/octet-stream'),
                 size=manifest.get('size', 0),
                 manifest=manifest
