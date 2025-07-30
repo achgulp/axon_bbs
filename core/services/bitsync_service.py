@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives import serialization, hashes
 from django.conf import settings
+from django.db.models import Q
 from core.models import TrustedInstance
 from .encryption_utils import generate_checksum
 
@@ -30,7 +31,6 @@ class BitSyncService:
         """
         Takes raw data, encrypts it, splits it into chunks, stores the chunks,
         and returns a complete manifest for distribution.
-
         :param raw_data: The raw bytes of the content to be shared.
         :return: A dictionary representing the content manifest.
         """
@@ -61,13 +61,17 @@ class BitSyncService:
                 f.write(chunk)
         logger.info(f"Stored {len(chunks)} chunks for content hash: {content_hash[:10]}...")
 
-        # 6. Create encrypted "envelopes" for the AES key for each trusted peer.
+        # 6. Create encrypted "envelopes" for the AES key for the local instance AND each trusted peer.
         encrypted_aes_keys = {}
-        trusted_peers = TrustedInstance.objects.filter(is_trusted_peer=True)
-        for peer in trusted_peers:
-            if peer.pubkey:
+        # ✅ FIX: Query for the local instance OR any trusted peer.
+        instances_to_encrypt_for = TrustedInstance.objects.filter(
+            Q(is_trusted_peer=True) | Q(encrypted_private_key__isnull=False)
+        )
+        
+        for instance in instances_to_encrypt_for:
+            if instance.pubkey:
                 try:
-                    peer_pubkey_obj = serialization.load_pem_public_key(peer.pubkey.encode())
+                    peer_pubkey_obj = serialization.load_pem_public_key(instance.pubkey.encode())
                     encrypted_key = peer_pubkey_obj.encrypt(
                         aes_key,
                         rsa_padding.OAEP(
@@ -76,11 +80,11 @@ class BitSyncService:
                             label=None
                         )
                     )
-                    # Use the peer's pubkey checksum as a consistent dictionary key.
-                    peer_checksum = generate_checksum(peer.pubkey)
-                    encrypted_aes_keys[peer_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
+                    # Use the instance's pubkey checksum as a consistent dictionary key.
+                    instance_checksum = generate_checksum(instance.pubkey)
+                    encrypted_aes_keys[instance_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
                 except Exception as e:
-                    logger.error(f"Failed to encrypt AES key for peer {peer.web_ui_onion_url}: {e}")
+                    logger.error(f"Failed to encrypt AES key for instance {instance.web_ui_onion_url or 'local'}: {e}")
 
         # 7. Assemble the final manifest.
         manifest = {
@@ -106,4 +110,3 @@ class BitSyncService:
         if os.path.exists(chunk_path):
             return chunk_path
         return None
-
