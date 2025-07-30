@@ -22,16 +22,9 @@ const UnlockForm = ({ onUnlock, onCancel }) => {
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
       <div className="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm">
         <h2 className="text-2xl font-bold text-white mb-4">Unlock Identity</h2>
-        <p className="text-gray-400 mb-4">Enter your password to sign messages for this session.</p>
+        <p className="text-gray-400 mb-4">Enter your password to sign messages and download files for this session.</p>
         <form onSubmit={handleUnlock}>
-          <input
-            type="password"
-            placeholder="Your Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:shadow-outline mb-4"
-          />
+          <input type="password" placeholder="Your Password" value={password} onChange={(e) => setPassword(e.target.value)} required className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:shadow-outline mb-4"/>
           {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
           <div className="flex justify-end gap-4">
             <button type="button" onClick={onCancel} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">Cancel</button>
@@ -48,6 +41,7 @@ const MessageList = ({ board, onBack }) => {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [showPostForm, setShowPostForm] = useState(false);
   const [needsUnlock, setNeedsUnlock] = useState(false);
+  const [postUnlockAction, setPostUnlockAction] = useState(null); // To store the action to perform after unlock
   
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -62,31 +56,22 @@ const MessageList = ({ board, onBack }) => {
     try {
       const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
       setMessages(response.data);
-    } catch (err) {
-      console.error("Failed to fetch messages:", err);
-    }
+    } catch (err) { console.error("Failed to fetch messages:", err); }
   }, [board.id]);
 
-  useEffect(() => {
-    fetchMessages();
-  }, [fetchMessages]);
+  useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
   const handlePostMessage = useCallback(async () => {
     setError('');
-    if (!subject || !body) {
-      setError("Subject and body cannot be empty.");
-      return;
-    }
+    if (!subject || !body) { setError("Subject and body cannot be empty."); return; }
     try {
       const attachment_ids = attachments.map(att => att.id);
-      await apiClient.post('/api/messages/post/', { 
-        subject, body, board_name: board.name, attachment_ids,
-      });
-      setSubject(''); setBody(''); setAttachments([]);
-      setShowPostForm(false);
+      await apiClient.post('/api/messages/post/', { subject, body, board_name: board.name, attachment_ids });
+      setSubject(''); setBody(''); setAttachments([]); setShowPostForm(false);
       fetchMessages();
     } catch (err) {
       if (err.response && err.response.data.error === 'identity_locked') {
+        setPostUnlockAction(() => () => handlePostMessage()); // Set the action to retry
         setNeedsUnlock(true);
       } else {
         setError(err.response?.data?.error || 'Could not post message.');
@@ -94,30 +79,54 @@ const MessageList = ({ board, onBack }) => {
     }
   }, [subject, body, board.name, attachments, fetchMessages]);
 
-  const handleUnlockSuccess = () => {
-    setNeedsUnlock(false);
-    handlePostMessage();
-  };
-
   const handleFileUpload = async () => {
-    if (!selectedFile) {
-      setUploadError('Please select a file first.');
-      return;
-    }
-    setIsUploading(true);
-    setUploadError('');
+    if (!selectedFile) { setUploadError('Please select a file first.'); return; }
+    setIsUploading(true); setUploadError('');
     const formData = new FormData();
     formData.append('file', selectedFile);
     try {
-      const response = await apiClient.post('/api/files/upload/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await apiClient.post('/api/files/upload/', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setAttachments(prev => [...prev, response.data]);
       setSelectedFile(null);
     } catch (err) {
       setUploadError(err.response?.data?.error || 'File upload failed.');
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  // --- NEW: Handler for authenticated file downloads ---
+  const handleFileDownload = useCallback(async (fileId, filename) => {
+    try {
+      const response = await apiClient.get(`/api/files/download/${fileId}/`, {
+        responseType: 'blob', // Important for handling file data
+      });
+      // Create a temporary link to trigger the download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      if (err.response && err.response.status === 401) {
+        // If download fails due to auth, prompt for unlock and set the retry action
+        setPostUnlockAction(() => () => handleFileDownload(fileId, filename));
+        setNeedsUnlock(true);
+      } else {
+        console.error("Download failed:", err);
+        alert("Could not download the file. See console for details.");
+      }
+    }
+  }, []);
+  
+  const handleUnlockSuccess = () => {
+    setNeedsUnlock(false);
+    if (postUnlockAction) {
+      postUnlockAction(); // Execute the stored action (posting or downloading)
+      setPostUnlockAction(null); // Clear the action
     }
   };
 
@@ -132,19 +141,16 @@ const MessageList = ({ board, onBack }) => {
           <p className="text-sm text-gray-400 mb-2">by {selectedMessage.author_display} on {new Date(selectedMessage.created_at).toLocaleString()}</p>
           <p className="text-gray-300 whitespace-pre-wrap mb-4">{selectedMessage.body}</p>
           
-          {/* UPDATED: Display attachments as clickable download links */}
           {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
             <div className="border-t border-gray-700 pt-4 mt-4">
               <h4 className="font-bold text-gray-300 mb-2">Attachments:</h4>
               <ul className="list-disc list-inside">
                 {selectedMessage.attachments.map(att => (
                   <li key={att.id}>
-                    <a href={`/api/files/download/${att.id}/`} 
-                       className="text-blue-400 hover:text-blue-300 hover:underline"
-                       target="_blank" // Opens in a new tab
-                       rel="noopener noreferrer">
+                    {/* UPDATED: Use a button with an onClick handler */}
+                    <button onClick={() => handleFileDownload(att.id, att.filename)} className="text-blue-400 hover:text-blue-300 hover:underline">
                       {att.filename}
-                    </a>
+                    </button>
                     <span className="text-gray-400 text-sm ml-2">({Math.round(att.size / 1024)} KB)</span>
                   </li>
                 ))}
@@ -158,7 +164,7 @@ const MessageList = ({ board, onBack }) => {
 
   return (
     <div>
-      {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => setNeedsUnlock(false)} />}
+      {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => { setNeedsUnlock(false); setPostUnlockAction(null); }} />}
       <div className="flex justify-between items-center mb-4">
         <Header text={board.name} />
         <div>
@@ -186,7 +192,7 @@ const MessageList = ({ board, onBack }) => {
                 <div className="mt-4">
                   <h4 className="text-sm font-bold text-gray-300">Attached:</h4>
                   <ul className="list-disc list-inside text-gray-400">
-                    {attachments.map((att, index) => (
+                    {attachments.map((att) => (
                       <li key={att.id}>
                         {att.filename}
                         <button type="button" onClick={() => setAttachments(prev => prev.filter(a => a.id !== att.id))} className="ml-2 text-red-500 hover:text-red-400">[remove]</button>
