@@ -126,7 +126,6 @@ class MessageListView(generics.ListAPIView):
     def get_queryset(self):
         board_id = self.kwargs['pk']
         ignored_pubkeys = IgnoredPubkey.objects.filter(user=self.request.user).values_list('pubkey', flat=True)
-        # ✅ UPDATED: Added prefetch_related('attachments') to efficiently include attachment data.
         return Message.objects.filter(board_id=board_id).exclude(pubkey__in=ignored_pubkeys).order_by('-created_at').prefetch_related('attachments')
 
 class PostMessageView(views.APIView):
@@ -218,7 +217,7 @@ class UnpinContentView(views.APIView):
         content_id, content_type = request.data.get('content_id'), request.data.get('content_type')
         if not all([content_id, content_type]): return Response({"error": "content_id and content_type are required."}, status=status.HTTP_400_BAD_REQUEST)
         try: model = apps.get_model('core', content_type.capitalize()); content_obj = model.objects.get(pk=content_id)
-        except (LookupError, model.DoesNotExist): return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
+        except (LookupError, model.DoesNotExist): return Response({"error": "Content not found."}, status=status.HTTP_44_NOT_FOUND)
         if content_obj.pinned_by and content_obj.pinned_by.is_staff and not request.user.is_staff: return Response({"error": "Moderators cannot unpin content pinned by an Admin."}, status=status.HTTP_403_FORBIDDEN)
         content_obj.is_pinned = False; content_obj.pinned_by = None; content_obj.save()
         return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)
@@ -232,19 +231,29 @@ class SyncView(views.APIView):
         if not since_str: return Response({"error": "'since' timestamp is required."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             since_dt = timezone.datetime.fromisoformat(since_str.replace(' ', '+'))
-            new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
-            new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
-            manifests = []
+            
+            # ✅ UPDATED: New logic to ensure attachments are always bundled with their messages.
+            manifests_to_send = {} # Use a dict to avoid sending duplicate manifests.
+
+            # Find all new messages since the last sync.
+            new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False).prefetch_related('attachments')
+
             for msg in new_messages:
+                # Add the message's manifest to our list.
                 msg.manifest['content_type'] = 'message'
-                manifests.append(msg.manifest)
-            for f in new_files:
-                f.manifest['content_type'] = 'file'
-                f.manifest['filename'] = f.filename
-                f.manifest['content_type_val'] = f.content_type
-                f.manifest['size'] = f.size
-                manifests.append(f.manifest)
-            return JsonResponse({"manifests": manifests}, status=status.HTTP_200_OK)
+                manifests_to_send[msg.manifest['content_hash']] = msg.manifest
+
+                # IMPORTANT: Also add the manifests for all of its attachments, regardless of when they were created.
+                for attachment in msg.attachments.all():
+                    if attachment.manifest and attachment.manifest.get('content_hash'):
+                        attachment.manifest['content_type'] = 'file'
+                        attachment.manifest['filename'] = attachment.filename
+                        attachment.manifest['content_type_val'] = attachment.content_type
+                        attachment.manifest['size'] = attachment.size
+                        manifests_to_send[attachment.manifest['content_hash']] = attachment.manifest
+            
+            return JsonResponse({"manifests": list(manifests_to_send.values())}, status=status.HTTP_200_OK)
+
         except Exception as e:
             logger.error(f"Error during sync operation: {e}", exc_info=True)
             return Response({"error": "Failed to process sync request."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
