@@ -28,7 +28,6 @@ class SyncService:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.local_instance = None
         self.private_key = None
-        # UPDATED: Use a configurable number of workers for concurrent FILE downloads.
         max_file_downloads = getattr(settings, 'BITSYNC_MAX_CONCURRENT_FILES', 3)
         self.download_executor = ThreadPoolExecutor(max_workers=max_file_downloads, thread_name_prefix='download_worker')
         self.currently_downloading = set()
@@ -84,37 +83,42 @@ class SyncService:
         if not peers.exists():
             logger.info("Polling complete. No trusted peers are configured to sync with.")
             return
+        
         logger.info(f"Beginning poll of {peers.count()} trusted peer(s)...")
         for peer in peers:
-            if not peer.web_ui_onion_url:
-                logger.warning(f"Skipping peer ID {peer.id} because it has no .onion URL set.")
-                continue
             logger.info(f"--> Checking peer: {peer.web_ui_onion_url}")
             last_sync = peer.last_synced_at or datetime.min.replace(tzinfo=timezone.utc)
             proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+            
+            # UPDATED: Re-structured with a finally block for guaranteed timestamp updates
+            server_timestamp_str = None
             try:
                 target_url = f"{peer.web_ui_onion_url.strip('/')}/api/sync/?since={last_sync.isoformat()}"
                 response = requests.get(target_url, headers=self._get_auth_headers(), proxies=proxies, timeout=120)
+                
                 if response.status_code == 200:
                     response_data = response.json()
                     manifests = response_data.get('manifests', [])
                     server_timestamp_str = response_data.get('server_timestamp')
-
                     logger.info(f"<-- Received {len(manifests)} new manifest(s) from peer {peer.web_ui_onion_url}")
-                    
                     if manifests:
                         self._process_manifests_in_order(manifests)
-                    
-                    if server_timestamp_str:
-                        peer.last_synced_at = django_timezone.datetime.fromisoformat(server_timestamp_str)
-                    else:
-                        peer.last_synced_at = django_timezone.now()
-                    
-                    peer.save()
                 else:
                     logger.warning(f"<-- Failed to sync with peer {peer.web_ui_onion_url}: Status {response.status_code}")
+            
             except requests.exceptions.RequestException as e:
                 logger.error(f"<-- Network error while contacting peer {peer.web_ui_onion_url}: {e}")
+
+            finally:
+                # This block runs regardless of success or failure, preventing stale timestamps.
+                if server_timestamp_str:
+                    peer.last_synced_at = django_timezone.datetime.fromisoformat(server_timestamp_str)
+                else:
+                    # If the request failed or the peer is old, we must still advance our clock to avoid getting stuck.
+                    peer.last_synced_at = django_timezone.now()
+                peer.save()
+                logger.info(f"Timestamp for peer {peer.web_ui_onion_url} updated to {peer.last_synced_at.isoformat()}")
+
         logger.info("Polling cycle complete.")
 
     def _schedule_download(self, manifest):
@@ -195,7 +199,6 @@ class SyncService:
         
         logger.info(f"Starting swarm download for '{item_name}' from {len(seeders)} peer(s).")
         downloaded_chunks = {}
-        # First, populate chunks we already have
         for i in range(num_chunks):
             chunk_path = service_manager.bitsync_service.get_chunk_path(content_hash, i)
             if chunk_path and os.path.exists(chunk_path):
@@ -205,8 +208,6 @@ class SyncService:
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         chunks_to_download = [i for i in range(num_chunks) if i not in downloaded_chunks]
         
-        # UPDATED: Re-introduced a limited ThreadPoolExecutor for CHUNK downloads.
-        # This allows leveraging multiple peers for one file, without overwhelming Tor.
         with ThreadPoolExecutor(max_workers=4, thread_name_prefix='chunk_worker') as executor:
             futures = {
                 executor.submit(self._download_chunk, seeders[i % len(seeders)], content_hash, chunk_idx, proxies): chunk_idx
