@@ -31,7 +31,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    # 'core.middleware.NoCacheMiddleware',  # ✅ REMOVED THIS LINE
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -88,7 +87,6 @@ STATIC_URL = 'static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# UPDATED: Point specifically to the 'static' sub-folder in the build directory.
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'frontend', 'build', 'static'),
 ]
@@ -121,6 +119,8 @@ REST_FRAMEWORK = {
 # --- Axon BBS Service Configuration ---
 TOR_SOCKS_HOST = "127.0.0.1"
 TOR_SOCKS_PORT = 9050
+# Set the number of files the SyncService can download at the same time.
+BITSYNC_MAX_CONCURRENT_FILES = 3
 
 # --- UPDATED Logging Configuration ---
 LOGGING = {
