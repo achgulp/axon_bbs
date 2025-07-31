@@ -28,11 +28,10 @@ class SyncService:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.local_instance = None
         self.private_key = None
-        # NEW: A thread pool to manage concurrent file downloads.
-        self.download_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix='download_worker')
-        # NEW: A set to track content hashes currently being downloaded to prevent duplicate jobs.
+        # UPDATED: Use a configurable number of workers for concurrent FILE downloads.
+        max_file_downloads = getattr(settings, 'BITSYNC_MAX_CONCURRENT_FILES', 3)
+        self.download_executor = ThreadPoolExecutor(max_workers=max_file_downloads, thread_name_prefix='download_worker')
         self.currently_downloading = set()
-
 
     def start(self):
         self.thread.start()
@@ -125,52 +124,35 @@ class SyncService:
             logger.debug(f"Download for {content_hash[:10]}... is already in progress. Skipping.")
             return
         
-        logger.info(f"Scheduling download for content: {content_hash[:10]}...")
+        item_name = manifest.get('filename', content_hash[:16])
+        logger.info(f"Scheduling download for: '{item_name}'")
         self.currently_downloading.add(content_hash)
         
         future = self.download_executor.submit(self._download_content, manifest)
-        # Add a callback to remove the hash from the set when the download is done
         future.add_done_callback(lambda f: self.currently_downloading.discard(content_hash))
 
     def _process_manifests_in_order(self, manifests: list):
-        # UPDATED: This method now quickly schedules all downloads instead of running them sequentially.
         all_content_items = []
-        # Pass 1: Gather all file attachments
         for manifest in manifests:
-            if manifest.get('content_type') == 'file':
-                attachment, _ = FileAttachment.objects.get_or_create(
-                    manifest__content_hash=manifest['content_hash'],
-                    defaults={
-                        'filename': manifest.get('filename', 'unknown'),
-                        'content_type': manifest.get('content_type_val', 'application/octet-stream'),
-                        'size': manifest.get('size', 0),
-                        'manifest': manifest
-                    }
+            content_hash = manifest['content_hash']
+            content_type = manifest.get('content_type')
+            
+            if content_type == 'file':
+                item, _ = FileAttachment.objects.get_or_create(
+                    manifest__content_hash=content_hash, defaults={'manifest': manifest, 'filename': manifest.get('filename', 'unknown')}
                 )
-                all_content_items.append(attachment)
-        
-        # Pass 2: Gather all messages
-        for manifest in manifests:
-            if manifest.get('content_type') == 'message':
+                all_content_items.append(item)
+            elif content_type == 'message':
                 try:
-                    # Use get() to avoid creating a stub if it already exists from a previous bad sync
-                    message = Message.objects.get(manifest__content_hash=manifest['content_hash'])
-                    all_content_items.append(message)
+                    item = Message.objects.get(manifest__content_hash=content_hash)
+                    all_content_items.append(item)
                 except Message.DoesNotExist:
-                    # If it truly doesn't exist, we will download and then create it.
-                    # For now, just schedule the download. The creation will happen after.
                     self._schedule_download(manifest)
 
-
-        # Pass 3: Check integrity and schedule downloads for all discovered items
         from .service_manager import service_manager
         for item in all_content_items:
             if not service_manager.bitsync_service.are_all_chunks_local(item.manifest):
                 self._schedule_download(item.manifest)
-                
-        # Pass 4: Process message content for items that are now complete.
-        # This part is more complex and for a future revision. The download is the key part.
-        # For now, we will re-process messages on the next sync cycle after their chunks are downloaded.
         
     def _find_seeders(self, content_hash: str) -> list:
         logger.info(f"Discovering seeders for content {content_hash[:10]}...")
@@ -192,31 +174,40 @@ class SyncService:
     def _download_content(self, manifest: dict) -> bytes | None:
         content_hash, chunk_hashes = manifest['content_hash'], manifest['chunk_hashes']
         num_chunks = len(chunk_hashes)
+        item_name = manifest.get('filename', content_hash[:16])
         
         from .service_manager import service_manager
-        local_chunks = {}
-        for i in range(num_chunks):
-            chunk_path = service_manager.bitsync_service.get_chunk_path(content_hash, i)
-            if chunk_path and os.path.exists(chunk_path):
-                with open(chunk_path, 'rb') as f:
-                    local_chunks[i] = f.read()
         
-        if len(local_chunks) == num_chunks:
-            logger.info(f"All chunks for {content_hash[:10]}... already present locally.")
-            # If the content is a message, we need to process it now that it's complete.
+        if service_manager.bitsync_service.are_all_chunks_local(manifest):
+            logger.info(f"All chunks for '{item_name}' already present locally.")
             self._create_message_from_manifest_if_needed(manifest)
-            return b"".join(local_chunks[i] for i in range(num_chunks))
+            local_chunks_data = b""
+            for i in range(num_chunks):
+                chunk_path = service_manager.bitsync_service.get_chunk_path(content_hash, i)
+                with open(chunk_path, 'rb') as f:
+                    local_chunks_data += f.read()
+            return local_chunks_data
 
         seeders = self._find_seeders(content_hash)
         if not seeders:
-            logger.error(f"Cannot download content {content_hash[:10]}: No seeders found.")
+            logger.error(f"Cannot download '{item_name}': No seeders found.")
             return None
         
-        logger.info(f"Starting swarm download for {content_hash[:10]}... from {len(seeders)} peer(s).")
-        downloaded_chunks = local_chunks.copy()
+        logger.info(f"Starting swarm download for '{item_name}' from {len(seeders)} peer(s).")
+        downloaded_chunks = {}
+        # First, populate chunks we already have
+        for i in range(num_chunks):
+            chunk_path = service_manager.bitsync_service.get_chunk_path(content_hash, i)
+            if chunk_path and os.path.exists(chunk_path):
+                 with open(chunk_path, 'rb') as f:
+                    downloaded_chunks[i] = f.read()
+
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         chunks_to_download = [i for i in range(num_chunks) if i not in downloaded_chunks]
-        with ThreadPoolExecutor(max_workers=len(seeders) * 2) as executor:
+        
+        # UPDATED: Re-introduced a limited ThreadPoolExecutor for CHUNK downloads.
+        # This allows leveraging multiple peers for one file, without overwhelming Tor.
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix='chunk_worker') as executor:
             futures = {
                 executor.submit(self._download_chunk, seeders[i % len(seeders)], content_hash, chunk_idx, proxies): chunk_idx
                 for i, chunk_idx in enumerate(chunks_to_download)
@@ -230,17 +221,16 @@ class SyncService:
                          os.makedirs(os.path.dirname(chunk_save_path), exist_ok=True)
                          with open(chunk_save_path, 'wb') as f:
                              f.write(chunk_data)
-                    logger.info(f"Successfully downloaded and stored chunk {chunk_index + 1}/{num_chunks} for {content_hash[:10]}...")
+                    logger.info(f"  - Chunk {chunk_index + 1}/{num_chunks} for '{item_name}' downloaded.")
                 else: 
-                    logger.error(f"Failed to download or verify chunk {chunk_index} for {content_hash[:10]}...")
-        
+                    logger.error(f"  - Failed to download/verify chunk {chunk_index + 1} for '{item_name}'. Will retry on next sync.")
+
         if len(downloaded_chunks) == num_chunks:
-            logger.info(f"Download complete for {content_hash[:10]}...")
-            # If the content is a message, process it now that it's complete.
+            logger.info(f"Download complete for '{item_name}'.")
             self._create_message_from_manifest_if_needed(manifest)
             return b"".join(downloaded_chunks[i] for i in range(num_chunks))
         else:
-            logger.error(f"Failed to download all chunks for {content_hash[:10]}...")
+            logger.error(f"Download for '{item_name}' is incomplete. Will retry on next sync cycle.")
             return None
 
     def _download_chunk(self, seeder_url, content_hash, chunk_index, proxies):
@@ -248,7 +238,7 @@ class SyncService:
             url = f"{seeder_url.strip('/')}/api/bitsync/chunk/{content_hash}/{chunk_index}/"
             response = requests.get(url, headers=self._get_auth_headers(), proxies=proxies, timeout=120)
             if response.status_code == 200: return chunk_index, response.content
-        except requests.RequestException as e:
+        except requests.exceptions.RequestException as e:
             logger.warning(f"Failed to download chunk {chunk_index} from {seeder_url}: {e}")
         return chunk_index, None
 
@@ -275,6 +265,10 @@ class SyncService:
             return None
 
     def get_decrypted_content(self, manifest: dict) -> bytes | None:
+        content_hash = manifest.get('content_hash')
+        if content_hash in self.currently_downloading:
+            logger.info("Content is being downloaded by the background service; UI download will wait.")
+
         encrypted_data = self._download_content(manifest)
         if encrypted_data:
             return self._decrypt_data(encrypted_data, manifest)
@@ -287,7 +281,6 @@ class SyncService:
             return
         
         logger.info(f"Processing newly completed message content for hash {content_hash[:10]}...")
-        # Re-fetch the full encrypted data from local chunks
         encrypted_data = self._download_content(manifest)
         if not encrypted_data: return
         decrypted_data = self._decrypt_data(encrypted_data, manifest)
