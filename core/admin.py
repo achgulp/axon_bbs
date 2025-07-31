@@ -47,7 +47,6 @@ class ContentExtensionRequestAdmin(admin.ModelAdmin):
     list_display = ('content_id', 'content_type', 'user', 'request_date', 'status', 'reviewed_by')
     list_filter = ('status', 'content_type')
 
-# ✅ NEW: Admin interface for managing valid file types.
 @admin.register(ValidFileType)
 class ValidFileTypeAdmin(admin.ModelAdmin):
     list_display = ('mime_type', 'description', 'is_enabled')
@@ -59,12 +58,13 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
     list_display = ('web_ui_onion_url', 'pubkey_checksum', 'is_trusted_peer', 'added_at')
     list_display_links = ('pubkey_checksum',)
     list_filter = ('is_trusted_peer',)
-    readonly_fields = ('pubkey_checksum', 'added_at', 'last_synced_at')
+    # UPDATED: Removed 'last_synced_at' from this line to make it editable
+    readonly_fields = ('pubkey_checksum', 'added_at')
     fieldsets = (
         (None, {
             'fields': ('web_ui_onion_url', 'pubkey', 'encrypted_private_key', 'is_trusted_peer')
         }),
-        ('Timestamps (Read-Only)', {
+        ('Timestamps', {
             'fields': ('added_at', 'last_synced_at')
         }),
     )
