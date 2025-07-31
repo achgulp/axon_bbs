@@ -1,9 +1,49 @@
 // Full path: axon_bbs/frontend/src/components/MessageList.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
-import UnlockForm from './UnlockForm'; // CORRECTED: Import the component from its new file
+import UnlockForm from './UnlockForm';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
+
+// NEW: A component to render the attachment and its status
+const AttachmentItem = ({ attachment, onDownload }) => {
+  const [status, setStatus] = useState('checking'); // States: 'checking', 'syncing', 'available'
+
+  useEffect(() => {
+    // Fetch the status when the component mounts
+    apiClient.get(`/api/files/status/${attachment.id}/`)
+      .then(response => {
+        setStatus(response.data.status);
+      })
+      .catch(err => {
+        console.error(`Failed to fetch status for file ${attachment.id}`, err);
+        setStatus('error');
+      });
+  }, [attachment.id]);
+
+  return (
+    <li key={attachment.id} className="flex items-center gap-4">
+      <span className="text-gray-200">{attachment.filename}</span>
+      <span className="text-gray-400 text-sm">({Math.round(attachment.size / 1024)} KB)</span>
+      <div className="flex-grow"></div> {/* Spacer */}
+      {status === 'available' && (
+        <button onClick={() => onDownload(attachment.id, attachment.filename)} className="text-blue-400 hover:text-blue-300 hover:underline">
+          Download
+        </button>
+      )}
+      {status === 'syncing' && (
+        <span className="text-yellow-400 text-sm italic">Syncing in progress...</span>
+      )}
+      {status === 'checking' && (
+        <span className="text-gray-400 text-sm italic">Checking status...</span>
+      )}
+      {status === 'error' && (
+        <span className="text-red-500 text-sm italic">Error</span>
+      )}
+    </li>
+  );
+};
+
 
 const MessageList = ({ board, onBack }) => {
   const [messages, setMessages] = useState([]);
@@ -20,14 +60,12 @@ const MessageList = ({ board, onBack }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [attachments, setAttachments] = useState([]);
-
   const fetchMessages = useCallback(async () => {
     try {
       const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
       setMessages(response.data);
     } catch (err) { console.error("Failed to fetch messages:", err); }
   }, [board.id]);
-
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
   const handlePostMessage = useCallback(async () => {
@@ -47,7 +85,6 @@ const MessageList = ({ board, onBack }) => {
       }
     }
   }, [subject, body, board.name, attachments, fetchMessages]);
-
   const handleFileUpload = async () => {
     if (!selectedFile) { setUploadError('Please select a file first.'); return; }
     setIsUploading(true); setUploadError('');
@@ -63,7 +100,6 @@ const MessageList = ({ board, onBack }) => {
       setIsUploading(false);
     }
   };
-
   const handleFileDownload = useCallback(async (fileId, filename) => {
     try {
       const response = await apiClient.get(`/api/files/download/${fileId}/`, {
@@ -87,7 +123,6 @@ const MessageList = ({ board, onBack }) => {
       }
     }
   }, []);
-  
   const handleUnlockSuccess = () => {
     setNeedsUnlock(false);
     if (postUnlockAction) {
@@ -110,14 +145,9 @@ const MessageList = ({ board, onBack }) => {
           {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
             <div className="border-t border-gray-700 pt-4 mt-4">
               <h4 className="font-bold text-gray-300 mb-2">Attachments:</h4>
-              <ul className="list-disc list-inside">
+              <ul className="space-y-2">
                 {selectedMessage.attachments.map(att => (
-                  <li key={att.id}>
-                    <button onClick={() => handleFileDownload(att.id, att.filename)} className="text-blue-400 hover:text-blue-300 hover:underline">
-                      {att.filename}
-                    </button>
-                    <span className="text-gray-400 text-sm ml-2">({Math.round(att.size / 1024)} KB)</span>
-                  </li>
+                  <AttachmentItem key={att.id} attachment={att} onDownload={handleFileDownload} />
                 ))}
               </ul>
             </div>
@@ -147,7 +177,7 @@ const MessageList = ({ board, onBack }) => {
             <div className="bg-gray-700 p-3 rounded mb-4">
               <label className="block text-gray-300 text-sm font-bold mb-2">Attach Files</label>
               <div className="flex items-center gap-4">
-                <input type="file" onChange={(e) => setSelectedFile(e.target.files[0])} className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"/>
+                 <input type="file" onChange={(e) => setSelectedFile(e.target.files[0])} className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"/>
                 <button type="button" onClick={handleFileUpload} disabled={isUploading || !selectedFile} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-500">
                   {isUploading ? 'Uploading...' : 'Upload'}
                 </button>
@@ -155,7 +185,7 @@ const MessageList = ({ board, onBack }) => {
               {uploadError && <p className="text-red-500 text-xs italic mt-2">{uploadError}</p>}
               {attachments.length > 0 && (
                 <div className="mt-4">
-                  <h4 className="text-sm font-bold text-gray-300">Attached:</h4>
+                   <h4 className="text-sm font-bold text-gray-300">Attached:</h4>
                   <ul className="list-disc list-inside text-gray-400">
                     {attachments.map((att) => (
                       <li key={att.id}>
@@ -179,7 +209,7 @@ const MessageList = ({ board, onBack }) => {
           <thead className="border-b border-gray-600">
             <tr>
               <th className="p-3 text-sm font-semibold text-gray-400 w-3/5">Thread / Subject</th>
-              <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Author</th>
+               <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Author</th>
               <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Last Post</th>
             </tr>
           </thead>
@@ -191,7 +221,7 @@ const MessageList = ({ board, onBack }) => {
                   {msg.attachments && msg.attachments.length > 0 && <span className="ml-2 text-xs text-blue-400">[+{msg.attachments.length} file(s)]</span>}
                 </td>
                 <td className="p-3 text-gray-400">{msg.author_display}</td>
-                <td className="p-3 text-gray-400">{new Date(msg.created_at).toLocaleString()}</td>
+                 <td className="p-3 text-gray-400">{new Date(msg.created_at).toLocaleString()}</td>
               </tr>
             ))}
           </tbody>
@@ -203,4 +233,3 @@ const MessageList = ({ board, onBack }) => {
 };
 
 export default MessageList;
-

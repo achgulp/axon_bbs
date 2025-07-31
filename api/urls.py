@@ -18,6 +18,7 @@ from .views import (
     BitSyncChunkView,
     FileUploadView,
     FileDownloadView,
+    FileStatusView, # NEW: Import the new view
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -50,10 +51,10 @@ urlpatterns = [
     # File Handling
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('files/download/<uuid:file_id>/', FileDownloadView.as_view(), name='file-download'),
+    path('files/status/<uuid:file_id>/', FileStatusView.as_view(), name='file-status'), # NEW: Add the status endpoint URL
 
     # BitSync P2P Protocol
     path('sync/', SyncView.as_view(), name='sync'),
     path('bitsync/has_content/<str:content_hash>/', BitSyncHasContentView.as_view(), name='bitsync-has-content'),
     path('bitsync/chunk/<str:content_hash>/<int:chunk_index>/', BitSyncChunkView.as_view(), name='bitsync-chunk'),
 ]
-

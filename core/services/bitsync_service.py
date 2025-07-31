@@ -27,6 +27,25 @@ class BitSyncService:
         os.makedirs(self.chunk_storage_path, exist_ok=True)
         logger.info("BitSyncService initialized. Chunk storage is at: %s", self.chunk_storage_path)
 
+    def are_all_chunks_local(self, manifest: dict) -> bool:
+        """
+        Checks the local disk to see if all chunks for a given manifest exist.
+        :param manifest: The content manifest dictionary.
+        :return: True if all chunks are present, False otherwise.
+        """
+        if not manifest or 'chunk_hashes' not in manifest:
+            return False
+        
+        content_hash = manifest.get('content_hash')
+        num_chunks = len(manifest.get('chunk_hashes', []))
+        
+        for i in range(num_chunks):
+            chunk_path = self.get_chunk_path(content_hash, i)
+            if not chunk_path or not os.path.exists(chunk_path):
+                return False # A chunk is missing
+        
+        return True # All chunks were found
+
     def create_manifest_and_store_chunks(self, raw_data: bytes) -> dict:
         """
         Takes raw data, encrypts it, splits it into chunks, stores the chunks,
