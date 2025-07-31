@@ -101,13 +101,9 @@ class FileDownloadView(views.APIView):
             if decrypted_data is None:
                 return Response({"error": "Failed to retrieve or decrypt file from the network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             
-            # --- UPDATED: Content Validation Step ---
-            # Before serving the file, validate its type based on magic numbers.
             if not is_file_type_valid(decrypted_data):
                 logger.warning(f"Blocked download of file '{attachment.filename}' ({attachment.id}) due to invalid file type.")
-                # The PRD suggests warning moderators, for now we will just block the request.
                 return Response({"error": "This file type is not permitted on the server."}, status=status.HTTP_403_FORBIDDEN)
-            # --- END UPDATE ---
 
             response = HttpResponse(decrypted_data, content_type=attachment.content_type)
             response['Content-Disposition'] = f'attachment; filename="{attachment.filename}"'
@@ -116,7 +112,6 @@ class FileDownloadView(views.APIView):
             logger.error(f"Error during file download for file {file_id}: {e}", exc_info=True)
             return Response({"error": "An error occurred while preparing the file for download."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# NEW: View to check the synchronization status of a file attachment.
 class FileStatusView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -249,6 +244,8 @@ class SyncView(views.APIView):
         since_str = request.query_params.get('since')
         if not since_str: return Response({"error": "'since' timestamp is required."}, status=status.HTTP_400_BAD_REQUEST)
         try:
+            # UPDATED: Capture server time and include it in the response
+            server_now = timezone.now()
             since_dt = timezone.datetime.fromisoformat(since_str.replace(' ', '+'))
             new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
@@ -262,7 +259,12 @@ class SyncView(views.APIView):
                 f.manifest['content_type_val'] = f.content_type
                 f.manifest['size'] = f.size
                 manifests.append(f.manifest)
-            return JsonResponse({"manifests": manifests}, status=status.HTTP_200_OK)
+            
+            return JsonResponse({
+                "manifests": manifests,
+                "server_timestamp": server_now.isoformat()
+            }, status=status.HTTP_200_OK)
+
         except Exception as e:
             logger.error(f"Error during sync operation: {e}", exc_info=True)
             return Response({"error": "Failed to process sync request."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

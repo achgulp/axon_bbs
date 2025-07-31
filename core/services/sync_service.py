@@ -92,10 +92,22 @@ class SyncService:
                 target_url = f"{peer.web_ui_onion_url.strip('/')}/api/sync/?since={last_sync.isoformat()}"
                 response = requests.get(target_url, headers=self._get_auth_headers(), proxies=proxies, timeout=120)
                 if response.status_code == 200:
-                    manifests = response.json().get('manifests', [])
+                    # UPDATED: Use the server's timestamp to avoid clock skew issues
+                    response_data = response.json()
+                    manifests = response_data.get('manifests', [])
+                    server_timestamp_str = response_data.get('server_timestamp')
+
                     logger.info(f"<-- Received {len(manifests)} new manifest(s) from peer {peer.web_ui_onion_url}")
-                    self._process_manifests_in_order(manifests)
-                    peer.last_synced_at = django_timezone.now()
+                    
+                    if manifests:
+                        self._process_manifests_in_order(manifests)
+                    
+                    if server_timestamp_str:
+                        peer.last_synced_at = django_timezone.datetime.fromisoformat(server_timestamp_str)
+                    else:
+                        # Fallback for older peers that don't send the timestamp
+                        peer.last_synced_at = django_timezone.now()
+                    
                     peer.save()
                 else:
                     logger.warning(f"<-- Failed to sync with peer {peer.web_ui_onion_url}: Status {response.status_code}")
@@ -104,21 +116,16 @@ class SyncService:
         logger.info("Polling cycle complete.")
 
     def _process_manifests_in_order(self, manifests: list):
-        # Pass 1: Process all file attachments
         for manifest in manifests:
             if manifest.get('content_type') == 'file':
                 self._process_file_manifest(manifest)
         
-        # Pass 2: Process all messages
         for manifest in manifests:
             if manifest.get('content_type') == 'message':
                 self._process_message_manifest(manifest)
 
     def _process_file_manifest(self, manifest: dict):
-        # UPDATED: This logic is now more resilient and will resume/retry downloads.
         content_hash = manifest.get('content_hash')
-        
-        # Get or create the database record for the file attachment.
         attachment, created = FileAttachment.objects.get_or_create(
             manifest__content_hash=content_hash,
             defaults={
@@ -131,13 +138,12 @@ class SyncService:
         if created:
              logger.info(f"Discovered new file: '{attachment.filename}'")
 
-        # Now, check if all chunks are present locally.
         from .service_manager import service_manager
         if not service_manager.bitsync_service.are_all_chunks_local(attachment.manifest):
             logger.info(f"Chunks for file '{attachment.filename}' are incomplete. Starting or resuming download...")
             self._download_content(attachment.manifest)
         else:
-            if created: # Only log this if it was a new file that completed instantly
+            if created:
                 logger.info(f"File '{attachment.filename}' is already fully synced.")
 
 
@@ -214,7 +220,6 @@ class SyncService:
                 chunk_index, chunk_data = future.result()
                 if chunk_data and hashlib.sha256(chunk_data).hexdigest() == chunk_hashes[chunk_index]:
                     downloaded_chunks[chunk_index] = chunk_data
-                    # After downloading a chunk, save it to disk immediately
                     chunk_save_path = service_manager.bitsync_service.get_chunk_path(content_hash, chunk_index)
                     if chunk_save_path:
                          os.makedirs(os.path.dirname(chunk_save_path), exist_ok=True)
