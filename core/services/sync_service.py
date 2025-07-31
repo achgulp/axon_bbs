@@ -115,20 +115,30 @@ class SyncService:
                 self._process_message_manifest(manifest)
 
     def _process_file_manifest(self, manifest: dict):
+        # UPDATED: This logic is now more resilient and will resume/retry downloads.
         content_hash = manifest.get('content_hash')
-        if not FileAttachment.objects.filter(manifest__content_hash=content_hash).exists():
-            logger.info(f"Syncing metadata for new file: '{manifest.get('filename')}'")
-            FileAttachment.objects.create(
-                filename=manifest.get('filename', 'unknown'),
-                content_type=manifest.get('content_type_val', 'application/octet-stream'),
-                size=manifest.get('size', 0),
-                manifest=manifest
-            )
-            # UPDATED: Proactively download the file chunks in the background.
-            logger.info(f"Proactively downloading content for new file attachment: {content_hash[:10]}...")
-            # We call this for its side effect of downloading and storing the chunks.
-            # We don't need to do anything with the return value here.
-            self._download_content(manifest)
+        
+        # Get or create the database record for the file attachment.
+        attachment, created = FileAttachment.objects.get_or_create(
+            manifest__content_hash=content_hash,
+            defaults={
+                'filename': manifest.get('filename', 'unknown'),
+                'content_type': manifest.get('content_type_val', 'application/octet-stream'),
+                'size': manifest.get('size', 0),
+                'manifest': manifest
+            }
+        )
+        if created:
+             logger.info(f"Discovered new file: '{attachment.filename}'")
+
+        # Now, check if all chunks are present locally.
+        from .service_manager import service_manager
+        if not service_manager.bitsync_service.are_all_chunks_local(attachment.manifest):
+            logger.info(f"Chunks for file '{attachment.filename}' are incomplete. Starting or resuming download...")
+            self._download_content(attachment.manifest)
+        else:
+            if created: # Only log this if it was a new file that completed instantly
+                logger.info(f"File '{attachment.filename}' is already fully synced.")
 
 
     def _process_message_manifest(self, manifest: dict):
