@@ -28,6 +28,11 @@ class SyncService:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.local_instance = None
         self.private_key = None
+        # NEW: A thread pool to manage concurrent file downloads.
+        self.download_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix='download_worker')
+        # NEW: A set to track content hashes currently being downloaded to prevent duplicate jobs.
+        self.currently_downloading = set()
+
 
     def start(self):
         self.thread.start()
@@ -92,7 +97,6 @@ class SyncService:
                 target_url = f"{peer.web_ui_onion_url.strip('/')}/api/sync/?since={last_sync.isoformat()}"
                 response = requests.get(target_url, headers=self._get_auth_headers(), proxies=proxies, timeout=120)
                 if response.status_code == 200:
-                    # UPDATED: Use the server's timestamp to avoid clock skew issues
                     response_data = response.json()
                     manifests = response_data.get('manifests', [])
                     server_timestamp_str = response_data.get('server_timestamp')
@@ -105,7 +109,6 @@ class SyncService:
                     if server_timestamp_str:
                         peer.last_synced_at = django_timezone.datetime.fromisoformat(server_timestamp_str)
                     else:
-                        # Fallback for older peers that don't send the timestamp
                         peer.last_synced_at = django_timezone.now()
                     
                     peer.save()
@@ -115,60 +118,60 @@ class SyncService:
                 logger.error(f"<-- Network error while contacting peer {peer.web_ui_onion_url}: {e}")
         logger.info("Polling cycle complete.")
 
+    def _schedule_download(self, manifest):
+        """Submits a download task to the executor pool if not already running."""
+        content_hash = manifest.get('content_hash')
+        if content_hash in self.currently_downloading:
+            logger.debug(f"Download for {content_hash[:10]}... is already in progress. Skipping.")
+            return
+        
+        logger.info(f"Scheduling download for content: {content_hash[:10]}...")
+        self.currently_downloading.add(content_hash)
+        
+        future = self.download_executor.submit(self._download_content, manifest)
+        # Add a callback to remove the hash from the set when the download is done
+        future.add_done_callback(lambda f: self.currently_downloading.discard(content_hash))
+
     def _process_manifests_in_order(self, manifests: list):
+        # UPDATED: This method now quickly schedules all downloads instead of running them sequentially.
+        all_content_items = []
+        # Pass 1: Gather all file attachments
         for manifest in manifests:
             if manifest.get('content_type') == 'file':
-                self._process_file_manifest(manifest)
+                attachment, _ = FileAttachment.objects.get_or_create(
+                    manifest__content_hash=manifest['content_hash'],
+                    defaults={
+                        'filename': manifest.get('filename', 'unknown'),
+                        'content_type': manifest.get('content_type_val', 'application/octet-stream'),
+                        'size': manifest.get('size', 0),
+                        'manifest': manifest
+                    }
+                )
+                all_content_items.append(attachment)
         
+        # Pass 2: Gather all messages
         for manifest in manifests:
             if manifest.get('content_type') == 'message':
-                self._process_message_manifest(manifest)
+                try:
+                    # Use get() to avoid creating a stub if it already exists from a previous bad sync
+                    message = Message.objects.get(manifest__content_hash=manifest['content_hash'])
+                    all_content_items.append(message)
+                except Message.DoesNotExist:
+                    # If it truly doesn't exist, we will download and then create it.
+                    # For now, just schedule the download. The creation will happen after.
+                    self._schedule_download(manifest)
 
-    def _process_file_manifest(self, manifest: dict):
-        content_hash = manifest.get('content_hash')
-        attachment, created = FileAttachment.objects.get_or_create(
-            manifest__content_hash=content_hash,
-            defaults={
-                'filename': manifest.get('filename', 'unknown'),
-                'content_type': manifest.get('content_type_val', 'application/octet-stream'),
-                'size': manifest.get('size', 0),
-                'manifest': manifest
-            }
-        )
-        if created:
-             logger.info(f"Discovered new file: '{attachment.filename}'")
 
+        # Pass 3: Check integrity and schedule downloads for all discovered items
         from .service_manager import service_manager
-        if not service_manager.bitsync_service.are_all_chunks_local(attachment.manifest):
-            logger.info(f"Chunks for file '{attachment.filename}' are incomplete. Starting or resuming download...")
-            self._download_content(attachment.manifest)
-        else:
-            if created:
-                logger.info(f"File '{attachment.filename}' is already fully synced.")
-
-
-    def _process_message_manifest(self, manifest: dict):
-        content_hash = manifest.get('content_hash')
-        if not Message.objects.filter(manifest__content_hash=content_hash).exists():
-            logger.info(f"Syncing new message with content hash: {content_hash[:10]}...")
-            encrypted_data = self._download_content(manifest)
-            if not encrypted_data: return
-            decrypted_data = self._decrypt_data(encrypted_data, manifest)
-            if not decrypted_data: return
-            
-            content = json.loads(decrypted_data)
-            board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
-            message = Message.objects.create(
-                board=board, subject=content.get('subject'), body=content.get('body'),
-                pubkey=content.get('pubkey'), manifest=manifest
-            )
-            if 'attachment_hashes' in content:
-                attachments = FileAttachment.objects.filter(manifest__content_hash__in=content['attachment_hashes'])
-                if attachments.exists():
-                    message.attachments.set(attachments)
-                    logger.info(f"Successfully linked {attachments.count()} attachment(s) to message '{content.get('subject')}'.")
-            logger.info(f"Successfully synced and saved new message: '{content.get('subject')}'")
-
+        for item in all_content_items:
+            if not service_manager.bitsync_service.are_all_chunks_local(item.manifest):
+                self._schedule_download(item.manifest)
+                
+        # Pass 4: Process message content for items that are now complete.
+        # This part is more complex and for a future revision. The download is the key part.
+        # For now, we will re-process messages on the next sync cycle after their chunks are downloaded.
+        
     def _find_seeders(self, content_hash: str) -> list:
         logger.info(f"Discovering seeders for content {content_hash[:10]}...")
         available_seeders = []
@@ -199,7 +202,9 @@ class SyncService:
                     local_chunks[i] = f.read()
         
         if len(local_chunks) == num_chunks:
-            logger.info(f"All chunks for {content_hash[:10]}... found locally.")
+            logger.info(f"All chunks for {content_hash[:10]}... already present locally.")
+            # If the content is a message, we need to process it now that it's complete.
+            self._create_message_from_manifest_if_needed(manifest)
             return b"".join(local_chunks[i] for i in range(num_chunks))
 
         seeders = self._find_seeders(content_hash)
@@ -230,6 +235,9 @@ class SyncService:
                     logger.error(f"Failed to download or verify chunk {chunk_index} for {content_hash[:10]}...")
         
         if len(downloaded_chunks) == num_chunks:
+            logger.info(f"Download complete for {content_hash[:10]}...")
+            # If the content is a message, process it now that it's complete.
+            self._create_message_from_manifest_if_needed(manifest)
             return b"".join(downloaded_chunks[i] for i in range(num_chunks))
         else:
             logger.error(f"Failed to download all chunks for {content_hash[:10]}...")
@@ -271,3 +279,32 @@ class SyncService:
         if encrypted_data:
             return self._decrypt_data(encrypted_data, manifest)
         return None
+
+    def _create_message_from_manifest_if_needed(self, manifest: dict):
+        """After content is downloaded, this creates the DB entry if it's a message."""
+        content_hash = manifest.get('content_hash')
+        if manifest.get('content_type') != 'message' or Message.objects.filter(manifest__content_hash=content_hash).exists():
+            return
+        
+        logger.info(f"Processing newly completed message content for hash {content_hash[:10]}...")
+        # Re-fetch the full encrypted data from local chunks
+        encrypted_data = self._download_content(manifest)
+        if not encrypted_data: return
+        decrypted_data = self._decrypt_data(encrypted_data, manifest)
+        if not decrypted_data: return
+        
+        try:
+            content = json.loads(decrypted_data)
+            board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
+            message = Message.objects.create(
+                board=board, subject=content.get('subject'), body=content.get('body'),
+                pubkey=content.get('pubkey'), manifest=manifest
+            )
+            if 'attachment_hashes' in content:
+                attachments = FileAttachment.objects.filter(manifest__content_hash__in=content['attachment_hashes'])
+                if attachments.exists():
+                    message.attachments.set(attachments)
+                    logger.info(f"Successfully linked {attachments.count()} attachment(s) to message '{content.get('subject')}'.")
+            logger.info(f"Successfully saved new message: '{content.get('subject')}'")
+        except Exception as e:
+            logger.error(f"Failed to create message from manifest {content_hash[:10]}: {e}")
