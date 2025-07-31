@@ -8,7 +8,7 @@ import base64
 import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta # Import timedelta
 
 from django.utils import timezone as django_timezone
 from django.conf import settings
@@ -87,10 +87,16 @@ class SyncService:
         logger.info(f"Beginning poll of {peers.count()} trusted peer(s)...")
         for peer in peers:
             logger.info(f"--> Checking peer: {peer.web_ui_onion_url}")
-            last_sync = peer.last_synced_at or datetime.min.replace(tzinfo=timezone.utc)
+            
+            # UPDATED: Implement a 10-minute grace period for the sync window.
+            # This makes the sync process resilient to failed downloads.
+            if peer.last_synced_at:
+                last_sync = peer.last_synced_at - timedelta(minutes=10)
+            else:
+                last_sync = datetime.min.replace(tzinfo=timezone.utc)
+
             proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
             
-            # UPDATED: Re-structured with a finally block for guaranteed timestamp updates
             server_timestamp_str = None
             try:
                 target_url = f"{peer.web_ui_onion_url.strip('/')}/api/sync/?since={last_sync.isoformat()}"
@@ -110,11 +116,9 @@ class SyncService:
                 logger.error(f"<-- Network error while contacting peer {peer.web_ui_onion_url}: {e}")
 
             finally:
-                # This block runs regardless of success or failure, preventing stale timestamps.
                 if server_timestamp_str:
                     peer.last_synced_at = django_timezone.datetime.fromisoformat(server_timestamp_str)
                 else:
-                    # If the request failed or the peer is old, we must still advance our clock to avoid getting stuck.
                     peer.last_synced_at = django_timezone.now()
                 peer.save()
                 logger.info(f"Timestamp for peer {peer.web_ui_onion_url} updated to {peer.last_synced_at.isoformat()}")
