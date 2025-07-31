@@ -2,6 +2,7 @@
 from django.apps import AppConfig
 import logging
 import os
+import sys # NEW: Import the sys module
 from django.db.models.signals import post_migrate
 from django.dispatch import receiver
 
@@ -16,13 +17,19 @@ class CoreConfig(AppConfig):
         This method is called by Django when the application is ready.
         It initializes all global services via the ServiceManager.
         """
-        # The RUN_MAIN check ensures this only runs once in the main Django process.
-        if os.environ.get('RUN_MAIN') == 'true':
+        # UPDATED: This logic now correctly starts services for both 'runserver'
+        # and other management commands (like shell, or our custom ones).
+        is_runserver = 'runserver' in sys.argv
+        
+        # Initialize if we are in the main 'runserver' process OR if we are running
+        # any other command. This prevents the auto-reloader from initializing twice.
+        if (is_runserver and os.environ.get('RUN_MAIN')) or not is_runserver:
             from .services.service_manager import service_manager
             
-            # The ServiceManager now handles the initialization and start
-            # of all background services, including the SyncService.
-            service_manager.initialize_services()
+            # This check prevents services from being initialized multiple times if ready()
+            # is called more than once by the same process.
+            if not service_manager.bitsync_service:
+                service_manager.initialize_services()
 
 @receiver(post_migrate)
 def clear_sessions_after_migrate(sender, **kwargs):
@@ -33,4 +40,3 @@ def clear_sessions_after_migrate(sender, **kwargs):
         logger.info("All user sessions cleared after startup/migrations.")
     except Exception as e:
         logger.error(f"Failed to clear sessions: {e}")
-
