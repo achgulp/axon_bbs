@@ -5,11 +5,9 @@ import UnlockForm from './UnlockForm';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
-// UPDATED: This component now polls for status updates.
 const AttachmentItem = ({ attachment, onDownload }) => {
   const [status, setStatus] = useState('checking'); // States: 'checking', 'syncing', 'available'
 
-  // This useCallback hook defines the function to fetch status, so we can reuse it.
   const fetchStatus = useCallback(() => {
     apiClient.get(`/api/files/status/${attachment.id}/`)
       .then(response => {
@@ -21,21 +19,16 @@ const AttachmentItem = ({ attachment, onDownload }) => {
       });
   }, [attachment.id]);
 
-  // This useEffect hook runs once when the component mounts to get the initial status.
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
 
-  // NEW: This useEffect hook sets up an interval to poll for updates
-  // ONLY if the current status is 'syncing'.
   useEffect(() => {
     if (status === 'syncing') {
       const interval = setInterval(() => {
         fetchStatus();
       }, 5000); // Check every 5 seconds
 
-      // This is a cleanup function that runs when the component unmounts
-      // or when the status changes, to prevent memory leaks.
       return () => clearInterval(interval);
     }
   }, [status, fetchStatus]);
@@ -241,4 +234,16 @@ const MessageList = ({ board, onBack }) => {
                   {msg.attachments && msg.attachments.length > 0 && <span className="ml-2 text-xs text-blue-400">[+{msg.attachments.length} file(s)]</span>}
                 </td>
                 <td className="p-3 text-gray-400">{msg.author_display}</td>
-                 <td className="p-3 text-gray-400
+                {/* UPDATED: This is the line that was broken. It is now fixed. */}
+                <td className="p-3 text-gray-400">{new Date(msg.created_at).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {messages.length === 0 && <p className="text-gray-400 text-center p-4">No messages yet on this board...</p>}
+      </div>
+    </div>
+  );
+};
+
+export default MessageList;
