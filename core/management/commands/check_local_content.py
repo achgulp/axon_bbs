@@ -2,9 +2,17 @@
 from django.core.management.base import BaseCommand
 from core.models import FileAttachment, Message
 from core.services.service_manager import service_manager
+from core.services.sync_service import SyncService
 
 class Command(BaseCommand):
-    help = 'Scans the local database and checks if all data chunks for each content item are present on disk.'
+    help = 'Scans local content for missing data chunks and optionally triggers a re-download.'
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--repair',
+            action='store_true',
+            help='Attempt to download missing chunks for all incomplete content.',
+        )
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS("--- Running Axon BBS Local Content Integrity Check ---"))
@@ -13,47 +21,57 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR("BitSyncService is not available."))
             return
 
-        # --- Check File Attachments ---
-        self.stdout.write("\n[1] Checking File Attachments...")
+        # --- Gather Incomplete Items ---
         all_files = FileAttachment.objects.all()
+        incomplete_files = []
+        for attachment in all_files:
+            if not service_manager.bitsync_service.are_all_chunks_local(attachment.manifest):
+                incomplete_files.append(attachment)
         
-        if not all_files.exists():
-            self.stdout.write("No file attachments found in the database.")
-        else:
-            incomplete_files = []
-            for attachment in all_files:
-                if not service_manager.bitsync_service.are_all_chunks_local(attachment.manifest):
-                    incomplete_files.append(attachment)
-            
-            complete_count = all_files.count() - len(incomplete_files)
-            self.stdout.write(self.style.SUCCESS(f"  - Found {complete_count} COMPLETE file(s)."))
-            
-            if incomplete_files:
-                self.stdout.write(self.style.WARNING(f"  - Found {len(incomplete_files)} INCOMPLETE file(s) (missing data chunks):"))
-                for attachment in incomplete_files:
-                    self.stdout.write(f"    - {attachment.filename} (ID: {attachment.id})")
-
-        # --- Check Messages ---
-        self.stdout.write("\n[2] Checking Messages...")
         all_messages = Message.objects.all()
+        incomplete_messages = []
+        for message in all_messages:
+            if message.manifest and not service_manager.bitsync_service.are_all_chunks_local(message.manifest):
+                incomplete_messages.append(message)
 
-        if not all_messages.exists():
-            self.stdout.write("No messages found in the database.")
-        else:
-            incomplete_messages = []
-            for message in all_messages:
-                # Messages without manifests are local-only and not syncable
-                if message.manifest:
-                    if not service_manager.bitsync_service.are_all_chunks_local(message.manifest):
-                        incomplete_messages.append(message)
+        # --- Print Report ---
+        self.stdout.write("\n[1] Checking File Attachments...")
+        self.stdout.write(self.style.SUCCESS(f"  - Found {all_files.count() - len(incomplete_files)} COMPLETE file(s)."))
+        if incomplete_files:
+            self.stdout.write(self.style.WARNING(f"  - Found {len(incomplete_files)} INCOMPLETE file(s) (missing data chunks):"))
+            for attachment in incomplete_files:
+                self.stdout.write(f"    - {attachment.filename} (ID: {attachment.id})")
+
+        self.stdout.write("\n[2] Checking Messages...")
+        self.stdout.write(self.style.SUCCESS(f"  - Found {all_messages.count() - len(incomplete_messages)} COMPLETE message(s)."))
+        if incomplete_messages:
+            self.stdout.write(self.style.WARNING(f"  - Found {len(incomplete_messages)} INCOMPLETE message(s) (missing data chunks):"))
+            for message in incomplete_messages:
+                self.stdout.write(f"    - '{message.subject}' (ID: {message.id})")
+
+        # --- Perform Repair if Flagged ---
+        if options['repair']:
+            self.stdout.write(self.style.SUCCESS("\n--- Starting Repair Process ---"))
             
-            complete_count = all_messages.count() - len(incomplete_messages)
-            self.stdout.write(self.style.SUCCESS(f"  - Found {complete_count} COMPLETE message(s)."))
+            # We need an instance of the SyncService to use its download methods
+            sync_service = SyncService()
+            sync_service._load_identity() # Load keys needed for authentication
 
-            if incomplete_messages:
-                self.stdout.write(self.style.WARNING(f"  - Found {len(incomplete_messages)} INCOMPLETE message(s) (missing data chunks):"))
-                for message in incomplete_messages:
-                    self.stdout.write(f"    - {message.subject} (ID: {message.id})")
+            if not sync_service.private_key:
+                self.stderr.write(self.style.ERROR("Could not load local identity. Aborting repair."))
+                return
 
+            all_incomplete_items = incomplete_files + incomplete_messages
+            if not all_incomplete_items:
+                self.stdout.write("No incomplete items to repair.")
+            else:
+                for item in all_incomplete_items:
+                    item_name = getattr(item, 'filename', getattr(item, 'subject', item.id))
+                    self.stdout.write(f"\nAttempting to repair '{item_name}'...")
+                    sync_service._download_content(item.manifest)
 
-        self.stdout.write("\n--- Integrity Check Complete ---")
+            self.stdout.write(self.style.SUCCESS("\n--- Repair Process Complete ---"))
+        else:
+            self.stdout.write("\n--- Integrity Check Complete ---")
+            if incomplete_files or incomplete_messages:
+                self.stdout.write(self.style.NOTICE("Run this command with the --repair flag to download missing content."))
