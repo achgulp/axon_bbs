@@ -45,6 +45,7 @@ class SyncService:
                     logger.warning("Sync service cannot run without a configured local instance identity. Will check again in %s seconds.", self.poll_interval)
             except Exception as e:
                 logger.error(f"Error in sync service poll loop: {e}", exc_info=True)
+            
             time.sleep(self.poll_interval)
     
     def _load_identity(self):
@@ -60,6 +61,7 @@ class SyncService:
             logger.error(f"Failed to load local identity for sync service: {e}")
             self.local_instance, self.private_key = None, None
 
+    
     def _get_auth_headers(self):
         timestamp = datetime.now(timezone.utc).isoformat()
         hasher = hashlib.sha256(timestamp.encode('utf-8'))
@@ -122,6 +124,12 @@ class SyncService:
                 size=manifest.get('size', 0),
                 manifest=manifest
             )
+            # UPDATED: Proactively download the file chunks in the background.
+            logger.info(f"Proactively downloading content for new file attachment: {content_hash[:10]}...")
+            # We call this for its side effect of downloading and storing the chunks.
+            # We don't need to do anything with the return value here.
+            self._download_content(manifest)
+
 
     def _process_message_manifest(self, manifest: dict):
         content_hash = manifest.get('content_hash')
@@ -184,7 +192,8 @@ class SyncService:
             return None
         
         logger.info(f"Starting swarm download for {content_hash[:10]}... from {len(seeders)} peer(s).")
-        downloaded_chunks, proxies = local_chunks.copy(), {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+        downloaded_chunks = local_chunks.copy()
+        proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         chunks_to_download = [i for i in range(num_chunks) if i not in downloaded_chunks]
         with ThreadPoolExecutor(max_workers=len(seeders) * 2) as executor:
             futures = {
@@ -195,8 +204,15 @@ class SyncService:
                 chunk_index, chunk_data = future.result()
                 if chunk_data and hashlib.sha256(chunk_data).hexdigest() == chunk_hashes[chunk_index]:
                     downloaded_chunks[chunk_index] = chunk_data
-                    logger.info(f"Successfully downloaded chunk {chunk_index + 1}/{num_chunks} for {content_hash[:10]}...")
-                else: logger.error(f"Failed to download or verify chunk {chunk_index} for {content_hash[:10]}...")
+                    # After downloading a chunk, save it to disk immediately
+                    chunk_save_path = service_manager.bitsync_service.get_chunk_path(content_hash, chunk_index)
+                    if chunk_save_path:
+                         os.makedirs(os.path.dirname(chunk_save_path), exist_ok=True)
+                         with open(chunk_save_path, 'wb') as f:
+                             f.write(chunk_data)
+                    logger.info(f"Successfully downloaded and stored chunk {chunk_index + 1}/{num_chunks} for {content_hash[:10]}...")
+                else: 
+                    logger.error(f"Failed to download or verify chunk {chunk_index} for {content_hash[:10]}...")
         
         if len(downloaded_chunks) == num_chunks:
             return b"".join(downloaded_chunks[i] for i in range(num_chunks))
@@ -240,4 +256,3 @@ class SyncService:
         if encrypted_data:
             return self._decrypt_data(encrypted_data, manifest)
         return None
-

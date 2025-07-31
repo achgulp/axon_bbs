@@ -20,7 +20,7 @@ from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, Trus
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password
 from core.services.service_manager import service_manager
-from core.services.content_validator import is_file_type_valid # UPDATED: Import the validator
+from core.services.content_validator import is_file_type_valid
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -115,6 +115,23 @@ class FileDownloadView(views.APIView):
         except Exception as e:
             logger.error(f"Error during file download for file {file_id}: {e}", exc_info=True)
             return Response({"error": "An error occurred while preparing the file for download."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# NEW: View to check the synchronization status of a file attachment.
+class FileStatusView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, file_id, *args, **kwargs):
+        try:
+            attachment = FileAttachment.objects.get(id=file_id)
+            if service_manager.bitsync_service.are_all_chunks_local(attachment.manifest):
+                return JsonResponse({"status": "available"})
+            else:
+                return JsonResponse({"status": "syncing"})
+        except FileAttachment.DoesNotExist:
+            raise Http404("File not found.")
+        except Exception as e:
+            logger.error(f"Error checking status for file {file_id}: {e}", exc_info=True)
+            return Response({"error": "Could not determine file status."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # --- Content & Moderation Views ---
 class MessageBoardListView(generics.ListAPIView):
