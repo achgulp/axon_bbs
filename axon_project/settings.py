@@ -10,7 +10,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-a#c884w!$z#%q)t_f$z&!
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '192.168.58.173', '192.168.58.244', '0.0.0.0', '*.onion', 'irvgoajs5slszfroepj5fpit3lcxn5gxpeffim3shjstb6akbjuuzdid.onion', 'lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '0.0.0.0', '*.onion', 'irvgoajs5slszfroepj5fpit3lcxn5gxpeffim3shjstb6akbjuuzdid.onion', 'lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion','mrb5wn4rrfi554yshuu2dpwstgf3swj3rfdxd46c6aqkjqmasfeq47ad.onion']
 
 # --- Application definition ---
 INSTALLED_APPS = [
