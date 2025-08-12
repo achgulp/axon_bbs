@@ -1,13 +1,13 @@
-# axon_bbs/core/services/identity_service.py
+# Full path: axon_bbs/core/services/identity_service.py
 import json
 import os
 import logging
 from typing import Dict, Any, List, Optional
 import uuid
 from datetime import datetime
-# We will create this encryption utility next
 from .encryption_utils import encrypt_data, decrypt_data
-from cryptography.hazmat.primitives.asymmetric import rsa  # For RSA keys
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization # UPDATED: Added the missing import
 
 logger = logging.getLogger(__name__)
 
