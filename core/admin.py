@@ -58,7 +58,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
     list_display = ('web_ui_onion_url', 'pubkey_checksum', 'is_trusted_peer', 'added_at')
     list_display_links = ('pubkey_checksum',)
     list_filter = ('is_trusted_peer',)
-    # UPDATED: Removed 'last_synced_at' from this line to make it editable
     readonly_fields = ('pubkey_checksum', 'added_at')
     fieldsets = (
         (None, {
@@ -69,8 +68,13 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
         }),
     )
 
+    # UPDATED: This line explicitly adds the 'generate_keys' function to the list of available actions.
+    actions = ['generate_keys']
+
     @admin.display(description='Pubkey Checksum')
     def pubkey_checksum(self, obj):
+        if not obj.pubkey:
+            return "No pubkey"
         return generate_checksum(obj.pubkey)
 
     def generate_keys(self, request, queryset):
