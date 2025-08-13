@@ -18,7 +18,8 @@ from .views import (
     BitSyncChunkView,
     FileUploadView,
     FileDownloadView,
-    FileStatusView, # NEW: Import the new view
+    FileStatusView,
+    GetPublicKeyView, # NEW: Import the new view
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -35,6 +36,7 @@ urlpatterns = [
     # Identity
     path('identity/unlock/', UnlockIdentityView.as_view(), name='unlock-identity'),
     path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
+    path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'), # NEW: Add the URL
 
     # Content & Moderation
     path('boards/', MessageBoardListView.as_view(), name='board-list'),
@@ -51,7 +53,7 @@ urlpatterns = [
     # File Handling
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('files/download/<uuid:file_id>/', FileDownloadView.as_view(), name='file-download'),
-    path('files/status/<uuid:file_id>/', FileStatusView.as_view(), name='file-status'), # NEW: Add the status endpoint URL
+    path('files/status/<uuid:file_id>/', FileStatusView.as_view(), name='file-status'),
 
     # BitSync P2P Protocol
     path('sync/', SyncView.as_view(), name='sync'),

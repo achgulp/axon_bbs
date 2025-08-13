@@ -244,7 +244,6 @@ class SyncView(views.APIView):
         since_str = request.query_params.get('since')
         if not since_str: return Response({"error": "'since' timestamp is required."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            # UPDATED: Capture server time and include it in the response
             server_now = timezone.now()
             since_dt = timezone.datetime.fromisoformat(since_str.replace(' ', '+'))
             new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
@@ -289,3 +288,23 @@ class BitSyncChunkView(views.APIView):
                     return HttpResponse(f.read(), content_type='application/octet-stream')
             except IOError: raise Http404("Chunk file not readable.")
         else: raise Http404("Chunk not found.")
+
+# --- ADDED: New view to share the instance's public key ---
+# This view is intentionally public and requires no authentication.
+class GetPublicKeyView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            local_instance = TrustedInstance.objects.get(
+                encrypted_private_key__isnull=False,
+                is_trusted_peer=False
+            )
+            if local_instance.pubkey:
+                return JsonResponse({"public_key": local_instance.pubkey})
+            else:
+                return Response({"error": "Local instance has no public key."}, status=status.HTTP_404_NOT_FOUND)
+        except TrustedInstance.DoesNotExist:
+            return Response({"error": "Local instance not configured."}, status=status.HTTP_404_NOT_FOUND)
+        except TrustedInstance.MultipleObjectsReturned:
+            return Response({"error": "Configuration error: Multiple local instances found."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
