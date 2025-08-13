@@ -9,8 +9,6 @@ from cryptography.hazmat.primitives.asymmetric import padding
 import base64
 import json
 from django.conf import settings
-from django.http import HttpResponse
-from django.template.loader import render_to_string
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
 
@@ -32,16 +30,10 @@ class MessageAdmin(admin.ModelAdmin):
     list_display = ('subject', 'author', 'board', 'created_at', 'expires_at', 'is_pinned')
     list_filter = ('board', 'author', 'is_pinned')
     date_hierarchy = 'created_at'
-    
-    # NEW: Register the re-keying action
     actions = ['rekey_messages']
 
     @admin.action(description='Re-key message for all trusted peers')
     def rekey_messages(self, request, queryset):
-        """
-        Takes selected messages, re-builds their raw_data, and generates a new
-        manifest with encryption envelopes for all currently trusted peers.
-        """
         if not service_manager.bitsync_service:
             self.message_user(request, "BitSyncService is not available.", level='ERROR')
             return
@@ -49,28 +41,19 @@ class MessageAdmin(admin.ModelAdmin):
         updated_count = 0
         for message in queryset:
             try:
-                # Reconstruct the original JSON blob that was encrypted
-                attachment_hashes = [att.manifest['content_hash'] for att in message.attachments.all()]
-                message_content = {
-                    "subject": message.subject,
-                    "body": message.body,
-                    "board": message.board.name,
-                    "pubkey": message.pubkey,
-                    "attachment_hashes": attachment_hashes
-                }
-                raw_data = json.dumps(message_content).encode('utf-8')
-
-                # Generate a new manifest with new envelopes for all current peers
-                new_manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(raw_data)
+                if not message.manifest:
+                    self.message_user(request, f"Message '{message.subject}' has no manifest to re-key.", level='WARNING')
+                    continue
                 
-                # Update the message with the new manifest
+                new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(message.manifest)
+                
                 message.manifest = new_manifest
                 message.save()
                 updated_count += 1
             except Exception as e:
                 self.message_user(request, f"Failed to re-key message '{message.subject}': {e}", level='ERROR')
         
-        self.message_user(request, f"Successfully re-keyed and updated {updated_count} message(s).")
+        self.message_user(request, f"Successfully updated manifests for {updated_count} message(s).")
 
 @admin.register(PrivateMessage)
 class PrivateMessageAdmin(admin.ModelAdmin):
