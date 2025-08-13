@@ -10,16 +10,19 @@ class Command(BaseCommand):
         parser.add_argument('peer_onion_url', type=str, help="The full .onion URL of the peer to update.")
 
     def handle(self, *args, **options):
-        peer_url = options['peer_onion_url']
+        # UPDATED: Strip the trailing slash immediately to handle user input gracefully.
+        peer_url = options['peer_onion_url'].strip('/')
+        
         self.stdout.write(self.style.SUCCESS(f"--- Attempting to update key for peer: {peer_url} ---"))
 
         try:
+            # The query now uses the cleaned URL.
             peer_instance = TrustedInstance.objects.get(web_ui_onion_url=peer_url)
         except TrustedInstance.DoesNotExist:
             self.stderr.write(self.style.ERROR("Peer not found in local database. Please add it first."))
             return
 
-        target_url = f"{peer_url.strip('/')}/api/identity/public_key/"
+        target_url = f"{peer_url}/api/identity/public_key/"
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
 
         self.stdout.write("Fetching key from peer over Tor...")
