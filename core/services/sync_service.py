@@ -43,10 +43,7 @@ class SyncService:
             try:
                 self._load_identity()
                 if self.local_instance and self.private_key:
-                    # NEW: Always check for and resume local incomplete downloads first.
                     self._resume_incomplete_downloads()
-                    
-                    # THEN, poll peers for brand new content.
                     self.poll_peers()
                 else:
                     logger.warning("Sync service cannot run without a configured local instance identity. Will check again in %s seconds.", self.poll_interval)
@@ -69,30 +66,19 @@ class SyncService:
             self.local_instance, self.private_key = None, None
 
     def _resume_incomplete_downloads(self):
-        """
-        Scans the local database for content that is missing chunks and schedules
-        it for download. This makes the service resilient to restarts.
-        """
         from .service_manager import service_manager
         logger.info("Checking for any incomplete downloads to resume...")
-
-        # Check File Attachments
-        incomplete_files = [
-            item for item in FileAttachment.objects.all() 
+        
+        all_content_items = list(FileAttachment.objects.all()) + list(Message.objects.filter(manifest__isnull=False))
+        incomplete_items = [
+            item for item in all_content_items
             if not service_manager.bitsync_service.are_all_chunks_local(item.manifest)
         ]
-        for item in incomplete_files:
+        
+        for item in incomplete_items:
             self._schedule_download(item.manifest)
         
-        # Check Messages
-        incomplete_messages = [
-            item for item in Message.objects.all() 
-            if item.manifest and not service_manager.bitsync_service.are_all_chunks_local(item.manifest)
-        ]
-        for item in incomplete_messages:
-            self._schedule_download(item.manifest)
-        
-        if not incomplete_files and not incomplete_messages:
+        if not incomplete_items:
             logger.info("No incomplete downloads found.")
 
     def _get_auth_headers(self):
@@ -111,13 +97,11 @@ class SyncService:
     def poll_peers(self):
         peers = TrustedInstance.objects.filter(is_trusted_peer=True)
         if not peers.exists():
-            logger.info("Polling complete. No trusted peers are configured to sync with.")
             return
         
         logger.info(f"Beginning to poll {peers.count()} peer(s) for new content...")
         for peer in peers:
             if not peer.web_ui_onion_url:
-                logger.warning(f"Skipping peer ID {peer.id} because it has no .onion URL set.")
                 continue
             
             if peer.last_synced_at:
@@ -138,7 +122,7 @@ class SyncService:
                     server_timestamp_str = response_data.get('server_timestamp')
                     logger.info(f"<-- Received {len(manifests)} new manifest(s) from peer {peer.web_ui_onion_url}")
                     if manifests:
-                        self._process_new_manifests(manifests)
+                        self._process_received_manifests(manifests)
                 else:
                     logger.warning(f"<-- Failed to sync with peer {peer.web_ui_onion_url}: Status {response.status_code}")
             
@@ -156,7 +140,6 @@ class SyncService:
     def _schedule_download(self, manifest):
         content_hash = manifest.get('content_hash')
         if content_hash in self.currently_downloading:
-            logger.debug(f"Download for {content_hash[:10]}... is already in progress. Skipping.")
             return
         
         item_name = manifest.get('filename') or manifest.get('content_type', 'Message')
@@ -166,25 +149,34 @@ class SyncService:
         future = self.download_executor.submit(self._download_content, manifest)
         future.add_done_callback(lambda f: self.currently_downloading.discard(content_hash))
 
-    def _process_new_manifests(self, manifests: list):
+    def _process_received_manifests(self, manifests: list):
+        # UPDATED: This logic is now corrected to properly create new DB records.
         for manifest in manifests:
-            content_hash = manifest['content_hash']
-            content_type = manifest.get('content_type')
+            content_hash = manifest.get('content_hash')
+            if not content_hash:
+                continue
             
-            # Check if we already have a record for this content. If so, we don't need to do anything.
-            # The _resume_incomplete_downloads method handles existing, incomplete content.
             has_file = FileAttachment.objects.filter(manifest__content_hash=content_hash).exists()
             has_message = Message.objects.filter(manifest__content_hash=content_hash).exists()
 
-            if not has_file and not has_message:
-                 if content_type == 'file':
-                    FileAttachment.objects.create(
-                        manifest__content_hash=content_hash, defaults={'manifest': manifest, 'filename': manifest.get('filename', 'unknown')}
-                    )
-                 self._schedule_download(manifest)
-        
+            if has_file or has_message:
+                continue
+
+            content_type = manifest.get('content_type')
+            if content_type == 'file':
+                logger.info(f"Discovered new file manifest: '{manifest.get('filename')}'")
+                FileAttachment.objects.create(
+                    filename=manifest.get('filename', 'unknown'),
+                    content_type=manifest.get('content_type_val', 'application/octet-stream'),
+                    size=manifest.get('size', 0),
+                    manifest=manifest
+                )
+                self._schedule_download(manifest) # Schedule download for the new file
+            elif content_type == 'message':
+                logger.info(f"Discovered new message manifest: {content_hash[:10]}...")
+                self._schedule_download(manifest)
+
     def _find_seeders(self, content_hash: str) -> list:
-        # ... (This method remains unchanged)
         logger.info(f"Discovering seeders for content {content_hash[:10]}...")
         available_seeders = []
         peers = TrustedInstance.objects.filter(is_trusted_peer=True)
@@ -202,7 +194,6 @@ class SyncService:
         return available_seeders
 
     def _download_content(self, manifest: dict) -> bytes | None:
-        # ... (This method remains unchanged)
         content_hash, chunk_hashes = manifest['content_hash'], manifest['chunk_hashes']
         num_chunks = len(chunk_hashes)
         item_name = manifest.get('filename', content_hash[:16])
@@ -255,7 +246,6 @@ class SyncService:
             return None
 
     def _download_chunk(self, seeder_url, content_hash, chunk_index, proxies):
-        # ... (This method remains unchanged)
         try:
             url = f"{seeder_url.strip('/')}/api/bitsync/chunk/{content_hash}/{chunk_index}/"
             response = requests.get(url, headers=self._get_auth_headers(), proxies=proxies, timeout=120)
@@ -265,7 +255,6 @@ class SyncService:
         return chunk_index, None
 
     def _decrypt_data(self, encrypted_data: bytes, manifest: dict) -> bytes | None:
-        # ... (This method remains unchanged)
         if not encrypted_data: return None
         try:
             local_checksum = generate_checksum(self.local_instance.pubkey)
@@ -288,7 +277,6 @@ class SyncService:
             return None
 
     def get_decrypted_content(self, manifest: dict) -> bytes | None:
-        # ... (This method remains unchanged)
         content_hash = manifest.get('content_hash')
         if content_hash in self.currently_downloading:
             logger.info("Content is being downloaded by the background service; UI download will wait.")
@@ -298,10 +286,10 @@ class SyncService:
         return None
 
     def _create_message_from_manifest_if_needed(self, manifest: dict):
-        # ... (This method remains unchanged)
         content_hash = manifest.get('content_hash')
         if manifest.get('content_type') != 'message' or Message.objects.filter(manifest__content_hash=content_hash).exists():
             return
+        
         logger.info(f"Processing newly completed message content for hash {content_hash[:10]}...")
         encrypted_data = self._download_content(manifest)
         if not encrypted_data: return
