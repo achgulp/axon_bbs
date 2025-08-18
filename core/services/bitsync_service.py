@@ -4,6 +4,7 @@ import json
 import hashlib
 import logging
 import base64
+from typing import List, Optional
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
@@ -11,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives import serialization, hashes
 from django.conf import settings
 from django.db.models import Q
-from core.models import TrustedInstance
+from core.models import TrustedInstance, User
 from .encryption_utils import generate_checksum
 
 logger = logging.getLogger(__name__)
@@ -113,7 +114,7 @@ class BitSyncService:
         
         return manifest
 
-    def create_manifest_and_store_chunks(self, raw_data: bytes) -> dict:
+    def create_manifest_and_store_chunks(self, raw_data: bytes, recipients_pubkeys: Optional[List[str]] = None) -> dict:
         content_hash = hashlib.sha256(raw_data).hexdigest()
         aes_key = os.urandom(32)
         iv = os.urandom(16)
@@ -132,24 +133,39 @@ class BitSyncService:
                 f.write(chunk)
         
         encrypted_aes_keys = {}
-        local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False, is_trusted_peer=False).first()
-        trusted_peers = TrustedInstance.objects.filter(is_trusted_peer=True)
-        instances_to_encrypt_for = list(trusted_peers)
-        if local_instance and local_instance not in instances_to_encrypt_for:
-            instances_to_encrypt_for.append(local_instance)
+        pubkeys_to_encrypt_for = set()
 
-        for instance in instances_to_encrypt_for:
-            if instance.pubkey:
-                try:
-                    peer_pubkey_obj = serialization.load_pem_public_key(instance.pubkey.encode())
-                    encrypted_key = peer_pubkey_obj.encrypt(
-                        aes_key,
-                        rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
-                    )
-                    instance_checksum = generate_checksum(instance.pubkey)
-                    encrypted_aes_keys[instance_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
-                except Exception as e:
-                    logger.error(f"Failed to encrypt AES key for instance {instance.web_ui_onion_url or 'local'}: {e}")
+        # Always encrypt for the local instance (the sender)
+        local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False, is_trusted_peer=False).first()
+        if local_instance and local_instance.pubkey:
+            pubkeys_to_encrypt_for.add(local_instance.pubkey)
+
+        # Determine the set of recipients
+        if recipients_pubkeys:
+            # Private message: use the provided list of recipients' public keys
+            for pkey in recipients_pubkeys:
+                pubkeys_to_encrypt_for.add(pkey)
+            logger.info(f"Creating private manifest for {len(pubkeys_to_encrypt_for)} recipient(s).")
+        else:
+            # Public content: encrypt for all trusted peers
+            trusted_peers = TrustedInstance.objects.filter(is_trusted_peer=True)
+            for peer in trusted_peers:
+                if peer.pubkey:
+                    pubkeys_to_encrypt_for.add(peer.pubkey)
+            logger.info(f"Creating public manifest for {len(pubkeys_to_encrypt_for)} total instance(s).")
+
+        # Create an encrypted "envelope" for each public key
+        for pubkey_pem in pubkeys_to_encrypt_for:
+            try:
+                peer_pubkey_obj = serialization.load_pem_public_key(pubkey_pem.encode())
+                encrypted_key = peer_pubkey_obj.encrypt(
+                    aes_key,
+                    rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+                )
+                instance_checksum = generate_checksum(pubkey_pem)
+                encrypted_aes_keys[instance_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
+            except Exception as e:
+                logger.error(f"Failed to encrypt AES key for pubkey with checksum {generate_checksum(pubkey_pem)}: {e}")
         
         manifest = {
             "content_hash": content_hash,

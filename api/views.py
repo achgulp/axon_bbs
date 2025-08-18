@@ -14,9 +14,9 @@ from django.apps import apps
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer
+from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer
 from .permissions import TrustedPeerPermission
-from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment
+from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password
 from core.services.service_manager import service_manager
@@ -63,6 +63,88 @@ class ImportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request, *args, **kwargs):
         return Response(status=status.HTTP_501_NOT_IMPLEMENTED)
+
+# --- NEW: Private Messaging Views ---
+class SendPrivateMessageView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        recipient_username = request.data.get('recipient')
+        subject = request.data.get('subject')
+        body = request.data.get('body')
+
+        if not all([recipient_username, subject, body]):
+            return Response({"error": "Recipient, subject, and body are required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        try:
+            recipient = User.objects.get(username=recipient_username)
+            if not recipient.pubkey:
+                return Response({"error": "Recipient does not have a public key and cannot receive encrypted messages."}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({"error": "Recipient user not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not service_manager.bitsync_service:
+            return Response({"error": "BitSync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            # Create the raw message content
+            message_content = {"subject": subject, "body": body}
+            raw_data = json.dumps(message_content).encode('utf-8')
+            
+            # Create a manifest encrypted only for the sender and recipient
+            manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(
+                raw_data,
+                recipients_pubkeys=[recipient.pubkey]
+            )
+
+            # Store the PrivateMessage object
+            PrivateMessage.objects.create(
+                author=request.user,
+                recipient=recipient,
+                subject=subject,
+                body="",  # Body is stored in the encrypted manifest
+                manifest=manifest
+            )
+            logger.info(f"User {request.user.username} sent a private message to {recipient.username}")
+            return Response({"status": "Message sent successfully."}, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Failed to send private message for {request.user.username}: {e}", exc_info=True)
+            return Response({"error": "Server error while sending message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class PrivateMessageListView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        if not service_manager.sync_service:
+            return Response({"error": "Sync service is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        received_messages = PrivateMessage.objects.filter(recipient=request.user).order_by('-created_at')
+        
+        decrypted_messages = []
+        for pm in received_messages:
+            try:
+                decrypted_content_bytes = service_manager.sync_service.get_decrypted_content(pm.manifest)
+                if decrypted_content_bytes:
+                    content = json.loads(decrypted_content_bytes.decode('utf-8'))
+                    pm.decrypted_body = content.get('body', '[Decryption Failed]')
+                else:
+                    pm.decrypted_body = '[Content not available]'
+            except Exception as e:
+                logger.error(f"Could not decrypt PM {pm.id} for user {request.user.username}: {e}")
+                pm.decrypted_body = '[Decryption Error]'
+            
+            decrypted_messages.append(pm)
+            
+        serializer = PrivateMessageSerializer(decrypted_messages, many=True)
+        return Response(serializer.data)
+
 
 # --- File Handling Views ---
 class FileUploadView(views.APIView):

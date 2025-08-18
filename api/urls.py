@@ -19,7 +19,9 @@ from .views import (
     FileUploadView,
     FileDownloadView,
     FileStatusView,
-    GetPublicKeyView, # NEW: Import the new view
+    GetPublicKeyView,
+    SendPrivateMessageView, # NEW: Import PM view
+    PrivateMessageListView, # NEW: Import PM view
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -36,7 +38,11 @@ urlpatterns = [
     # Identity
     path('identity/unlock/', UnlockIdentityView.as_view(), name='unlock-identity'),
     path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
-    path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'), # NEW: Add the URL
+    path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
+
+    # NEW: Private Messaging
+    path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),
+    path('pm/list/', PrivateMessageListView.as_view(), name='pm-list'),
 
     # Content & Moderation
     path('boards/', MessageBoardListView.as_view(), name='board-list'),

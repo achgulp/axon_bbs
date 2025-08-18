@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest, FileAttachment
+from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest, FileAttachment, PrivateMessage
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
 import os
@@ -76,6 +76,18 @@ class MessageSerializer(serializers.ModelSerializer):
                 return f"Moo-{short_id}"
         return 'Anonymous'
 
+# NEW: Serializer for Private Messages
+class PrivateMessageSerializer(serializers.ModelSerializer):
+    author_username = serializers.CharField(source='author.username', read_only=True)
+    recipient_username = serializers.CharField(source='recipient.username', read_only=True)
+    decrypted_body = serializers.CharField(read_only=True) # Populated by the view
+    
+    class Meta:
+        model = PrivateMessage
+        fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'author_username', 'recipient_username')
+        read_only_fields = fields
+
+
 class ContentExtensionRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField()
     reviewed_by = serializers.StringRelatedField()
@@ -83,4 +95,3 @@ class ContentExtensionRequestSerializer(serializers.ModelSerializer):
         model = ContentExtensionRequest
         fields = ('id', 'content_id', 'content_type', 'user', 'request_date', 'status', 'reviewed_by', 'reviewed_at')
         read_only_fields = ('id', 'user', 'request_date', 'status', 'reviewed_by', 'reviewed_at')
-

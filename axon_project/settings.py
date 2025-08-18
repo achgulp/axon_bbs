@@ -121,6 +121,9 @@ TOR_SOCKS_HOST = "127.0.0.1"
 TOR_SOCKS_PORT = 9050
 # Set the number of files the SyncService can download at the same time.
 BITSYNC_MAX_CONCURRENT_FILES = 3
+# NEW: Set the default lifespan for user-generated content.
+DEFAULT_CONTENT_LIFESPAN_DAYS = 30
+
 
 # --- UPDATED Logging Configuration ---
 LOGGING = {

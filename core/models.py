@@ -10,8 +10,9 @@ import json
 from cryptography.hazmat.primitives import serialization
 
 def get_default_expires_at():
-    """Returns a default expiration time 30 days from now."""
-    return timezone.now() + timedelta(days=30)
+    """Returns a default expiration time from now based on settings."""
+    days = getattr(settings, 'DEFAULT_CONTENT_LIFESPAN_DAYS', 30)
+    return timezone.now() + timedelta(days=days)
 
 class User(AbstractUser):
     access_level = models.PositiveIntegerField(default=10, help_text="User's security access level.")
@@ -124,6 +125,9 @@ class PrivateMessage(Content):
     subject = models.CharField(max_length=255)
     body = models.TextField()
     is_read = models.BooleanField(default=False)
+    # NEW: Manifest field for BitSync E2E encryption.
+    manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for E2E encrypted content.")
+    
     def __str__(self):
         return f"'{self.subject}' to {self.recipient.username} from {self.author.username if self.author else 'system'}"
 
@@ -164,4 +168,4 @@ class ContentExtensionRequest(models.Model):
     class Meta:
         unique_together = ('content_id', 'user')
     def __str__(self):
-        return f"Extension Request for {self.content_type} {self.content_id} by {self.user.username}"
+        return f"Extension Request for {self.content_type} {self.id} by {self.user.username}"
