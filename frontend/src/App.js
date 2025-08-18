@@ -45,16 +45,18 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [showCompose, setShowCompose] = useState(false);
   
-  const [recipient, setRecipient] = useState('');
+  // UPDATED: recipientIdentifier is for the input field, recipientPubkey is for the API
+  const [recipientIdentifier, setRecipientIdentifier] = useState('');
+  const [recipientPubkey, setRecipientPubkey] = useState(null);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // NEW: Pre-fill recipient when starting a PM from a public post
   useEffect(() => {
     if (initialRecipient) {
-      setRecipient(initialRecipient.identifier); // Use the Moo-ID or pubkey
+      setRecipientIdentifier(initialRecipient.displayName);
+      setRecipientPubkey(initialRecipient.pubkey);
       setShowCompose(true);
     }
   }, [initialRecipient]);
@@ -80,15 +82,24 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
     e.preventDefault();
     setError('');
     setSuccess('');
-    if (!recipient || !subject || !body) {
+    if (!recipientIdentifier || !subject || !body) {
       setError("Recipient, subject, and body are required.");
       return;
     }
     try {
-      // The back-end now expects 'recipient_identifier'
-      await apiClient.post('/api/pm/send/', { recipient_identifier: recipient, subject, body });
+      // UPDATED: Send both the identifier and the pubkey (if available from first contact)
+      const payload = {
+        recipient_identifier: recipientIdentifier,
+        recipient_pubkey: recipientPubkey, // This can be null if user is typing an alias manually
+        subject,
+        body
+      };
+      await apiClient.post('/api/pm/send/', payload);
       setSuccess('Message sent successfully!');
-      setRecipient(''); setSubject(''); setBody('');
+      setRecipientIdentifier('');
+      setRecipientPubkey(null);
+      setSubject('');
+      setBody('');
       setShowCompose(false);
       setTimeout(fetchMessages, 1000);
     } catch (err) {
@@ -119,7 +130,7 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
     <div>
       <div className="flex justify-between items-center mb-4">
         <Header text="Private Mail" />
-        <button onClick={() => { setShowCompose(!showCompose); setRecipient(''); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+        <button onClick={() => { setShowCompose(!showCompose); setRecipientIdentifier(''); setRecipientPubkey(null); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
           {showCompose ? 'Cancel' : 'Compose'}
         </button>
       </div>
@@ -129,7 +140,7 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
       {showCompose && (
         <div className="bg-gray-800 p-4 rounded mb-6 border border-gray-700">
           <form onSubmit={handleSendMessage}>
-            <input type="text" placeholder="Recipient's Username, Moo-ID, or Public Key" value={recipient} onChange={e => setRecipient(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input type="text" placeholder="Recipient's Username or Moo-ID" value={recipientIdentifier} onChange={e => setRecipientIdentifier(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <input type="text" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <textarea placeholder="Your encrypted message..." value={body} onChange={e => setBody(e.target.value)} required rows="5" className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
@@ -173,7 +184,7 @@ function App() {
   const [isIdentityUnlocked, setIdentityUnlocked] = useState(false);
   const [needsUnlock, setNeedsUnlock] = useState(false);
   const [currentView, setCurrentView] = useState('boards');
-  const [pmRecipient, setPmRecipient] = useState(null); // NEW: State to hold PM recipient info
+  const [pmRecipient, setPmRecipient] = useState(null);
 
   const setAuthToken = (newToken) => {
     if (newToken) {
@@ -209,15 +220,12 @@ function App() {
   
   const handleViewChange = (view) => {
     setSelectedBoard(null);
-    setPmRecipient(null); // Clear any pending PM recipient
+    setPmRecipient(null);
     setCurrentView(view);
   };
 
-  // NEW: Function to initiate a PM from another component
   const handleStartPrivateMessage = (pubkey, displayName) => {
-    // We pass the displayName (Moo-ID) to the recipient field, as the backend
-    // can resolve it. If not, the user can paste the full pubkey.
-    setPmRecipient({ identifier: pubkey }); 
+    setPmRecipient({ pubkey: pubkey, displayName: displayName });
     setCurrentView('pm');
   };
 

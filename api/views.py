@@ -70,6 +70,7 @@ class SendPrivateMessageView(views.APIView):
 
     def post(self, request, *args, **kwargs):
         identifier = request.data.get('recipient_identifier')
+        pubkey = request.data.get('recipient_pubkey') # Can be null
         subject = request.data.get('subject')
         body = request.data.get('body')
 
@@ -81,22 +82,20 @@ class SendPrivateMessageView(views.APIView):
 
         # --- Resolve Identifier to Public Key ---
         recipient_pubkey = None
-        # Try finding a local user or an alias first
-        local_user = User.objects.filter(username=identifier).first()
-        alias = Alias.objects.filter(nickname=identifier).first()
-
-        if local_user and local_user.pubkey:
-            recipient_pubkey = local_user.pubkey
-        elif alias and alias.pubkey:
-            recipient_pubkey = alias.pubkey
+        if pubkey:
+            # If the frontend provides the pubkey directly (on first contact), use it.
+            recipient_pubkey = pubkey
         else:
-            # Assume the identifier is a full public key
-            try:
-                # This also serves as validation
-                generate_checksum(identifier) 
-                recipient_pubkey = identifier
-            except Exception:
-                return Response({"error": "Recipient not found or identifier is not a valid public key."}, status=status.HTTP_404_NOT_FOUND)
+            # Otherwise, look up the identifier in local users and aliases
+            local_user = User.objects.filter(username=identifier).first()
+            alias = Alias.objects.filter(nickname=identifier).first()
+            if local_user and local_user.pubkey:
+                recipient_pubkey = local_user.pubkey
+            elif alias and alias.pubkey:
+                recipient_pubkey = alias.pubkey
+
+        if not recipient_pubkey:
+            return Response({"error": f"Recipient '{identifier}' not found or has no public key."}, status=status.HTTP_404_NOT_FOUND)
 
         if not service_manager.bitsync_service:
             return Response({"error": "BitSync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -104,10 +103,8 @@ class SendPrivateMessageView(views.APIView):
         try:
             # --- Auto-create Alias on first contact ---
             if not Alias.objects.filter(pubkey=recipient_pubkey).exists():
-                # Don't create an alias for a local user
                 if not User.objects.filter(pubkey=recipient_pubkey).exists():
                     moo_id = f"Moo-{generate_short_id(recipient_pubkey, length=8)}"
-                    # Ensure the generated Moo-ID is unique before creating it
                     if not Alias.objects.filter(nickname=moo_id).exists():
                         Alias.objects.create(pubkey=recipient_pubkey, nickname=moo_id)
                         logger.info(f"Created new alias '{moo_id}' for first-time contact.")
@@ -351,13 +348,14 @@ class SyncView(views.APIView):
             server_now = timezone.now()
             since_dt = timezone.datetime.fromisoformat(since_str.replace(' ', '+'))
             
-            # Query for all content types to be federated
             new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
-            new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, manifest__isnull=False) # NEW
+            new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
 
             manifests = []
-            for item in list(new_messages) + list(new_files) + list(new_pms):
+            all_items = list(new_messages) + list(new_files) + list(new_pms)
+
+            for item in all_items:
                 item_manifest = item.manifest
                 if isinstance(item, Message):
                     item_manifest['content_type'] = 'message'
