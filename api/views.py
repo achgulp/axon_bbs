@@ -70,7 +70,7 @@ class SendPrivateMessageView(views.APIView):
 
     def post(self, request, *args, **kwargs):
         identifier = request.data.get('recipient_identifier')
-        pubkey = request.data.get('recipient_pubkey') # Can be null
+        pubkey = request.data.get('recipient_pubkey') # Can be null on subsequent sends
         subject = request.data.get('subject')
         body = request.data.get('body')
 
@@ -83,10 +83,8 @@ class SendPrivateMessageView(views.APIView):
         # --- Resolve Identifier to Public Key ---
         recipient_pubkey = None
         if pubkey:
-            # If the frontend provides the pubkey directly (on first contact), use it.
             recipient_pubkey = pubkey
         else:
-            # Otherwise, look up the identifier in local users and aliases
             local_user = User.objects.filter(username=identifier).first()
             alias = Alias.objects.filter(nickname=identifier).first()
             if local_user and local_user.pubkey:
@@ -104,10 +102,11 @@ class SendPrivateMessageView(views.APIView):
             # --- Auto-create Alias on first contact ---
             if not Alias.objects.filter(pubkey=recipient_pubkey).exists():
                 if not User.objects.filter(pubkey=recipient_pubkey).exists():
-                    moo_id = f"Moo-{generate_short_id(recipient_pubkey, length=8)}"
-                    if not Alias.objects.filter(nickname=moo_id).exists():
-                        Alias.objects.create(pubkey=recipient_pubkey, nickname=moo_id)
-                        logger.info(f"Created new alias '{moo_id}' for first-time contact.")
+                    # Use the identifier from the frontend (e.g., "Moo-12345678") as the nickname
+                    nickname_to_create = identifier
+                    if not Alias.objects.filter(nickname=nickname_to_create).exists():
+                        Alias.objects.create(pubkey=recipient_pubkey, nickname=nickname_to_create)
+                        logger.info(f"Created new alias '{nickname_to_create}' for first-time contact.")
 
             recipient_user = User.objects.filter(pubkey=recipient_pubkey).first()
             message_content = {"subject": subject, "body": body}
