@@ -39,18 +39,25 @@ const MessageBoardList = ({ onSelectBoard }) => {
   );
 };
 
-// --- NEW: Private Message Client Component ---
-const PrivateMessageClient = ({ setNeedsUnlock }) => {
+// --- Private Message Client Component (UPDATED) ---
+const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [showCompose, setShowCompose] = useState(false);
   
-  // Compose form state
   const [recipient, setRecipient] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // NEW: Pre-fill recipient when starting a PM from a public post
+  useEffect(() => {
+    if (initialRecipient) {
+      setRecipient(initialRecipient.identifier); // Use the Moo-ID or pubkey
+      setShowCompose(true);
+    }
+  }, [initialRecipient]);
 
   const fetchMessages = useCallback(() => {
     apiClient.get('/api/pm/list/')
@@ -78,12 +85,11 @@ const PrivateMessageClient = ({ setNeedsUnlock }) => {
       return;
     }
     try {
-      await apiClient.post('/api/pm/send/', { recipient, subject, body });
+      // The back-end now expects 'recipient_identifier'
+      await apiClient.post('/api/pm/send/', { recipient_identifier: recipient, subject, body });
       setSuccess('Message sent successfully!');
-      // Clear form and hide compose window
       setRecipient(''); setSubject(''); setBody('');
       setShowCompose(false);
-      // Refresh inbox after a short delay
       setTimeout(fetchMessages, 1000);
     } catch (err) {
       if (err.response && err.response.data.error === 'identity_locked') {
@@ -113,7 +119,7 @@ const PrivateMessageClient = ({ setNeedsUnlock }) => {
     <div>
       <div className="flex justify-between items-center mb-4">
         <Header text="Private Mail" />
-        <button onClick={() => setShowCompose(!showCompose)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+        <button onClick={() => { setShowCompose(!showCompose); setRecipient(''); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
           {showCompose ? 'Cancel' : 'Compose'}
         </button>
       </div>
@@ -123,7 +129,7 @@ const PrivateMessageClient = ({ setNeedsUnlock }) => {
       {showCompose && (
         <div className="bg-gray-800 p-4 rounded mb-6 border border-gray-700">
           <form onSubmit={handleSendMessage}>
-            <input type="text" placeholder="Recipient Username" value={recipient} onChange={e => setRecipient(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input type="text" placeholder="Recipient's Username, Moo-ID, or Public Key" value={recipient} onChange={e => setRecipient(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <input type="text" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <textarea placeholder="Your encrypted message..." value={body} onChange={e => setBody(e.target.value)} required rows="5" className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
@@ -166,7 +172,8 @@ function App() {
   const [selectedBoard, setSelectedBoard] = useState(null);
   const [isIdentityUnlocked, setIdentityUnlocked] = useState(false);
   const [needsUnlock, setNeedsUnlock] = useState(false);
-  const [currentView, setCurrentView] = useState('boards'); // 'boards' or 'pm'
+  const [currentView, setCurrentView] = useState('boards');
+  const [pmRecipient, setPmRecipient] = useState(null); // NEW: State to hold PM recipient info
 
   const setAuthToken = (newToken) => {
     if (newToken) {
@@ -197,12 +204,21 @@ function App() {
 
   const handleSelectBoard = (boardId, boardName) => {
     setSelectedBoard({ id: boardId, name: boardName });
-    setCurrentView('boards'); // Ensure view is correct when selecting a board
+    setCurrentView('boards');
   };
   
   const handleViewChange = (view) => {
-    setSelectedBoard(null); // Deselect board when switching views
+    setSelectedBoard(null);
+    setPmRecipient(null); // Clear any pending PM recipient
     setCurrentView(view);
+  };
+
+  // NEW: Function to initiate a PM from another component
+  const handleStartPrivateMessage = (pubkey, displayName) => {
+    // We pass the displayName (Moo-ID) to the recipient field, as the backend
+    // can resolve it. If not, the user can paste the full pubkey.
+    setPmRecipient({ identifier: pubkey }); 
+    setCurrentView('pm');
   };
 
   const handleUnlockSuccess = () => {
@@ -224,12 +240,11 @@ function App() {
 
   const renderMainContent = () => {
     if (currentView === 'pm') {
-      return <PrivateMessageClient setNeedsUnlock={setNeedsUnlock} />;
+      return <PrivateMessageClient setNeedsUnlock={setNeedsUnlock} initialRecipient={pmRecipient} />;
     }
     
-    // Default to boards view
     if (selectedBoard) {
-      return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} isIdentityUnlocked={isIdentityUnlocked} setNeedsUnlock={setNeedsUnlock} />;
+      return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} onStartPrivateMessage={handleStartPrivateMessage} />;
     }
     return <MessageBoardList onSelectBoard={handleSelectBoard} />;
   };

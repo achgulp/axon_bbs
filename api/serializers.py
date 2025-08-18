@@ -18,6 +18,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('username', 'password')
 
     def create(self, validated_data):
+  
         user = User.objects.create_user(
             username=validated_data['username'],
             password=validated_data['password'],
@@ -26,12 +27,14 @@ class UserSerializer(serializers.ModelSerializer):
             user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
             os.makedirs(user_data_dir, exist_ok=True)
             salt = generate_salt()
+        
             with open(os.path.join(user_data_dir, 'salt.bin'), 'wb') as f:
                 f.write(salt)
             encryption_key = derive_key_from_password(validated_data['password'], salt)
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(
                 storage_path=identity_storage_path,
+               
                 encryption_key=encryption_key
             )
             identity = identity_service.generate_and_add_identity(name="default")
@@ -53,6 +56,7 @@ class FileAttachmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = FileAttachment
         fields = ('id', 'filename', 'content_type', 'size', 'created_at')
+   
         read_only_fields = fields
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -62,25 +66,27 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ('id', 'subject', 'body', 'created_at', 'author_display', 'attachments')
+        # UPDATED: Added 'pubkey' to the fields list.
+        fields = ('id', 'subject', 'body', 'created_at', 'author_display', 'attachments', 'pubkey')
 
     def get_author_display(self, obj):
         if obj.author:
             return obj.author.nickname if obj.author.nickname else obj.author.username
         elif obj.pubkey:
+ 
             alias = Alias.objects.filter(pubkey=obj.pubkey, verified=True).first()
             if alias:
                 return alias.nickname
             else:
                 short_id = generate_short_id(obj.pubkey, length=8)
                 return f"Moo-{short_id}"
+        
         return 'Anonymous'
 
-# NEW: Serializer for Private Messages
 class PrivateMessageSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source='author.username', read_only=True)
     recipient_username = serializers.CharField(source='recipient.username', read_only=True)
-    decrypted_body = serializers.CharField(read_only=True) # Populated by the view
+    decrypted_body = serializers.CharField(read_only=True)
     
     class Meta:
         model = PrivateMessage
