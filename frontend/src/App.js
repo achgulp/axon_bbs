@@ -39,7 +39,6 @@ const MessageBoardList = ({ onSelectBoard }) => {
   );
 };
 
-// --- Private Message Client Component (UPDATED) ---
 const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
@@ -57,7 +56,6 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
     apiClient.get('/api/pm/list/')
       .then(response => setMessages(response.data))
       .catch(err => {
-        // CORRECTED: This now correctly handles the identity locked error.
         if (err.response && err.response.data.error === 'identity_locked') {
           setNeedsUnlock(true);
         } else {
@@ -170,7 +168,120 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
 
 
 function App() {
-  // ... (rest of the App component is unchanged)
+  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [authView, setAuthView] = useState('login');
+  const [selectedBoard, setSelectedBoard] = useState(null);
+  const [isIdentityUnlocked, setIdentityUnlocked] = useState(false);
+  const [needsUnlock, setNeedsUnlock] = useState(false);
+  const [currentView, setCurrentView] = useState('boards');
+  const [pmRecipient, setPmRecipient] = useState(null);
+
+  const setAuthToken = (newToken) => {
+    if (newToken) {
+      localStorage.setItem('token', newToken);
+    } else {
+      localStorage.removeItem('token');
+      setIdentityUnlocked(false);
+    }
+    setToken(newToken);
+  };
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    if (storedToken) {
+      setToken(storedToken);
+    }
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await apiClient.post('/api/logout/');
+    } catch (err) {
+      console.error("Failed to clear server session, logging out client-side anyway.", err);
+    } finally {
+      setAuthToken(null);
+    }
+  };
+
+  const handleSelectBoard = (boardId, boardName) => {
+    setSelectedBoard({ id: boardId, name: boardName });
+    setCurrentView('boards');
+  };
+  
+  const handleViewChange = (view) => {
+    setSelectedBoard(null);
+    setPmRecipient(null);
+    setCurrentView(view);
+  };
+
+  const handleStartPrivateMessage = (pubkey, displayName) => {
+    setPmRecipient({ pubkey: pubkey, displayName: displayName });
+    setCurrentView('pm');
+  };
+
+  const handleUnlockSuccess = () => {
+    setIdentityUnlocked(true);
+    setNeedsUnlock(false);
+  };
+
+  if (!token) {
+    return (
+      <div className="bg-gray-800 min-h-screen">
+        {authView === 'login' ? (
+          <LoginScreen onLogin={setAuthToken} onNavigateToRegister={() => setAuthView('register')} />
+        ) : (
+          <RegisterScreen onRegisterSuccess={() => setAuthView('login')} onNavigateToLogin={() => setAuthView('login')} />
+        )}
+      </div>
+    );
+  }
+
+  const renderMainContent = () => {
+    if (currentView === 'pm') {
+      return <PrivateMessageClient setNeedsUnlock={setNeedsUnlock} initialRecipient={pmRecipient} />;
+    }
+    
+    if (selectedBoard) {
+      return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} onStartPrivateMessage={handleStartPrivateMessage} />;
+    }
+    return <MessageBoardList onSelectBoard={handleSelectBoard} />;
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-gray-300 font-sans">
+      {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => setNeedsUnlock(false)} />}
+
+      <div className="flex flex-col md:flex-row">
+        <div className="w-full md:w-60 bg-gray-800 p-4 border-r border-gray-700 flex-shrink-0">
+          <div className="flex items-center text-2xl font-bold text-white mb-6">
+            <img src="/axon.png" alt="Axon logo" className="h-12 w-12 mr-3"/>
+            <h2>Axon BBS</h2>
+          </div>
+          <nav className="space-y-2">
+            <div className="p-2">
+              <h3 className="font-semibold text-gray-400 mb-2">Menu</h3>
+              <SideBarButton onClick={() => handleViewChange('boards')}>Message Boards</SideBarButton>
+              <SideBarButton onClick={() => handleViewChange('pm')}>Private Mail</SideBarButton>
+            </div>
+            <div className="p-2">
+              <h3 className="font-semibold text-gray-400 mb-2">User</h3>
+              <SideBarButton
+                onClick={() => setNeedsUnlock(true)}
+                className={isIdentityUnlocked ? 'text-green-400' : 'text-yellow-400'}
+              >
+                {isIdentityUnlocked ? '✓ Identity Unlocked' : '✗ Unlock Identity'}
+              </SideBarButton>
+              <SideBarButton onClick={() => alert("Profile not yet implemented.")}>Profile</SideBarButton>
+              <SideBarButton onClick={handleLogout}>Logout</SideBarButton>
+            </div>
+          </nav>
+        </div>
+        <main className="flex-1 p-6">
+          {renderMainContent()}
+        </main>
+      </div>
+    </div>
+  );
 }
 
 export default App;
