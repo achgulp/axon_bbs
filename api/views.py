@@ -18,7 +18,7 @@ from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializ
 from .permissions import TrustedPeerPermission
 from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage
 from core.services.identity_service import IdentityService
-from core.services.encryption_utils import derive_key_from_password, generate_checksum
+from core.services.encryption_utils import derive_key_from_password, generate_checksum, generate_short_id
 from core.services.service_manager import service_manager
 from core.services.content_validator import is_file_type_valid
 
@@ -69,50 +69,69 @@ class SendPrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        recipient_pubkey = request.data.get('recipient_pubkey')
+        identifier = request.data.get('recipient_identifier')
         subject = request.data.get('subject')
         body = request.data.get('body')
 
-        if not all([recipient_pubkey, subject, body]):
-            return Response({"error": "Recipient public key, subject, and body are required."}, status=status.HTTP_400_BAD_REQUEST)
-        
+        if not all([identifier, subject, body]):
+            return Response({"error": "Recipient identifier, subject, and body are required."}, status=status.HTTP_400_BAD_REQUEST)
+
         if not request.session.get('unencrypted_priv_key'):
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
-        
-        # Normalize the recipient key to prevent duplicates
-        try:
-            normalized_key = generate_checksum(recipient_pubkey)
-        except Exception:
-            return Response({"error": "Invalid recipient public key format."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # --- Resolve Identifier to Public Key ---
+        recipient_pubkey = None
+        # Try finding a local user or an alias first
+        local_user = User.objects.filter(username=identifier).first()
+        alias = Alias.objects.filter(nickname=identifier).first()
+
+        if local_user and local_user.pubkey:
+            recipient_pubkey = local_user.pubkey
+        elif alias and alias.pubkey:
+            recipient_pubkey = alias.pubkey
+        else:
+            # Assume the identifier is a full public key
+            try:
+                # This also serves as validation
+                generate_checksum(identifier) 
+                recipient_pubkey = identifier
+            except Exception:
+                return Response({"error": "Recipient not found or identifier is not a valid public key."}, status=status.HTTP_404_NOT_FOUND)
 
         if not service_manager.bitsync_service:
             return Response({"error": "BitSync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         try:
-            # The recipient may or may not be a local user
-            recipient_user = User.objects.filter(pubkey=recipient_pubkey).first()
+            # --- Auto-create Alias on first contact ---
+            if not Alias.objects.filter(pubkey=recipient_pubkey).exists():
+                # Don't create an alias for a local user
+                if not User.objects.filter(pubkey=recipient_pubkey).exists():
+                    moo_id = f"Moo-{generate_short_id(recipient_pubkey, length=8)}"
+                    # Ensure the generated Moo-ID is unique before creating it
+                    if not Alias.objects.filter(nickname=moo_id).exists():
+                        Alias.objects.create(pubkey=recipient_pubkey, nickname=moo_id)
+                        logger.info(f"Created new alias '{moo_id}' for first-time contact.")
 
+            recipient_user = User.objects.filter(pubkey=recipient_pubkey).first()
             message_content = {"subject": subject, "body": body}
             raw_data = json.dumps(message_content).encode('utf-8')
-            
             manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(
-                raw_data,
-                recipients_pubkeys=[recipient_pubkey]
+                raw_data, recipients_pubkeys=[recipient_pubkey]
             )
-
             PrivateMessage.objects.create(
                 author=request.user,
-                recipient=recipient_user,  # This will be the user object if local, otherwise None
+                recipient=recipient_user,
                 recipient_pubkey=recipient_pubkey,
                 subject=subject,
                 manifest=manifest
             )
-            logger.info(f"User {request.user.username} sent a private message to pubkey starting with {recipient_pubkey[:12]}...")
+            logger.info(f"User {request.user.username} sent PM to key starting with {recipient_pubkey[:12]}...")
             return Response({"status": "Message sent successfully."}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             logger.error(f"Failed to send private message for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "Server error while sending message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class PrivateMessageListView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -124,7 +143,6 @@ class PrivateMessageListView(views.APIView):
         if not service_manager.sync_service:
             return Response({"error": "Sync service is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-        # Find messages where the recipient is the logged-in user's public key
         user_pubkey = request.user.pubkey
         if not user_pubkey:
             return Response({"error": "Current user does not have a public key."}, status=status.HTTP_400_BAD_REQUEST)
@@ -134,7 +152,6 @@ class PrivateMessageListView(views.APIView):
         decrypted_messages = []
         for pm in received_messages:
             try:
-                # The body is now in the manifest, so we must decrypt it.
                 decrypted_content_bytes = service_manager.sync_service.get_decrypted_content(pm.manifest)
                 if decrypted_content_bytes:
                     content = json.loads(decrypted_content_bytes.decode('utf-8'))
@@ -333,19 +350,27 @@ class SyncView(views.APIView):
         try:
             server_now = timezone.now()
             since_dt = timezone.datetime.fromisoformat(since_str.replace(' ', '+'))
+            
+            # Query for all content types to be federated
             new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
+            new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, manifest__isnull=False) # NEW
+
             manifests = []
-            for msg in new_messages:
-                msg.manifest['content_type'] = 'message'
-                manifests.append(msg.manifest)
-            for f in new_files:
-                f.manifest['content_type'] = 'file'
-                f.manifest['filename'] = f.filename
-                f.manifest['content_type_val'] = f.content_type
-                f.manifest['size'] = f.size
-                manifests.append(f.manifest)
-            
+            for item in list(new_messages) + list(new_files) + list(new_pms):
+                item_manifest = item.manifest
+                if isinstance(item, Message):
+                    item_manifest['content_type'] = 'message'
+                elif isinstance(item, FileAttachment):
+                    item_manifest['content_type'] = 'file'
+                    item_manifest['filename'] = item.filename
+                    item_manifest['content_type_val'] = item.content_type
+                    item_manifest['size'] = item.size
+                elif isinstance(item, PrivateMessage):
+                    item_manifest['content_type'] = 'pm'
+                
+                manifests.append(item_manifest)
+
             return JsonResponse({
                 "manifests": manifests,
                 "server_timestamp": server_now.isoformat()
@@ -360,7 +385,8 @@ class BitSyncHasContentView(views.APIView):
     permission_classes = [TrustedPeerPermission]
     def get(self, request, content_hash, *args, **kwargs):
         has_content = Message.objects.filter(manifest__content_hash=content_hash).exists() or \
-                      FileAttachment.objects.filter(manifest__content_hash=content_hash).exists()
+                      FileAttachment.objects.filter(manifest__content_hash=content_hash).exists() or \
+                      PrivateMessage.objects.filter(manifest__content_hash=content_hash).exists()
         return Response(status=status.HTTP_200_OK if has_content else status.HTTP_404_NOT_FOUND)
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -369,7 +395,7 @@ class BitSyncChunkView(views.APIView):
     def get(self, request, content_hash, chunk_index, *args, **kwargs):
         if not service_manager.bitsync_service: return Response({"error": "BitSync service not available"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         chunk_path = service_manager.bitsync_service.get_chunk_path(content_hash, chunk_index)
-        if chunk_path:
+        if chunk_path and os.path.exists(chunk_path):
             try:
                 with open(chunk_path, 'rb') as f:
                     return HttpResponse(f.read(), content_type='application/octet-stream')

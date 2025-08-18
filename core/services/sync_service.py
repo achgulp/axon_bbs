@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 
-from core.models import TrustedInstance, Message, MessageBoard, FileAttachment
+from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User
 from .encryption_utils import generate_checksum
 
 logger = logging.getLogger(__name__)
@@ -55,8 +55,6 @@ class SyncService:
     
     def _load_identity(self):
         try:
-            # UPDATED: The query now also ensures 'is_trusted_peer' is False,
-            # preventing the "split brain" identity problem permanently.
             self.local_instance = TrustedInstance.objects.filter(
                 encrypted_private_key__isnull=False,
                 is_trusted_peer=False
@@ -76,9 +74,12 @@ class SyncService:
         from .service_manager import service_manager
         logger.info("Checking for any incomplete downloads to resume...")
         
-        all_content_items = list(FileAttachment.objects.all()) + list(Message.objects.filter(manifest__isnull=False))
+        all_content = list(FileAttachment.objects.all()) + \
+                      list(Message.objects.filter(manifest__isnull=False)) + \
+                      list(PrivateMessage.objects.filter(manifest__isnull=False))
+        
         incomplete_items = [
-            item for item in all_content_items
+            item for item in all_content
             if item.manifest and not service_manager.bitsync_service.are_all_chunks_local(item.manifest)
         ]
         
@@ -103,19 +104,13 @@ class SyncService:
 
     def poll_peers(self):
         peers = TrustedInstance.objects.filter(is_trusted_peer=True)
-        if not peers.exists():
-            return
+        if not peers.exists(): return
         
         logger.info(f"Beginning to poll {peers.count()} peer(s) for new content...")
         for peer in peers:
-            if not peer.web_ui_onion_url:
-                continue
+            if not peer.web_ui_onion_url: continue
             
-            if peer.last_synced_at:
-                last_sync = peer.last_synced_at - timedelta(minutes=10)
-            else:
-                last_sync = datetime.min.replace(tzinfo=timezone.utc)
-
+            last_sync = peer.last_synced_at - timedelta(minutes=10) if peer.last_synced_at else datetime.min.replace(tzinfo=timezone.utc)
             proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
             
             server_timestamp_str = None
@@ -137,18 +132,13 @@ class SyncService:
                 logger.error(f"<-- Network error while contacting peer {peer.web_ui_onion_url}: {e}")
 
             finally:
-                if server_timestamp_str:
-                    peer.last_synced_at = django_timezone.datetime.fromisoformat(server_timestamp_str)
-                else:
-                    peer.last_synced_at = django_timezone.now()
+                peer.last_synced_at = django_timezone.datetime.fromisoformat(server_timestamp_str) if server_timestamp_str else django_timezone.now()
                 peer.save()
                 logger.info(f"Timestamp for peer {peer.web_ui_onion_url} updated to {peer.last_synced_at.isoformat()}")
 
     def _download_done_callback(self, manifest, future):
-        """Callback that runs after a download future completes."""
         content_hash = manifest.get('content_hash')
         self.currently_downloading.discard(content_hash)
-
         try:
             encrypted_data = future.result()
             if encrypted_data:
@@ -158,58 +148,40 @@ class SyncService:
 
     def _schedule_download(self, manifest):
         content_hash = manifest.get('content_hash')
-        if content_hash in self.currently_downloading:
-            return
+        if content_hash in self.currently_downloading: return
         
-        item_name = manifest.get('filename') or manifest.get('content_type', 'Message')
+        item_name = manifest.get('filename') or manifest.get('content_type', 'Content')
         logger.info(f"Scheduling download for: '{item_name}' ({content_hash[:10]}...)")
         self.currently_downloading.add(content_hash)
         
         future = self.download_executor.submit(self._download_content, manifest)
-        callback = partial(self._download_done_callback, manifest)
-        future.add_done_callback(callback)
+        future.add_done_callback(partial(self._download_done_callback, manifest))
 
     def _process_received_manifests(self, manifests: list):
-        """
-        Processes manifests received from a peer.
-        This now ONLY checks if the content exists and schedules a download if not.
-        It does NOT create any database objects to prevent race conditions.
-        """
         for manifest in manifests:
             content_hash = manifest.get('content_hash')
-            if not content_hash:
-                continue
+            if not content_hash: continue
             
-            # Check if we already have this content fully processed
-            has_file = FileAttachment.objects.filter(manifest__content_hash=content_hash).exists()
-            has_message = Message.objects.filter(manifest__content_hash=content_hash).exists()
+            exists = Message.objects.filter(manifest__content_hash=content_hash).exists() or \
+                     FileAttachment.objects.filter(manifest__content_hash=content_hash).exists() or \
+                     PrivateMessage.objects.filter(manifest__content_hash=content_hash).exists()
 
-            if has_file or has_message:
-                continue
-
-            # If we don't have it, schedule it for download.
-            # The object will be created in the DB after the download is complete.
-            self._schedule_download(manifest)
+            if not exists:
+                self._schedule_download(manifest)
 
     def _process_completed_download(self, manifest, encrypted_data):
-        """
-        Decrypts content, re-keys the manifest, and creates the DB object in one atomic step.
-        This runs after a download is fully complete.
-        """
         from .service_manager import service_manager
         content_hash = manifest.get('content_hash')
 
-        # If we already processed this somehow while downloading, skip.
         if Message.objects.filter(manifest__content_hash=content_hash).exists() or \
-           FileAttachment.objects.filter(manifest__content_hash=content_hash).exists():
+           FileAttachment.objects.filter(manifest__content_hash=content_hash).exists() or \
+           PrivateMessage.objects.filter(manifest__content_hash=content_hash).exists():
             return
 
         logger.info(f"Processing newly completed download for hash {content_hash[:10]}...")
         decrypted_data = self._decrypt_data(encrypted_data, manifest)
-        if not decrypted_data:
-            return  # Decryption failed
+        if not decrypted_data: return
 
-        # RE-KEY STEP: Re-key the manifest for our own peers *before* saving anything.
         try:
             final_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
             logger.info(f"Manifest {content_hash[:10]} successfully re-keyed for local peers.")
@@ -217,25 +189,18 @@ class SyncService:
             logger.error(f"Failed to re-key manifest for {content_hash[:10]}, aborting save. Error: {e}")
             return
         
-        # SAVE STEP: Now create the database object with the final, re-keyed manifest.
         content_type = final_manifest.get('content_type')
         try:
             if content_type == 'message':
                 content = json.loads(decrypted_data)
                 board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
-                
                 message = Message.objects.create(
                     board=board, subject=content.get('subject'), body=content.get('body'),
                     pubkey=content.get('pubkey'), manifest=final_manifest
                 )
-                
                 if 'attachment_hashes' in content:
-                    attachments = FileAttachment.objects.filter(manifest__content_hash__in=content['attachment_hashes'])
-                    if attachments.exists():
-                        message.attachments.set(attachments)
-                        logger.info(f"Successfully linked {attachments.count()} attachment(s) to message '{content.get('subject')}'.")
-                
-                logger.info(f"Successfully saved new message: '{content.get('subject')}'")
+                    message.attachments.set(FileAttachment.objects.filter(manifest__content_hash__in=content['attachment_hashes']))
+                logger.info(f"Successfully saved new message: '{message.subject}'")
 
             elif content_type == 'file':
                 FileAttachment.objects.create(
@@ -245,7 +210,24 @@ class SyncService:
                     manifest=final_manifest
                 )
                 logger.info(f"Successfully saved new file: '{final_manifest.get('filename')}'")
-        
+            
+            elif content_type == 'pm':
+                # This is a federated PM. We need to see if it's for one of our local users.
+                pm_content = json.loads(decrypted_data)
+                # We can't know the recipient_pubkey without decrypting the AES key first,
+                # which we already did in _decrypt_data. So we need to find it from the manifest.
+                local_checksum = generate_checksum(self.local_instance.pubkey)
+                if local_checksum in final_manifest['encrypted_aes_keys']:
+                    recipient = User.objects.filter(pubkey=self.local_instance.pubkey).first()
+                    if recipient:
+                        PrivateMessage.objects.create(
+                            recipient=recipient,
+                            recipient_pubkey=recipient.pubkey,
+                            subject=pm_content.get('subject'),
+                            manifest=final_manifest
+                        )
+                        logger.info(f"Successfully received and saved a federated PM for user '{recipient.username}'.")
+
         except Exception as e:
             logger.error(f"Failed to create database object from manifest {content_hash[:10]}: {e}")
 

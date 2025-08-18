@@ -62,7 +62,7 @@ class BannedPubkey(models.Model):
 
 class Alias(models.Model):
     pubkey = models.TextField(unique=True)
-    nickname = models.CharField(max_length=50)
+    nickname = models.CharField(max_length=50, unique=True)
     verified = models.BooleanField(default=False)
     added_at = models.DateTimeField(auto_now_add=True)
     class Meta:
@@ -116,15 +116,11 @@ class Message(Content):
         return f"'{self.subject}' by {self.author.username if self.author else 'system'}"
 
 class PrivateMessage(Content):
-    # UPDATED: The recipient is now identified by their public key to support federation.
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail', null=True, blank=True)
     recipient_pubkey = models.TextField()
     subject = models.CharField(max_length=255)
     is_read = models.BooleanField(default=False)
     manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for E2E encrypted content.")
-    
-    # Body is now stored in the encrypted manifest, so this field is no longer needed.
-    # body = models.TextField()
 
     def __str__(self):
         recipient_display = "Unknown"
