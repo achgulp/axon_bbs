@@ -170,54 +170,65 @@ class SyncService:
         future.add_done_callback(callback)
 
     def _process_received_manifests(self, manifests: list):
+        """
+        Processes manifests received from a peer.
+        This now ONLY checks if the content exists and schedules a download if not.
+        It does NOT create any database objects to prevent race conditions.
+        """
         for manifest in manifests:
             content_hash = manifest.get('content_hash')
             if not content_hash:
                 continue
             
+            # Check if we already have this content fully processed
             has_file = FileAttachment.objects.filter(manifest__content_hash=content_hash).exists()
             has_message = Message.objects.filter(manifest__content_hash=content_hash).exists()
 
             if has_file or has_message:
                 continue
 
-            content_type = manifest.get('content_type')
-            if content_type == 'file':
-                logger.info(f"Discovered new file manifest: '{manifest.get('filename')}'")
-                FileAttachment.objects.create(
-                    filename=manifest.get('filename', 'unknown'),
-                    content_type=manifest.get('content_type_val', 'application/octet-stream'),
-                    size=manifest.get('size', 0),
-                    manifest=manifest
-                )
-                self._schedule_download(manifest)
-            elif content_type == 'message':
-                logger.info(f"Discovered new message manifest: {content_hash[:10]}...")
-                self._schedule_download(manifest)
-    
+            # If we don't have it, schedule it for download.
+            # The object will be created in the DB after the download is complete.
+            self._schedule_download(manifest)
+
     def _process_completed_download(self, manifest, encrypted_data):
-        """Decrypts content and creates DB objects after a download is complete."""
+        """
+        Decrypts content, re-keys the manifest, and creates the DB object in one atomic step.
+        This runs after a download is fully complete.
+        """
         from .service_manager import service_manager
         content_hash = manifest.get('content_hash')
 
-        # First, handle the primary content (the message itself)
-        if manifest.get('content_type') == 'message' and not Message.objects.filter(manifest__content_hash=content_hash).exists():
-            logger.info(f"Processing newly completed message content for hash {content_hash[:10]}...")
-            decrypted_data = self._decrypt_data(encrypted_data, manifest)
-            if not decrypted_data:
-                return # Decryption failed, stop processing
-            
-            try:
+        # If we already processed this somehow while downloading, skip.
+        if Message.objects.filter(manifest__content_hash=content_hash).exists() or \
+           FileAttachment.objects.filter(manifest__content_hash=content_hash).exists():
+            return
+
+        logger.info(f"Processing newly completed download for hash {content_hash[:10]}...")
+        decrypted_data = self._decrypt_data(encrypted_data, manifest)
+        if not decrypted_data:
+            return  # Decryption failed
+
+        # RE-KEY STEP: Re-key the manifest for our own peers *before* saving anything.
+        try:
+            final_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
+            logger.info(f"Manifest {content_hash[:10]} successfully re-keyed for local peers.")
+        except Exception as e:
+            logger.error(f"Failed to re-key manifest for {content_hash[:10]}, aborting save. Error: {e}")
+            return
+        
+        # SAVE STEP: Now create the database object with the final, re-keyed manifest.
+        content_type = final_manifest.get('content_type')
+        try:
+            if content_type == 'message':
                 content = json.loads(decrypted_data)
                 board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
                 
-                # Create the message object
                 message = Message.objects.create(
                     board=board, subject=content.get('subject'), body=content.get('body'),
-                    pubkey=content.get('pubkey'), manifest=manifest
+                    pubkey=content.get('pubkey'), manifest=final_manifest
                 )
                 
-                # Link any attachments
                 if 'attachment_hashes' in content:
                     attachments = FileAttachment.objects.filter(manifest__content_hash__in=content['attachment_hashes'])
                     if attachments.exists():
@@ -226,36 +237,17 @@ class SyncService:
                 
                 logger.info(f"Successfully saved new message: '{content.get('subject')}'")
 
-                # --- RE-KEY LOGIC ---
-                # Now that the message is saved, re-key its manifest for our own peers
-                try:
-                    new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(message.manifest)
-                    if new_manifest != message.manifest:
-                        message.manifest = new_manifest
-                        message.save()
-                        logger.info(f"Successfully re-keyed manifest for message '{message.subject}' for local peers.")
-                except Exception as e:
-                    logger.error(f"Failed to re-key manifest for message {message.id}: {e}")
-
-            except Exception as e:
-                logger.error(f"Failed to create message from manifest {content_hash[:10]}: {e}")
-
-        # --- RE-KEY LOGIC FOR FILES ---
-        # Separately, check if this download was for a file attachment, and re-key it
-        if manifest.get('content_type') == 'file':
-            try:
-                attachment = FileAttachment.objects.get(manifest__content_hash=content_hash)
-                new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(attachment.manifest)
-                if new_manifest != attachment.manifest:
-                    attachment.manifest = new_manifest
-                    attachment.save()
-                    logger.info(f"Successfully re-keyed manifest for file '{attachment.filename}' for local peers.")
-            except FileAttachment.DoesNotExist:
-                # This can happen if the file is just an attachment for a message processed above
-                pass
-            except Exception as e:
-                logger.error(f"Failed to re-key manifest for file with hash {content_hash}: {e}")
-
+            elif content_type == 'file':
+                FileAttachment.objects.create(
+                    filename=final_manifest.get('filename', 'unknown'),
+                    content_type=final_manifest.get('content_type_val', 'application/octet-stream'),
+                    size=final_manifest.get('size', 0),
+                    manifest=final_manifest
+                )
+                logger.info(f"Successfully saved new file: '{final_manifest.get('filename')}'")
+        
+        except Exception as e:
+            logger.error(f"Failed to create database object from manifest {content_hash[:10]}: {e}")
 
     def _find_seeders(self, content_hash: str) -> list:
         logger.info(f"Discovering seeders for content {content_hash[:10]}...")
