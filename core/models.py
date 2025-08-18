@@ -70,7 +70,6 @@ class Alias(models.Model):
     def __str__(self):
         return f"{self.nickname} ({self.pubkey[:12]}...)"
 
-# ✅ NEW: Model for managing allowed file types by their magic numbers.
 class ValidFileType(models.Model):
     mime_type = models.CharField(max_length=100, unique=True, help_text="e.g., 'image/jpeg'")
     description = models.CharField(max_length=255, blank=True)
@@ -97,9 +96,6 @@ class MessageBoard(models.Model):
         return self.name
 
 class FileAttachment(Content):
-    """
-    Represents a single file uploaded by a user, prepared for BitSync distribution.
-    """
     filename = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)
     size = models.PositiveIntegerField()
@@ -109,7 +105,6 @@ class FileAttachment(Content):
         return f"{self.filename} ({self.id})"
 
 class Message(Content):
-    """Represents a single post within a MessageBoard."""
     board = models.ForeignKey(MessageBoard, on_delete=models.CASCADE, related_name='messages')
     subject = models.CharField(max_length=255)
     body = models.TextField()
@@ -121,15 +116,23 @@ class Message(Content):
         return f"'{self.subject}' by {self.author.username if self.author else 'system'}"
 
 class PrivateMessage(Content):
-    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail')
+    # UPDATED: The recipient is now identified by their public key to support federation.
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail', null=True, blank=True)
+    recipient_pubkey = models.TextField()
     subject = models.CharField(max_length=255)
-    body = models.TextField()
     is_read = models.BooleanField(default=False)
-    # NEW: Manifest field for BitSync E2E encryption.
     manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for E2E encrypted content.")
     
+    # Body is now stored in the encrypted manifest, so this field is no longer needed.
+    # body = models.TextField()
+
     def __str__(self):
-        return f"'{self.subject}' to {self.recipient.username} from {self.author.username if self.author else 'system'}"
+        recipient_display = "Unknown"
+        if self.recipient:
+            recipient_display = self.recipient.username
+        else:
+            recipient_display = f"PubKey starting with {self.recipient_pubkey[:12]}..."
+        return f"'{self.subject}' to {recipient_display} from {self.author.username if self.author else 'system'}"
 
 class TrustedInstance(models.Model):
     web_ui_onion_url = models.URLField(max_length=255, blank=True, null=True)
