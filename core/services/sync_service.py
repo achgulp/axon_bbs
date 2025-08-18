@@ -49,7 +49,7 @@ class SyncService:
                 else:
                     logger.warning("Sync service cannot run without a configured local instance identity. Will check again in %s seconds.", self.poll_interval)
             except Exception as e:
-                logger.error(f"Error in sync service poll loop: {e}", exc_info=True)
+                 logger.error(f"Error in sync service poll loop: {e}", exc_info=True)
             
             time.sleep(self.poll_interval)
     
@@ -197,30 +197,65 @@ class SyncService:
     
     def _process_completed_download(self, manifest, encrypted_data):
         """Decrypts content and creates DB objects after a download is complete."""
+        from .service_manager import service_manager
         content_hash = manifest.get('content_hash')
-        if manifest.get('content_type') != 'message' or Message.objects.filter(manifest__content_hash=content_hash).exists():
-            return
 
-        logger.info(f"Processing newly completed message content for hash {content_hash[:10]}...")
-        decrypted_data = self._decrypt_data(encrypted_data, manifest)
-        if not decrypted_data:
-            return
-        
-        try:
-            content = json.loads(decrypted_data)
-            board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
-            message = Message.objects.create(
-                board=board, subject=content.get('subject'), body=content.get('body'),
-                pubkey=content.get('pubkey'), manifest=manifest
-            )
-            if 'attachment_hashes' in content:
-                attachments = FileAttachment.objects.filter(manifest__content_hash__in=content['attachment_hashes'])
-                if attachments.exists():
-                    message.attachments.set(attachments)
-                    logger.info(f"Successfully linked {attachments.count()} attachment(s) to message '{content.get('subject')}'.")
-            logger.info(f"Successfully saved new message: '{content.get('subject')}'")
-        except Exception as e:
-            logger.error(f"Failed to create message from manifest {content_hash[:10]}: {e}")
+        # First, handle the primary content (the message itself)
+        if manifest.get('content_type') == 'message' and not Message.objects.filter(manifest__content_hash=content_hash).exists():
+            logger.info(f"Processing newly completed message content for hash {content_hash[:10]}...")
+            decrypted_data = self._decrypt_data(encrypted_data, manifest)
+            if not decrypted_data:
+                return # Decryption failed, stop processing
+            
+            try:
+                content = json.loads(decrypted_data)
+                board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
+                
+                # Create the message object
+                message = Message.objects.create(
+                    board=board, subject=content.get('subject'), body=content.get('body'),
+                    pubkey=content.get('pubkey'), manifest=manifest
+                )
+                
+                # Link any attachments
+                if 'attachment_hashes' in content:
+                    attachments = FileAttachment.objects.filter(manifest__content_hash__in=content['attachment_hashes'])
+                    if attachments.exists():
+                        message.attachments.set(attachments)
+                        logger.info(f"Successfully linked {attachments.count()} attachment(s) to message '{content.get('subject')}'.")
+                
+                logger.info(f"Successfully saved new message: '{content.get('subject')}'")
+
+                # --- RE-KEY LOGIC ---
+                # Now that the message is saved, re-key its manifest for our own peers
+                try:
+                    new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(message.manifest)
+                    if new_manifest != message.manifest:
+                        message.manifest = new_manifest
+                        message.save()
+                        logger.info(f"Successfully re-keyed manifest for message '{message.subject}' for local peers.")
+                except Exception as e:
+                    logger.error(f"Failed to re-key manifest for message {message.id}: {e}")
+
+            except Exception as e:
+                logger.error(f"Failed to create message from manifest {content_hash[:10]}: {e}")
+
+        # --- RE-KEY LOGIC FOR FILES ---
+        # Separately, check if this download was for a file attachment, and re-key it
+        if manifest.get('content_type') == 'file':
+            try:
+                attachment = FileAttachment.objects.get(manifest__content_hash=content_hash)
+                new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(attachment.manifest)
+                if new_manifest != attachment.manifest:
+                    attachment.manifest = new_manifest
+                    attachment.save()
+                    logger.info(f"Successfully re-keyed manifest for file '{attachment.filename}' for local peers.")
+            except FileAttachment.DoesNotExist:
+                # This can happen if the file is just an attachment for a message processed above
+                pass
+            except Exception as e:
+                logger.error(f"Failed to re-key manifest for file with hash {content_hash}: {e}")
+
 
     def _find_seeders(self, content_hash: str) -> list:
         logger.info(f"Discovering seeders for content {content_hash[:10]}...")
@@ -279,7 +314,7 @@ class SyncService:
                              f.write(chunk_data)
                     logger.info(f"  - Chunk {chunk_index + 1}/{num_chunks} for '{item_name}' downloaded.")
                 else: 
-                    logger.error(f"  - Failed to download/verify chunk {chunk_index + 1} for '{item_name}'. Will retry on next sync.")
+                    logger.error(f"   - Failed to download/verify chunk {chunk_index + 1} for '{item_name}'. Will retry on next sync.")
         if len(downloaded_chunks) == num_chunks:
             logger.info(f"Download complete for '{item_name}'.")
             return b"".join(downloaded_chunks[i] for i in range(num_chunks))
