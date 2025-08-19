@@ -8,7 +8,8 @@ from django.conf import settings
 import os
 import logging
 import json
-import hashlib # NEW: Import hashlib for de-duplication
+import base64
+import hashlib
 from datetime import timedelta
 from django.utils import timezone
 from django.apps import apps
@@ -65,13 +66,13 @@ class ImportIdentityView(views.APIView):
     def post(self, request, *args, **kwargs):
         return Response(status=status.HTTP_501_NOT_IMPLEMENTED)
 
-# --- Private Messaging Views (UPDATED for Federation) ---
+# --- Private Messaging Views ---
 class SendPrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         identifier = request.data.get('recipient_identifier')
-        pubkey = request.data.get('recipient_pubkey') # Can be null on subsequent sends
+        pubkey = request.data.get('recipient_pubkey')
         subject = request.data.get('subject')
         body = request.data.get('body')
 
@@ -81,7 +82,6 @@ class SendPrivateMessageView(views.APIView):
         if not request.session.get('unencrypted_priv_key'):
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # --- Resolve Identifier to Public Key ---
         recipient_pubkey = None
         if pubkey:
             recipient_pubkey = pubkey
@@ -100,7 +100,6 @@ class SendPrivateMessageView(views.APIView):
             return Response({"error": "BitSync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         try:
-            # --- Auto-create Alias on first contact ---
             is_new_contact = not Alias.objects.filter(pubkey=recipient_pubkey).exists()
             is_remote_user = not User.objects.filter(pubkey=recipient_pubkey).exists()
 
@@ -113,10 +112,14 @@ class SendPrivateMessageView(views.APIView):
                     logger.warning(f"Did not create alias for {recipient_pubkey[:12]} because nickname '{nickname_to_create}' already exists.")
 
             recipient_user = User.objects.filter(pubkey=recipient_pubkey).first()
-            message_content = {"subject": subject, "body": body}
-            raw_data = json.dumps(message_content).encode('utf-8')
-            manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(
-                raw_data, recipients_pubkeys=[recipient_pubkey]
+            
+            pm_content = {
+                "type": "pm",
+                "subject": subject,
+                "body": body
+            }
+            content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(
+                pm_content, recipients_pubkeys=[recipient_pubkey]
             )
             PrivateMessage.objects.create(
                 author=request.user,
@@ -167,7 +170,6 @@ class PrivateMessageListView(views.APIView):
         serializer = PrivateMessageSerializer(decrypted_messages, many=True)
         return Response(serializer.data)
 
-
 # --- File Handling Views ---
 class FileUploadView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -182,19 +184,26 @@ class FileUploadView(views.APIView):
             return Response({"error": "Sync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         
         try:
-            # --- NEW: De-duplication Logic ---
             raw_data = uploaded_file.read()
-            content_hash = hashlib.sha256(raw_data).hexdigest()
-
-            # Check if a file with this exact content already exists
+            file_content = {
+                "type": "file",
+                "filename": uploaded_file.name,
+                "content_type": uploaded_file.content_type,
+                "size": uploaded_file.size,
+                "data": base64.b64encode(raw_data).decode('ascii')
+            }
+            
+            temp_hash_data = json.dumps(file_content, sort_keys=True).encode('utf-8')
+            content_hash = hashlib.sha256(temp_hash_data).hexdigest()
+            
             existing_attachment = FileAttachment.objects.filter(manifest__content_hash=content_hash).first()
             if existing_attachment:
-                logger.info(f"Duplicate file upload detected for '{uploaded_file.name}'. Reusing existing attachment {existing_attachment.id}.")
+                logger.info(f"Duplicate file upload for '{uploaded_file.name}'. Reusing existing attachment.")
                 serializer = FileAttachmentSerializer(existing_attachment)
                 return Response(serializer.data, status=status.HTTP_200_OK)
 
-            # If it's a new file, proceed with creating the manifest and storing it
-            manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(raw_data)
+            _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(file_content)
+
             attachment = FileAttachment.objects.create(
                 author=request.user, filename=uploaded_file.name, content_type=uploaded_file.content_type,
                 size=uploaded_file.size, manifest=manifest
@@ -224,11 +233,14 @@ class FileDownloadView(views.APIView):
             if decrypted_data is None:
                 return Response({"error": "Failed to retrieve or decrypt file from the network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             
-            if not is_file_type_valid(decrypted_data):
+            content = json.loads(decrypted_data)
+            file_bytes = base64.b64decode(content['data'])
+
+            if not is_file_type_valid(file_bytes):
                 logger.warning(f"Blocked download of file '{attachment.filename}' ({attachment.id}) due to invalid file type.")
                 return Response({"error": "This file type is not permitted on the server."}, status=status.HTTP_403_FORBIDDEN)
 
-            response = HttpResponse(decrypted_data, content_type=attachment.content_type)
+            response = HttpResponse(file_bytes, content_type=attachment.content_type)
             response['Content-Disposition'] = f'attachment; filename="{attachment.filename}"'
             return response
         except Exception as e:
@@ -268,20 +280,30 @@ class MessageListView(generics.ListAPIView):
 class PostMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request, *args, **kwargs):
-        user, subject, body, board_name, attachment_ids = request.user, request.data.get('subject'), request.data.get('body'), request.data.get('board_name', 'general'), request.data.get('attachment_ids', [])
-        if not all([subject, body]): return Response({"error": "Subject and body are required."}, status=status.HTTP_400_BAD_REQUEST)
-        if not request.session.get('unencrypted_priv_key'): return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+        user, subject, body = request.user, request.data.get('subject'), request.data.get('body')
+        board_name, attachment_ids = request.data.get('board_name', 'general'), request.data.get('attachment_ids', [])
+        
+        if not all([subject, body]):
+            return Response({"error": "Subject and body are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+            
         try:
             board, _ = MessageBoard.objects.get_or_create(name=board_name)
             attachments = FileAttachment.objects.filter(id__in=attachment_ids, author=user)
             attachment_hashes = [att.manifest['content_hash'] for att in attachments]
+            
             message_content = {
-                "subject": subject, "body": body, "board": board.name, "pubkey": user.pubkey,
+                "type": "message",
+                "subject": subject,
+                "body": body,
+                "board": board.name,
+                "pubkey": user.pubkey,
                 "attachment_hashes": attachment_hashes
             }
-            raw_data = json.dumps(message_content).encode('utf-8')
+            
             if service_manager.bitsync_service:
-                manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(raw_data)
+                _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(message_content)
                 message = Message.objects.create(
                     board=board, subject=subject, body=body, author=user, pubkey=user.pubkey, manifest=manifest
                 )
