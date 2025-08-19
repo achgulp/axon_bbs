@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 import base64
 import json
-import requests # NEW: Import requests library
+import requests
 from django.conf import settings
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
@@ -18,7 +18,6 @@ class UserAdmin(BaseUserAdmin):
     list_display = ('username', 'email', 'access_level', 'is_staff', 'is_banned')
     fieldsets = BaseUserAdmin.fieldsets + (
         ('BBS Info', {'fields': ('access_level', 'is_banned', 'pubkey', 'nickname')}),
-   
     )
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups', 'is_banned')
 
@@ -45,14 +44,12 @@ class MessageAdmin(admin.ModelAdmin):
             try:
                 if not message.manifest:
                     self.message_user(request, f"Message '{message.subject}' has no manifest to re-key.", level='WARNING')
-        
                     continue
                 
                 new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(message.manifest)
                 
                 message.manifest = new_manifest
                 message.save()
-    
                 updated_count += 1
             except Exception as e:
                 self.message_user(request, f"Failed to re-key message '{message.subject}': {e}", level='ERROR')
@@ -83,13 +80,12 @@ class ValidFileTypeAdmin(admin.ModelAdmin):
 
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
-    list_display = ('web_ui_onion_url', 'pubkey_checksum', 'is_trusted_peer', 'added_at')
+    list_display = ('web_ui_onion_url', 'pubkey_checksum', 'is_trusted_peer', 'last_synced_at')
     list_display_links = ('web_ui_onion_url','pubkey_checksum',)
     list_filter = ('is_trusted_peer',)
     readonly_fields = ('pubkey_checksum', 'added_at', 'last_synced_at')
     fieldsets = (
         (None, {
- 
             'fields': ('web_ui_onion_url', 'pubkey', 'is_trusted_peer')
         }),
         ('Local Instance Details', {
@@ -100,13 +96,12 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             'fields': ('added_at', 'last_synced_at')
         }),
     )
-    actions = ['generate_keys', 'fetch_peer_key']
+    actions = ['generate_keys', 'fetch_peer_key', 'reset_sync_timestamp']
 
     @admin.display(description='Pubkey Checksum')
     def pubkey_checksum(self, obj):
         if not obj.pubkey:
             return "No pubkey"
- 
         return generate_checksum(obj.pubkey)
 
     @admin.action(description='Generate and encrypt keys for LOCAL instance')
@@ -117,7 +112,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
             public_key_pem = private_key.public_key().public_bytes(
                 encoding=serialization.Encoding.PEM,
-         
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
             ).decode('utf-8')
             private_pem = private_key.private_bytes(
@@ -125,7 +119,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                 format=serialization.PrivateFormat.PKCS8,
                 encryption_algorithm=serialization.NoEncryption()
             ).decode('utf-8')
-       
             encrypted_private = f.encrypt(private_pem.encode()).decode()
             instance.pubkey = public_key_pem
             instance.encrypted_private_key = encrypted_private
@@ -166,11 +159,15 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
 
         if updated_count > 0:
             self.message_user(request, f"Finished. Successfully updated {updated_count} peer(s).", level='SUCCESS')
+    
+    @admin.action(description='Reset last synced time to force full sync')
+    def reset_sync_timestamp(self, request, queryset):
+        rows_updated = queryset.update(last_synced_at=None)
+        self.message_user(request, f"Successfully reset sync timestamp for {rows_updated} peer(s).", level='SUCCESS')
 
 
 @admin.register(Alias)
 class AliasAdmin(admin.ModelAdmin):
     list_display = ('nickname', 'pubkey', 'verified', 'added_at')
-  
     list_filter = ('verified',)
     search_fields = ('nickname', 'pubkey')
