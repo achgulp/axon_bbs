@@ -335,7 +335,6 @@ class SyncService:
             iv = base64.b64decode(manifest['encryption_iv'])
             cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
             decryptor = cipher.decryptor()
-            # CORRECTED: Added the missing .finalize() call to correctly decrypt the final block.
             padded_data = decryptor.update(encrypted_data) + decryptor.finalize()
             unpadder = PKCS7(algorithms.AES.block_size).unpadder()
             return unpadder.update(padded_data) + unpadder.finalize()
