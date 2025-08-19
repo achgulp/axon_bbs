@@ -193,13 +193,24 @@ class SyncService:
         try:
             if content_type == 'message':
                 content = json.loads(decrypted_data)
+                
+                # --- NEW: Dependency Check for Attachments ---
+                required_hashes = content.get('attachment_hashes', [])
+                if required_hashes:
+                    existing_attachments = FileAttachment.objects.filter(manifest__content_hash__in=required_hashes)
+                    if len(existing_attachments) != len(required_hashes):
+                        logger.warning(f"Message {content_hash[:10]} is waiting for attachments to download. Will retry processing later.")
+                        # Re-schedule the download. Since chunks are local, it will be instant next time.
+                        self._schedule_download(manifest)
+                        return
+                
                 board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
                 message = Message.objects.create(
                     board=board, subject=content.get('subject'), body=content.get('body'),
                     pubkey=content.get('pubkey'), manifest=final_manifest
                 )
-                if 'attachment_hashes' in content:
-                    message.attachments.set(FileAttachment.objects.filter(manifest__content_hash__in=content['attachment_hashes']))
+                if required_hashes:
+                    message.attachments.set(existing_attachments)
                 logger.info(f"Successfully saved new message: '{message.subject}'")
 
             elif content_type == 'file':
@@ -212,10 +223,7 @@ class SyncService:
                 logger.info(f"Successfully saved new file: '{final_manifest.get('filename')}'")
             
             elif content_type == 'pm':
-                # This is a federated PM. We need to see if it's for one of our local users.
                 pm_content = json.loads(decrypted_data)
-                # We can't know the recipient_pubkey without decrypting the AES key first,
-                # which we already did in _decrypt_data. So we need to find it from the manifest.
                 local_checksum = generate_checksum(self.local_instance.pubkey)
                 if local_checksum in final_manifest['encrypted_aes_keys']:
                     recipient = User.objects.filter(pubkey=self.local_instance.pubkey).first()
@@ -256,13 +264,21 @@ class SyncService:
             local_chunks_data = b""
             for i in range(num_chunks):
                 chunk_path = service_manager.bitsync_service.get_chunk_path(content_hash, i)
-                with open(chunk_path, 'rb') as f:
-                    local_chunks_data += f.read()
-            return local_chunks_data
+                try:
+                    with open(chunk_path, 'rb') as f:
+                        local_chunks_data += f.read()
+                except FileNotFoundError:
+                    logger.warning(f"Chunk {i} for {content_hash} not found on disk, forcing re-download.")
+                    # Fall through to re-download logic
+                    break 
+            else: # This else belongs to the for loop, it runs if the loop completes without a break
+                return local_chunks_data
+
         seeders = self._find_seeders(content_hash)
         if not seeders:
             logger.error(f"Cannot download '{item_name}': No seeders found.")
             return None
+
         logger.info(f"Starting swarm download for '{item_name}' from {len(seeders)} peer(s).")
         downloaded_chunks = {}
         for i in range(num_chunks):
@@ -270,6 +286,7 @@ class SyncService:
             if chunk_path and os.path.exists(chunk_path):
                  with open(chunk_path, 'rb') as f:
                     downloaded_chunks[i] = f.read()
+
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         chunks_to_download = [i for i in range(num_chunks) if i not in downloaded_chunks]
         with ThreadPoolExecutor(max_workers=4, thread_name_prefix='chunk_worker') as executor:
@@ -289,6 +306,7 @@ class SyncService:
                     logger.info(f"  - Chunk {chunk_index + 1}/{num_chunks} for '{item_name}' downloaded.")
                 else: 
                     logger.error(f"   - Failed to download/verify chunk {chunk_index + 1} for '{item_name}'. Will retry on next sync.")
+        
         if len(downloaded_chunks) == num_chunks:
             logger.info(f"Download complete for '{item_name}'.")
             return b"".join(downloaded_chunks[i] for i in range(num_chunks))
