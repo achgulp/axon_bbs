@@ -28,31 +28,40 @@ from core.models import TrustedInstance, Message, FileAttachment
 def run_decryption_test():
     print("--- Stored Content Decryption Test ---")
     
-    # 1. Get user input
-    content_hash = input("Please paste the content_hash of the failed download and press Enter:\n> ")
-    if not content_hash:
-        print("Content hash cannot be empty.")
-        return
-
     try:
-        # 2. Find the manifest and encrypted data
-        print(f"\n[1] Searching for content with hash: {content_hash[:12]}...")
-        manifest = None
-        
-        # Check messages and files for the manifest
-        item = Message.objects.filter(manifest__content_hash=content_hash).first()
-        if not item:
-            item = FileAttachment.objects.filter(manifest__content_hash=content_hash).first()
+        # 1. Find all available content and display a list
+        print("\n[1] Searching for available content in the database...")
+        messages = Message.objects.filter(manifest__isnull=False)
+        files = FileAttachment.objects.filter(manifest__isnull=False)
+        all_content = list(messages) + list(files)
 
-        if not item or not item.manifest:
-            print("   - FAILURE: Could not find any content with this hash in the database.")
+        if not all_content:
+            print("   - No content with manifests found in the database.")
             return
-        
-        manifest = item.manifest
-        print("   - Success: Found manifest in the database.")
 
-        # Assemble the encrypted data from chunks on disk
-        print("[2] Assembling encrypted data from local chunks...")
+        print(f"   - Found {len(all_content)} item(s) available for testing:")
+        for i, item in enumerate(all_content):
+            content_type = "Message" if isinstance(item, Message) else "File"
+            name = item.subject if isinstance(item, Message) else item.filename
+            hash_short = item.manifest.get('content_hash', 'N/A')[:12]
+            print(f"  [{i+1}] {content_type}: '{name}' (hash: {hash_short}...)")
+
+        # 2. Get user input
+        choice = input("\nEnter the number of the content to test: ")
+        selected_index = int(choice) - 1
+
+        if not (0 <= selected_index < len(all_content)):
+            print("Invalid selection.")
+            return
+
+        selected_item = all_content[selected_index]
+        content_hash = selected_item.manifest.get('content_hash')
+        manifest = selected_item.manifest
+        
+        print(f"\n[2] Testing content with hash: {content_hash[:12]}...")
+
+        # 3. Assemble the encrypted data from chunks on disk
+        print("[3] Assembling encrypted data from local chunks...")
         chunk_storage_path = os.path.join(settings.BASE_DIR, 'data', 'bitsync_chunks')
         content_chunk_dir = os.path.join(chunk_storage_path, content_hash)
         
@@ -68,8 +77,8 @@ def run_decryption_test():
         
         print(f"   - Success: Assembled {len(encrypted_data)} bytes from {num_chunks} chunk(s).")
 
-        # 3. Load the local private key
-        print("[3] Loading and decrypting local instance private key...")
+        # 4. Load the local private key
+        print("[4] Loading and decrypting local instance private key...")
         local_instance = TrustedInstance.objects.get(encrypted_private_key__isnull=False, is_trusted_peer=False)
         key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
         f = Fernet(key)
@@ -77,15 +86,14 @@ def run_decryption_test():
         private_key = serialization.load_pem_private_key(decrypted_pem, password=None)
         print("   - Success: Key loaded.")
 
-        # 4. Attempt to decrypt the AES key from the manifest's envelope
-        print("[4] Attempting to open the encryption envelope...")
-        local_checksum = base64.b64encode(hashlib.md5(local_instance.pubkey.strip().encode()).digest()).decode()
-        # Fallback for older checksums for compatibility
+        # 5. Attempt to decrypt the AES key from the manifest's envelope
+        print("[5] Attempting to open the encryption envelope...")
         try:
             from core.services.encryption_utils import generate_checksum
             local_checksum = generate_checksum(local_instance.pubkey)
         except ImportError:
-            pass
+            local_checksum = base64.b64encode(hashlib.md5(local_instance.pubkey.strip().encode()).digest()).decode()
+
 
         encrypted_aes_key_b64 = manifest['encrypted_aes_keys'].get(local_checksum)
         if not encrypted_aes_key_b64:
@@ -100,8 +108,8 @@ def run_decryption_test():
         )
         print(f"   - Success: Envelope opened. AES Key: {aes_key.hex()[:16]}...")
         
-        # 5. Attempt to decrypt the content
-        print("[5] Attempting to decrypt content with AES key...")
+        # 6. Attempt to decrypt the content
+        print("[6] Attempting to decrypt content with AES key...")
         iv = base64.b64decode(manifest['encryption_iv'])
         cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
         decryptor = cipher.decryptor()
@@ -112,7 +120,6 @@ def run_decryption_test():
 
         print("\n--- ✅ DECRYPTION SUCCEEDED ---")
         try:
-            # Try to decode as JSON (for messages), fall back to raw bytes
             content = json.loads(decrypted_data)
             print("Decrypted Content (JSON):")
             print(json.dumps(content, indent=2))
