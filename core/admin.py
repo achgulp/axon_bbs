@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 import base64
 import json
+import requests # NEW: Import requests library
 from django.conf import settings
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
@@ -17,6 +18,7 @@ class UserAdmin(BaseUserAdmin):
     list_display = ('username', 'email', 'access_level', 'is_staff', 'is_banned')
     fieldsets = BaseUserAdmin.fieldsets + (
         ('BBS Info', {'fields': ('access_level', 'is_banned', 'pubkey', 'nickname')}),
+   
     )
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups', 'is_banned')
 
@@ -43,12 +45,14 @@ class MessageAdmin(admin.ModelAdmin):
             try:
                 if not message.manifest:
                     self.message_user(request, f"Message '{message.subject}' has no manifest to re-key.", level='WARNING')
+        
                     continue
                 
                 new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(message.manifest)
                 
                 message.manifest = new_manifest
                 message.save()
+    
                 updated_count += 1
             except Exception as e:
                 self.message_user(request, f"Failed to re-key message '{message.subject}': {e}", level='ERROR')
@@ -80,25 +84,32 @@ class ValidFileTypeAdmin(admin.ModelAdmin):
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
     list_display = ('web_ui_onion_url', 'pubkey_checksum', 'is_trusted_peer', 'added_at')
-    list_display_links = ('pubkey_checksum',)
+    list_display_links = ('web_ui_onion_url','pubkey_checksum',)
     list_filter = ('is_trusted_peer',)
-    readonly_fields = ('pubkey_checksum', 'added_at')
+    readonly_fields = ('pubkey_checksum', 'added_at', 'last_synced_at')
     fieldsets = (
         (None, {
-            'fields': ('web_ui_onion_url', 'pubkey', 'encrypted_private_key', 'is_trusted_peer')
+ 
+            'fields': ('web_ui_onion_url', 'pubkey', 'is_trusted_peer')
+        }),
+        ('Local Instance Details', {
+            'classes': ('collapse',),
+            'fields': ('encrypted_private_key',),
         }),
         ('Timestamps', {
             'fields': ('added_at', 'last_synced_at')
         }),
     )
-    actions = ['generate_keys']
+    actions = ['generate_keys', 'fetch_peer_key']
 
     @admin.display(description='Pubkey Checksum')
     def pubkey_checksum(self, obj):
         if not obj.pubkey:
             return "No pubkey"
+ 
         return generate_checksum(obj.pubkey)
 
+    @admin.action(description='Generate and encrypt keys for LOCAL instance')
     def generate_keys(self, request, queryset):
         key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
         f = Fernet(key)
@@ -106,6 +117,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
             public_key_pem = private_key.public_key().public_bytes(
                 encoding=serialization.Encoding.PEM,
+         
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
             ).decode('utf-8')
             private_pem = private_key.private_bytes(
@@ -113,16 +125,52 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                 format=serialization.PrivateFormat.PKCS8,
                 encryption_algorithm=serialization.NoEncryption()
             ).decode('utf-8')
+       
             encrypted_private = f.encrypt(private_pem.encode()).decode()
             instance.pubkey = public_key_pem
             instance.encrypted_private_key = encrypted_private
             instance.is_trusted_peer = False
             instance.save()
         self.message_user(request, "Keys generated and encrypted for selected instances.")
-    generate_keys.short_description = "Generate and encrypt keys for selected instances"
+
+    @admin.action(description='Fetch public key from peer')
+    def fetch_peer_key(self, request, queryset):
+        updated_count = 0
+        for instance in queryset:
+            if not instance.web_ui_onion_url:
+                self.message_user(request, f"Instance {instance.id} has no onion URL set.", level='ERROR')
+                continue
+            
+            peer_url = instance.web_ui_onion_url.strip('/')
+            target_url = f"{peer_url}/api/identity/public_key/"
+            proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+            
+            try:
+                self.message_user(request, f"Fetching key from {peer_url}...", level='INFO')
+                response = requests.get(target_url, proxies=proxies, timeout=120)
+
+                if response.status_code == 200:
+                    new_key = response.json().get('public_key')
+                    if new_key:
+                        instance.pubkey = new_key
+                        instance.save()
+                        updated_count += 1
+                        self.message_user(request, f"Successfully updated key for {peer_url}.", level='SUCCESS')
+                    else:
+                        self.message_user(request, f"Peer {peer_url} did not provide a public key.", level='ERROR')
+                else:
+                    self.message_user(request, f"Error fetching key from {peer_url}. Status: {response.status_code}", level='ERROR')
+
+            except requests.exceptions.RequestException as e:
+                self.message_user(request, f"Network error contacting peer {peer_url}: {e}", level='ERROR')
+
+        if updated_count > 0:
+            self.message_user(request, f"Finished. Successfully updated {updated_count} peer(s).", level='SUCCESS')
+
 
 @admin.register(Alias)
 class AliasAdmin(admin.ModelAdmin):
     list_display = ('nickname', 'pubkey', 'verified', 'added_at')
+  
     list_filter = ('verified',)
     search_fields = ('nickname', 'pubkey')
