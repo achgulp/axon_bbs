@@ -1,14 +1,13 @@
 # Full path: axon_bbs/core/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment
 import base64
 import json
 import requests
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import hashes, serialization
 from django.conf import settings
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
@@ -61,6 +60,14 @@ class PrivateMessageAdmin(admin.ModelAdmin):
     list_display = ('subject', 'author', 'recipient', 'created_at', 'is_read')
     list_filter = ('author', 'recipient', 'is_read')
     date_hierarchy = 'created_at'
+
+# NEW: Registration for the FileAttachment model
+@admin.register(FileAttachment)
+class FileAttachmentAdmin(admin.ModelAdmin):
+    list_display = ('filename', 'author', 'content_type', 'size', 'created_at')
+    list_filter = ('author', 'content_type')
+    date_hierarchy = 'created_at'
+    readonly_fields = ('id', 'created_at', 'expires_at', 'pinned_by')
 
 @admin.register(BannedPubkey)
 class BannedPubkeyAdmin(admin.ModelAdmin):
