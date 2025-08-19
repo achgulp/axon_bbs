@@ -8,6 +8,7 @@ from django.conf import settings
 import os
 import logging
 import json
+import hashlib # NEW: Import hashlib for de-duplication
 from datetime import timedelta
 from django.utils import timezone
 from django.apps import apps
@@ -171,22 +172,41 @@ class PrivateMessageListView(views.APIView):
 class FileUploadView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
+
     def post(self, request, *args, **kwargs):
-        if 'file' not in request.FILES: return Response({"error": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
+        if 'file' not in request.FILES:
+            return Response({"error": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
+        
         uploaded_file = request.FILES['file']
-        if not service_manager.bitsync_service: return Response({"error": "Sync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        if not service_manager.bitsync_service:
+            return Response({"error": "Sync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
         try:
-            manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(uploaded_file.read())
+            # --- NEW: De-duplication Logic ---
+            raw_data = uploaded_file.read()
+            content_hash = hashlib.sha256(raw_data).hexdigest()
+
+            # Check if a file with this exact content already exists
+            existing_attachment = FileAttachment.objects.filter(manifest__content_hash=content_hash).first()
+            if existing_attachment:
+                logger.info(f"Duplicate file upload detected for '{uploaded_file.name}'. Reusing existing attachment {existing_attachment.id}.")
+                serializer = FileAttachmentSerializer(existing_attachment)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+            # If it's a new file, proceed with creating the manifest and storing it
+            manifest = service_manager.bitsync_service.create_manifest_and_store_chunks(raw_data)
             attachment = FileAttachment.objects.create(
                 author=request.user, filename=uploaded_file.name, content_type=uploaded_file.content_type,
                 size=uploaded_file.size, manifest=manifest
             )
             serializer = FileAttachmentSerializer(attachment)
-            logger.info(f"User {request.user.username} uploaded file '{attachment.filename}' ({attachment.id})")
+            logger.info(f"User {request.user.username} uploaded new file '{attachment.filename}' ({attachment.id})")
             return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
         except Exception as e:
             logger.error(f"Failed to process file upload for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "Server error during file processing."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class FileDownloadView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
