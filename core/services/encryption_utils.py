@@ -7,6 +7,9 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 import hashlib
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
+# NEW: Import necessary modules for E2E encryption
+from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 logger = logging.getLogger(__name__)
@@ -35,6 +38,35 @@ def decrypt_data(encrypted_data: bytes, key: bytes) -> str:
     f = Fernet(key)
     decrypted_bytes = f.decrypt(encrypted_data)
     return decrypted_bytes.decode()
+
+# NEW: E2E function to encrypt data with a user's public key
+def encrypt_with_public_key(data: str, public_key_pem: str) -> str:
+    """Encrypts a string with an RSA public key and returns a base64 encoded string."""
+    public_key = load_pem_public_key(public_key_pem.encode())
+    ciphertext = public_key.encrypt(
+        data.encode('utf-8'),
+        rsa_padding.OAEP(
+            mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return base64.b64encode(ciphertext).decode('utf-8')
+
+# NEW: E2E function to decrypt data with a user's private key
+def decrypt_with_private_key(encrypted_data_b64: str, private_key_pem: str) -> str:
+    """Decrypts a base64 encoded string with an RSA private key."""
+    private_key = load_pem_private_key(private_key_pem.encode(), password=None)
+    encrypted_data = base64.b64decode(encrypted_data_b64)
+    plaintext = private_key.decrypt(
+        encrypted_data,
+        rsa_padding.OAEP(
+            mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return plaintext.decode('utf-8')
 
 def generate_short_id(pubkey_pem: str, length: int = 16) -> str:
     """Generates a semi-unique short ID from a public key PEM string."""
