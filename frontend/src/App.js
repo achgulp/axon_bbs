@@ -5,6 +5,7 @@ import LoginScreen from './components/LoginScreen';
 import RegisterScreen from './components/RegisterScreen';
 import MessageList from './components/MessageList';
 import UnlockForm from './components/UnlockForm';
+import ProfileScreen from './components/ProfileScreen'; // NEW: Import ProfileScreen
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const SideBarButton = ({ onClick, children, className = '' }) => (
@@ -12,7 +13,6 @@ const SideBarButton = ({ onClick, children, className = '' }) => (
     {children}
   </button>
 );
-
 const MessageBoardList = ({ onSelectBoard }) => {
   const [boards, setBoards] = useState([]);
   useEffect(() => {
@@ -50,7 +50,6 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
   const fetchMessages = useCallback(() => {
     setError('');
     apiClient.get('/api/pm/list/')
@@ -68,7 +67,6 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
   useEffect(() => {
     fetchMessages();
   }, [fetchMessages]);
-
   const handleSendMessage = async (e) => {
     e.preventDefault();
     setError('');
@@ -175,7 +173,6 @@ function App() {
   const [needsUnlock, setNeedsUnlock] = useState(false);
   const [currentView, setCurrentView] = useState('boards');
   const [pmRecipient, setPmRecipient] = useState(null);
-
   const setAuthToken = (newToken) => {
     if (newToken) {
       localStorage.setItem('token', newToken);
@@ -185,14 +182,12 @@ function App() {
     }
     setToken(newToken);
   };
-
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
     if (storedToken) {
       setToken(storedToken);
     }
   }, []);
-
   const handleLogout = async () => {
     try {
       await apiClient.post('/api/logout/');
@@ -202,28 +197,23 @@ function App() {
       setAuthToken(null);
     }
   };
-
   const handleSelectBoard = (boardId, boardName) => {
     setSelectedBoard({ id: boardId, name: boardName });
     setCurrentView('boards');
   };
-  
   const handleViewChange = (view) => {
     setSelectedBoard(null);
     setPmRecipient(null);
     setCurrentView(view);
   };
-
   const handleStartPrivateMessage = (pubkey, displayName) => {
     setPmRecipient({ pubkey: pubkey, displayName: displayName });
     setCurrentView('pm');
   };
-
   const handleUnlockSuccess = () => {
     setIdentityUnlocked(true);
     setNeedsUnlock(false);
   };
-
   if (!token) {
     return (
       <div className="bg-gray-800 min-h-screen">
@@ -237,6 +227,10 @@ function App() {
   }
 
   const renderMainContent = () => {
+    // UPDATED: Added 'profile' view
+    if (currentView === 'profile') {
+      return <ProfileScreen />;
+    }
     if (currentView === 'pm') {
       return <PrivateMessageClient setNeedsUnlock={setNeedsUnlock} initialRecipient={pmRecipient} />;
     }
@@ -271,7 +265,8 @@ function App() {
               >
                 {isIdentityUnlocked ? '✓ Identity Unlocked' : '✗ Unlock Identity'}
               </SideBarButton>
-              <SideBarButton onClick={() => alert("Profile not yet implemented.")}>Profile</SideBarButton>
+              {/* UPDATED: Profile button now changes the view */}
+              <SideBarButton onClick={() => handleViewChange('profile')}>Profile</SideBarButton>
               <SideBarButton onClick={handleLogout}>Logout</SideBarButton>
             </div>
           </nav>

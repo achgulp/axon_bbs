@@ -2,6 +2,7 @@
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+# CORRECTED: Changed Http44 to Http404
 from django.http import HttpResponse, Http404, JsonResponse
 from django.contrib.auth import get_user_model
 from django.conf import settings
@@ -62,7 +63,6 @@ class UnlockIdentityView(views.APIView):
             logger.error(f"Failed to unlock identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "Failed to unlock identity."}, status=status.HTTP_401_UNAUTHORIZED)
 
-# UPDATED: Implemented the ImportIdentityView logic
 class ImportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request, *args, **kwargs):
@@ -82,13 +82,11 @@ class ImportIdentityView(views.APIView):
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(identity_storage_path, encryption_key)
 
-            # Check if an identity with this name already exists
             if identity_service.get_identity_by_name(name):
                 return Response({"error": f"An identity with the name '{name}' already exists."}, status=status.HTTP_409_CONFLICT)
 
             new_identity = identity_service.add_existing_identity(name, private_key_pem)
 
-            # If this is the "default" identity, update the user's main pubkey
             if name == "default":
                 user.pubkey = new_identity['public_key']
                 user.save()
@@ -101,7 +99,6 @@ class ImportIdentityView(views.APIView):
             logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "Failed to import identity. Check your password or key file."}, status=status.HTTP_401_UNAUTHORIZED)
 
-# NEW: View for users to set or update their nickname
 class UpdateNicknameView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -120,6 +117,17 @@ class UpdateNicknameView(views.APIView):
         except Exception as e:
             logger.error(f"Could not update nickname for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "An error occurred while updating the nickname."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class UserProfileView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        return Response({
+            "username": user.username,
+            "nickname": user.nickname,
+            "pubkey": user.pubkey
+        })
 
 # --- Private Messaging Views ---
 class SendPrivateMessageView(views.APIView):
@@ -390,7 +398,6 @@ class BanPubkeyView(views.APIView):
             try: expires_at = timezone.now() + timedelta(hours=int(duration_hours))
             except (ValueError, TypeError): return Response({"error": "Invalid duration format."}, status=status.HTTP_400_BAD_REQUEST)
         
-        # UPDATED: Create FederatedAction when banning
         action_details = {'is_temporary': is_temporary}
         if is_temporary:
             action_details['duration_hours'] = duration_hours
@@ -450,7 +457,6 @@ class UnpinContentView(views.APIView):
         except (LookupError, model.DoesNotExist): return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
         if content_obj.pinned_by and content_obj.pinned_by.is_staff and not request.user.is_staff: return Response({"error": "Moderators cannot unpin content pinned by an Admin."}, status=status.HTTP_403_FORBIDDEN)
         
-        # UPDATED: Create FederatedAction when unpinning
         if content_obj.is_pinned and content_obj.manifest and content_obj.manifest.get('content_hash'):
              FederatedAction.objects.create(
                 action_type='unpin_content',
@@ -474,7 +480,6 @@ class SyncView(views.APIView):
             new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
-            # NEW: Include federated actions in the sync payload
             new_actions = FederatedAction.objects.filter(created_at__gt=since_dt)
 
             manifests = []
@@ -494,7 +499,6 @@ class SyncView(views.APIView):
                 
                 manifests.append(item_manifest)
 
-            # NEW: Serialize the federated actions
             actions_payload = [
                 {
                     "id": str(action.id),
@@ -508,7 +512,7 @@ class SyncView(views.APIView):
 
             return JsonResponse({
                 "manifests": manifests,
-                "federated_actions": actions_payload, # NEW: Add actions to response
+                "federated_actions": actions_payload,
                 "server_timestamp": server_now.isoformat()
             }, status=status.HTTP_200_OK)
 

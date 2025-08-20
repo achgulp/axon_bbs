@@ -9,7 +9,8 @@ from .views import (
     BanPubkeyView,
     UnlockIdentityView,
     ImportIdentityView,
-    UpdateNicknameView, # NEW: Import nickname view
+    UpdateNicknameView,
+    UserProfileView, # NEW: Import profile view
     LogoutView,
     RequestContentExtensionView,
     ReviewContentExtensionView,
@@ -36,12 +37,12 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
     
-    # Identity
+    # Identity & User Profile
     path('identity/unlock/', UnlockIdentityView.as_view(), name='unlock-identity'),
     path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
     path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
-    # NEW: Nickname management
     path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
+    path('user/profile/', UserProfileView.as_view(), name='user-profile'), # NEW: User profile endpoint
 
     # Private Messaging
     path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),
