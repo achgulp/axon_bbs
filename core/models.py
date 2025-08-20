@@ -50,7 +50,6 @@ class BannedPubkey(models.Model):
     pubkey = models.TextField(unique=True)
     is_temporary = models.BooleanField(default=False)
     expires_at = models.DateTimeField(null=True, blank=True, help_text="If the ban is temporary, this is when it expires.")
-    # NEW: Added federated_action_id to link to the source action
     federated_action_id = models.UUIDField(null=True, blank=True, unique=True, help_text="The ID of the federated action that created this ban.")
 
     def __str__(self):
@@ -121,6 +120,7 @@ class Message(Content):
 class PrivateMessage(Content):
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail', null=True, blank=True)
     recipient_pubkey = models.TextField()
+    sender_pubkey = models.TextField(blank=True, null=True)
     subject = models.CharField(max_length=255)
     is_read = models.BooleanField(default=False)
     manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for E2E encrypted content.")
@@ -172,7 +172,6 @@ class ContentExtensionRequest(models.Model):
     def __str__(self):
         return f"Extension Request for {self.content_type} {self.id} by {self.user.username}"
 
-# NEW: Model for broadcasting moderation actions across the federation.
 class FederatedAction(models.Model):
     ACTION_CHOICES = [
         ('ban_pubkey', 'Ban Pubkey'),

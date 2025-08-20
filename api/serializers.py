@@ -68,7 +68,7 @@ class MessageSerializer(serializers.ModelSerializer):
         if obj.author:
             return obj.author.nickname if obj.author.nickname else obj.author.username
         elif obj.pubkey:
-            alias = Alias.objects.filter(pubkey=obj.pubkey, verified=True).first()
+            alias = Alias.objects.filter(pubkey=obj.pubkey).first()
             if alias:
                 return alias.nickname
             else:
@@ -77,18 +77,28 @@ class MessageSerializer(serializers.ModelSerializer):
         
         return 'Anonymous'
 
-# Serializer for the Inbox view
 class PrivateMessageSerializer(serializers.ModelSerializer):
-    author_username = serializers.CharField(source='author.username', read_only=True)
-    recipient_username = serializers.CharField(source='recipient.username', read_only=True)
+    author_display = serializers.SerializerMethodField()
     decrypted_body = serializers.CharField(read_only=True)
     
     class Meta:
         model = PrivateMessage
-        fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'author_username', 'recipient_username')
+        fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'author_display')
         read_only_fields = fields
 
-# NEW: Serializer for the Outbox view to correctly show recipient display names
+    def get_author_display(self, obj):
+        if obj.author:
+            return obj.author.nickname if obj.author.nickname else obj.author.username
+        elif obj.sender_pubkey:
+            alias = Alias.objects.filter(pubkey=obj.sender_pubkey).first()
+            if alias:
+                return alias.nickname
+            else:
+                short_id = generate_short_id(obj.sender_pubkey, length=8)
+                return f"Moo-{short_id}"
+        return "Unknown Sender"
+
+
 class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
     recipient_display = serializers.SerializerMethodField()
     decrypted_body = serializers.CharField(read_only=True)

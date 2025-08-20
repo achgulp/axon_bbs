@@ -121,14 +121,12 @@ class SyncService:
                 if response.status_code == 200:
                     response_data = response.json()
                     manifests = response_data.get('manifests', [])
-                    # NEW: Get federated actions from the payload
                     federated_actions = response_data.get('federated_actions', [])
                     server_timestamp_str = response_data.get('server_timestamp')
 
                     logger.info(f"<-- Received {len(manifests)} new manifest(s) and {len(federated_actions)} action(s) from peer {peer.web_ui_onion_url}")
                     if manifests:
                         self._process_received_manifests(manifests)
-                    # NEW: Process received actions
                     if federated_actions:
                         self._process_received_actions(federated_actions)
                 else:
@@ -175,18 +173,16 @@ class SyncService:
             if not exists:
                 self._schedule_download(manifest)
 
-    # NEW: Logic to handle incoming federated moderation actions
     def _process_received_actions(self, actions: list):
         for action_data in actions:
             action_id = action_data.get('id')
             if FederatedAction.objects.filter(id=action_id).exists():
-                continue # Action already processed
+                continue
 
             action_type = action_data.get('action_type')
             logger.info(f"Processing federated action: {action_type} ({action_id})")
 
             try:
-                # Create a local copy of the action record
                 FederatedAction.objects.create(
                     id=action_id,
                     action_type=action_type,
@@ -280,10 +276,12 @@ class SyncService:
                 local_checksum = generate_checksum(self.local_instance.pubkey)
                 if local_checksum in final_manifest['encrypted_aes_keys']:
                     recipient = User.objects.filter(pubkey=self.local_instance.pubkey).first()
+                    sender_pubkey = pm_content.get('sender_pubkey')
                     if recipient:
                         PrivateMessage.objects.create(
                             recipient=recipient,
                             recipient_pubkey=recipient.pubkey,
+                            sender_pubkey=sender_pubkey,
                             subject=pm_content.get('subject'),
                             manifest=final_manifest
                         )
