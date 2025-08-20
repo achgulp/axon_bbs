@@ -16,7 +16,6 @@ from django.apps import apps
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.db import IntegrityError
-# UPDATED: Import serialization to pre-validate keys
 from cryptography.hazmat.primitives import serialization
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer
@@ -30,7 +29,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (RegisterView, LogoutView, are unchanged) ...
+# ... (RegisterView, LogoutView, UnlockIdentityView, ImportIdentityView are unchanged from the previous fix) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -88,12 +87,10 @@ class ImportIdentityView(views.APIView):
             return Response({"error": "A private key file and your current password are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # UPDATED: Validate the incoming key format BEFORE making any changes.
             try:
                 serialization.load_pem_private_key(private_key_pem.strip().encode(), password=None)
             except Exception as e:
                 logger.warning(f"Invalid PEM format provided for user {user.username}: {e}")
-                # Raise a specific, catchable error.
                 raise ValueError("Invalid private key format.")
 
             user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
@@ -103,7 +100,6 @@ class ImportIdentityView(views.APIView):
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(identity_storage_path, encryption_key)
 
-            # UPDATED: This safe logic now only proceeds if validation passes.
             existing_identity = identity_service.get_identity_by_name(name)
             if existing_identity:
                 identity_service.remove_identity(existing_identity['id'])
@@ -125,6 +121,7 @@ class ImportIdentityView(views.APIView):
             logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected server error occurred during import."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# UPDATED: This view has been rewritten to be more robust and prevent corruption.
 class ExportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -148,13 +145,31 @@ class ExportIdentityView(views.APIView):
             if not identity or 'private_key' not in identity:
                 return Response({"error": f"Could not find the '{name}' identity."}, status=status.HTTP_404_NOT_FOUND)
 
-            private_key = identity['private_key']
-            response = HttpResponse(private_key, content_type='application/x-pem-file')
+            private_key_pem_from_storage = identity['private_key']
+
+            # Sanitize and reserialize the key to guarantee a clean output
+            try:
+                key_object = serialization.load_pem_private_key(
+                    private_key_pem_from_storage.strip().encode(),
+                    password=None
+                )
+                clean_pem_output = key_object.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.TraditionalOpenSSL,
+                    encryption_algorithm=serialization.NoEncryption()
+                )
+            except Exception as e:
+                logger.error(f"FATAL: The stored private key for user {user.username} is corrupted and cannot be parsed: {e}")
+                raise ValueError("The stored private key is corrupted and cannot be exported.")
+
+            response = HttpResponse(clean_pem_output, content_type='application/x-pem-file')
             response['Content-Disposition'] = f'attachment; filename="{user.username}_axon_key.pem"'
             return response
         except DecryptionError as e:
             logger.warning(f"Failed export attempt for {user.username}: {e}")
             return Response({"error": "Failed to export identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
+        except ValueError as e:
+             return Response({"error": f"Could not export key: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception as e:
             logger.error(f"Failed to export identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected server error occurred during export."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
