@@ -97,24 +97,36 @@ class IdentityService:
             logger.error(f"Failed to generate identity: {e}", exc_info=True)
             raise
 
-    def add_existing_identity(self, name: str, private_key_pem: str) -> Dict[str, Any]:
+    # UPDATED: This method now accepts a password to decrypt the PEM file.
+    def add_existing_identity(self, name: str, private_key_pem: str, password: str = None) -> Dict[str, Any]:
         """
         Adds an existing private key as a new identity.
         """
         try:
             cleaned_pem = private_key_pem.strip()
-            private_key = serialization.load_pem_private_key(cleaned_pem.encode(), password=None)
+            private_key = serialization.load_pem_private_key(
+                cleaned_pem.encode(),
+                password=password.encode() if password else None
+            )
             
             public_key_pem = private_key.public_key().public_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
             ).decode('utf-8')
+            
+            # Note: We save the key unencrypted inside our own encrypted blob.
+            unencrypted_pem_to_store = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption()
+            ).decode('utf-8')
+
             identity = {
                 "id": str(uuid.uuid4()),
                 "name": name,
                 "type": "rsa",
                 "public_key": public_key_pem,
-                "private_key": cleaned_pem,
+                "private_key": unencrypted_pem_to_store,
                 "created_at": datetime.now().isoformat()
             }
             self.identities.append(identity)

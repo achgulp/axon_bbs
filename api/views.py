@@ -29,7 +29,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (Views from Register to Unlock are unchanged from the last fix) ...
+# ... (Only ImportIdentityView is changed) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -66,7 +66,6 @@ class UnlockIdentityView(views.APIView):
             logger.error(f"Failed to unlock identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred during unlock."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# UPDATED: Now accepts a password for the key file
 class ImportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -74,7 +73,7 @@ class ImportIdentityView(views.APIView):
     def post(self, request, *args, **kwargs):
         user = request.user
         account_password = request.data.get('account_password')
-        key_file_password = request.data.get('key_file_password', None) # Optional password for the PEM
+        key_file_password = request.data.get('key_file_password', None)
         private_key_pem = request.data.get('private_key')
         name = request.data.get('name', 'default')
 
@@ -110,7 +109,12 @@ class ImportIdentityView(views.APIView):
             if existing_identity:
                 identity_service.remove_identity(existing_identity['id'])
 
-            new_identity = identity_service.add_existing_identity(name, private_key_pem)
+            # UPDATED: Pass the key_file_password to the service method.
+            new_identity = identity_service.add_existing_identity(
+                name,
+                private_key_pem,
+                password=key_file_password
+            )
 
             if name == "default":
                 user.pubkey = new_identity['public_key']
@@ -127,7 +131,6 @@ class ImportIdentityView(views.APIView):
             logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected server error occurred during import."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# UPDATED: Now encrypts the exported key with the user's password
 class ExportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -179,7 +182,6 @@ class ExportIdentityView(views.APIView):
             logger.error(f"Failed to export identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected server error occurred during export."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# ... (rest of the file is unchanged) ...
 class UpdateNicknameView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
