@@ -18,7 +18,8 @@ from django.utils.decorators import method_decorator
 from django.db import IntegrityError
 from cryptography.hazmat.primitives import serialization
 
-from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer
+# UPDATED: Import the new outbox serializer
+from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
 from .permissions import TrustedPeerPermission
 from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction
 from core.services.identity_service import IdentityService, DecryptionError
@@ -29,7 +30,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (Only ImportIdentityView is changed) ...
+# ... (Views from Register to UserProfile are unchanged) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -88,7 +89,6 @@ class ImportIdentityView(views.APIView):
             return Response({"error": "A private key and your current account password are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Validate the incoming key format BEFORE making any changes.
             try:
                 serialization.load_pem_private_key(
                     private_key_pem.strip().encode(),
@@ -109,7 +109,6 @@ class ImportIdentityView(views.APIView):
             if existing_identity:
                 identity_service.remove_identity(existing_identity['id'])
 
-            # UPDATED: Pass the key_file_password to the service method.
             new_identity = identity_service.add_existing_identity(
                 name,
                 private_key_pem,
@@ -212,6 +211,7 @@ class UserProfileView(views.APIView):
             "pubkey": user.pubkey
         })
 
+# --- Private Messaging Views ---
 class SendPrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -263,8 +263,10 @@ class SendPrivateMessageView(views.APIView):
                 "subject": subject,
                 "body": body
             }
+            # UPDATED: Pass both sender's and recipient's pubkeys
+            all_recipients = {recipient_pubkey, request.user.pubkey}
             content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(
-                pm_content, recipients_pubkeys=[recipient_pubkey]
+                pm_content, recipients_pubkeys=list(all_recipients)
             )
             PrivateMessage.objects.create(
                 author=request.user,
@@ -315,6 +317,38 @@ class PrivateMessageListView(views.APIView):
         serializer = PrivateMessageSerializer(decrypted_messages, many=True)
         return Response(serializer.data)
 
+# NEW: View for listing sent private messages
+class PrivateMessageOutboxView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        if not service_manager.sync_service:
+            return Response({"error": "Sync service is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        sent_messages = PrivateMessage.objects.filter(author=request.user).order_by('-created_at')
+        
+        decrypted_messages = []
+        for pm in sent_messages:
+            try:
+                decrypted_content_bytes = service_manager.sync_service.get_decrypted_content(pm.manifest)
+                if decrypted_content_bytes:
+                    content = json.loads(decrypted_content_bytes.decode('utf-8'))
+                    pm.decrypted_body = content.get('body', '[Decryption Failed]')
+                else:
+                    pm.decrypted_body = '[Content not available]'
+            except Exception as e:
+                logger.error(f"Could not decrypt sent PM {pm.id} for user {request.user.username}: {e}")
+                pm.decrypted_body = '[Decryption Error]'
+            
+            decrypted_messages.append(pm)
+            
+        serializer = PrivateMessageOutboxSerializer(decrypted_messages, many=True)
+        return Response(serializer.data)
+
+# ... (rest of the file is unchanged) ...
 class FileUploadView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]

@@ -11,7 +11,7 @@ from .views import (
     ImportIdentityView,
     UpdateNicknameView,
     UserProfileView,
-    ExportIdentityView, # NEW: Import export view
+    ExportIdentityView,
     LogoutView,
     RequestContentExtensionView,
     ReviewContentExtensionView,
@@ -25,6 +25,7 @@ from .views import (
     GetPublicKeyView,
     SendPrivateMessageView,
     PrivateMessageListView,
+    PrivateMessageOutboxView, # NEW: Import Outbox view
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -41,7 +42,7 @@ urlpatterns = [
     # Identity & User Profile
     path('identity/unlock/', UnlockIdentityView.as_view(), name='unlock-identity'),
     path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
-    path('identity/export/', ExportIdentityView.as_view(), name='export-identity'), # NEW: Export identity endpoint
+    path('identity/export/', ExportIdentityView.as_view(), name='export-identity'),
     path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
     path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
     path('user/profile/', UserProfileView.as_view(), name='user-profile'),
@@ -49,6 +50,7 @@ urlpatterns = [
     # Private Messaging
     path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),
     path('pm/list/', PrivateMessageListView.as_view(), name='pm-list'),
+    path('pm/outbox/', PrivateMessageOutboxView.as_view(), name='pm-outbox'), # NEW: Outbox endpoint
 
     # Content & Moderation
     path('boards/', MessageBoardListView.as_view(), name='board-list'),

@@ -137,6 +137,7 @@ class BitSyncService:
             for pkey in recipients_pubkeys:
                 pubkeys_to_encrypt_for.add(pkey)
         else:
+            # For public content, encrypt for all trusted peers.
             trusted_peers = TrustedInstance.objects.filter(is_trusted_peer=True)
             for peer in trusted_peers:
                 if peer.pubkey:

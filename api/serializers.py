@@ -18,7 +18,6 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('username', 'password')
 
     def create(self, validated_data):
-  
         user = User.objects.create_user(
             username=validated_data['username'],
             password=validated_data['password'],
@@ -27,14 +26,12 @@ class UserSerializer(serializers.ModelSerializer):
             user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
             os.makedirs(user_data_dir, exist_ok=True)
             salt = generate_salt()
-        
             with open(os.path.join(user_data_dir, 'salt.bin'), 'wb') as f:
                 f.write(salt)
             encryption_key = derive_key_from_password(validated_data['password'], salt)
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(
                 storage_path=identity_storage_path,
-               
                 encryption_key=encryption_key
             )
             identity = identity_service.generate_and_add_identity(name="default")
@@ -56,7 +53,6 @@ class FileAttachmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = FileAttachment
         fields = ('id', 'filename', 'content_type', 'size', 'created_at')
-   
         read_only_fields = fields
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -66,14 +62,12 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        # UPDATED: Added 'pubkey' to the fields list.
         fields = ('id', 'subject', 'body', 'created_at', 'author_display', 'attachments', 'pubkey')
 
     def get_author_display(self, obj):
         if obj.author:
             return obj.author.nickname if obj.author.nickname else obj.author.username
         elif obj.pubkey:
- 
             alias = Alias.objects.filter(pubkey=obj.pubkey, verified=True).first()
             if alias:
                 return alias.nickname
@@ -83,6 +77,7 @@ class MessageSerializer(serializers.ModelSerializer):
         
         return 'Anonymous'
 
+# Serializer for the Inbox view
 class PrivateMessageSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source='author.username', read_only=True)
     recipient_username = serializers.CharField(source='recipient.username', read_only=True)
@@ -93,6 +88,27 @@ class PrivateMessageSerializer(serializers.ModelSerializer):
         fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'author_username', 'recipient_username')
         read_only_fields = fields
 
+# NEW: Serializer for the Outbox view to correctly show recipient display names
+class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
+    recipient_display = serializers.SerializerMethodField()
+    decrypted_body = serializers.CharField(read_only=True)
+    
+    class Meta:
+        model = PrivateMessage
+        fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'recipient_display', 'recipient_pubkey')
+        read_only_fields = fields
+
+    def get_recipient_display(self, obj):
+        if obj.recipient:
+            return obj.recipient.nickname if obj.recipient.nickname else obj.recipient.username
+        elif obj.recipient_pubkey:
+            alias = Alias.objects.filter(pubkey=obj.recipient_pubkey).first()
+            if alias:
+                return alias.nickname
+            else:
+                short_id = generate_short_id(obj.recipient_pubkey, length=8)
+                return f"Moo-{short_id}"
+        return 'Unknown Recipient'
 
 class ContentExtensionRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField()
