@@ -11,7 +11,6 @@ from cryptography.hazmat.primitives import serialization
 
 logger = logging.getLogger(__name__)
 
-# NEW: Custom exception for clearer error handling
 class DecryptionError(Exception):
     """Raised when the identity file cannot be decrypted, likely due to a wrong password."""
     pass
@@ -48,7 +47,6 @@ class IdentityService:
                 decrypted_data = decrypt_data(encrypted_data, self.encryption_key)
                 self.identities = json.loads(decrypted_data)
             except Exception as e:
-                # UPDATED: Raise a specific error instead of failing silently
                 logger.error(f"Failed to load identities from {self.storage_file}: {e}", exc_info=True)
                 raise DecryptionError("Failed to decrypt identity file. Password may be incorrect.") from e
         else:
@@ -80,7 +78,7 @@ class IdentityService:
             ).decode('utf-8')
             private_key_pem = private_key.private_bytes(
                 encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
                 encryption_algorithm=serialization.NoEncryption()
             ).decode('utf-8')
             identity = {

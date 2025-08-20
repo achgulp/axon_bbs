@@ -16,6 +16,8 @@ from django.apps import apps
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.db import IntegrityError
+# UPDATED: Import serialization to pre-validate keys
+from cryptography.hazmat.primitives import serialization
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer
 from .permissions import TrustedPeerPermission
@@ -28,7 +30,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# --- Auth & Identity Views ---
+# ... (RegisterView, LogoutView, are unchanged) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -86,6 +88,14 @@ class ImportIdentityView(views.APIView):
             return Response({"error": "A private key file and your current password are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            # UPDATED: Validate the incoming key format BEFORE making any changes.
+            try:
+                serialization.load_pem_private_key(private_key_pem.strip().encode(), password=None)
+            except Exception as e:
+                logger.warning(f"Invalid PEM format provided for user {user.username}: {e}")
+                # Raise a specific, catchable error.
+                raise ValueError("Invalid private key format.")
+
             user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
             salt_path = os.path.join(user_data_dir, 'salt.bin')
             with open(salt_path, 'rb') as f: salt = f.read()
@@ -93,6 +103,7 @@ class ImportIdentityView(views.APIView):
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(identity_storage_path, encryption_key)
 
+            # UPDATED: This safe logic now only proceeds if validation passes.
             existing_identity = identity_service.get_identity_by_name(name)
             if existing_identity:
                 identity_service.remove_identity(existing_identity['id'])
@@ -107,7 +118,7 @@ class ImportIdentityView(views.APIView):
         except DecryptionError as e:
             logger.warning(f"Failed import attempt for {user.username}: {e}")
             return Response({"error": "Failed to import identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
-        except (ValueError, TypeError) as e:
+        except ValueError as e:
              logger.warning(f"Failed to import identity for {user.username}: {e}")
              return Response({"error": "Invalid private key format. Please ensure it is a valid PEM file."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
