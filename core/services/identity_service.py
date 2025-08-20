@@ -7,9 +7,14 @@ import uuid
 from datetime import datetime
 from .encryption_utils import encrypt_data, decrypt_data
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization # UPDATED: Added the missing import
+from cryptography.hazmat.primitives import serialization
 
 logger = logging.getLogger(__name__)
+
+# NEW: Custom exception for clearer error handling
+class DecryptionError(Exception):
+    """Raised when the identity file cannot be decrypted, likely due to a wrong password."""
+    pass
 
 class IdentityService:
     """
@@ -43,12 +48,11 @@ class IdentityService:
                 decrypted_data = decrypt_data(encrypted_data, self.encryption_key)
                 self.identities = json.loads(decrypted_data)
             except Exception as e:
+                # UPDATED: Raise a specific error instead of failing silently
                 logger.error(f"Failed to load identities from {self.storage_file}: {e}", exc_info=True)
-                # If decryption fails (e.g., wrong password), treat as no identities
-                self.identities = []
+                raise DecryptionError("Failed to decrypt identity file. Password may be incorrect.") from e
         else:
             self.identities = []
-            # Don't save immediately, wait for an action.
 
     def _save_identities(self) -> None:
         """
@@ -84,7 +88,7 @@ class IdentityService:
                 "name": name,
                 "type": "rsa",
                 "public_key": public_key_pem,
-                "private_key": private_key_pem, # This will be encrypted on save
+                "private_key": private_key_pem,
                 "created_at": datetime.now().isoformat()
             }
             self.identities.append(identity)
@@ -100,8 +104,10 @@ class IdentityService:
         Adds an existing private key as a new identity.
         """
         try:
-            # Validate the private key by loading it
-            private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+            # UPDATED: Strip whitespace from the key to prevent parsing errors
+            cleaned_pem = private_key_pem.strip()
+            private_key = serialization.load_pem_private_key(cleaned_pem.encode(), password=None)
+            
             public_key_pem = private_key.public_key().public_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -111,7 +117,7 @@ class IdentityService:
                 "name": name,
                 "type": "rsa",
                 "public_key": public_key_pem,
-                "private_key": private_key_pem,
+                "private_key": cleaned_pem,
                 "created_at": datetime.now().isoformat()
             }
             self.identities.append(identity)

@@ -20,7 +20,8 @@ from django.db import IntegrityError
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer
 from .permissions import TrustedPeerPermission
 from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction
-from core.services.identity_service import IdentityService
+# UPDATED: Import the new custom exception
+from core.services.identity_service import IdentityService, DecryptionError
 from core.services.encryption_utils import derive_key_from_password, generate_checksum, generate_short_id
 from core.services.service_manager import service_manager
 from core.services.content_validator import is_file_type_valid
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 # --- Auth & Identity Views ---
+# ... (RegisterView, LogoutView, UnlockIdentityView are unchanged) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -58,11 +60,13 @@ class UnlockIdentityView(views.APIView):
             request.session['unencrypted_priv_key'] = identity['private_key']
             logger.info(f"Identity unlocked for user {user.username}")
             return Response({"status": "identity unlocked"}, status=status.HTTP_200_OK)
+        except DecryptionError as e:
+            logger.warning(f"Failed unlock attempt for {user.username}: {e}")
+            return Response({"error": "Failed to unlock identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as e:
             logger.error(f"Failed to unlock identity for {user.username}: {e}", exc_info=True)
-            return Response({"error": "Failed to unlock identity."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "An unexpected error occurred during unlock."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# UPDATED: Now accepts file uploads in addition to raw text
 class ImportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -81,7 +85,7 @@ class ImportIdentityView(views.APIView):
                 return Response({"error": f"Could not read the provided file: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
         if not all([private_key_pem, password]):
-            return Response({"error": "Private key and current password are required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "A private key file and your current password are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
@@ -91,7 +95,6 @@ class ImportIdentityView(views.APIView):
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(identity_storage_path, encryption_key)
 
-            # Overwrite the existing key by removing it first, if it exists
             existing_identity = identity_service.get_identity_by_name(name)
             if existing_identity:
                 identity_service.remove_identity(existing_identity['id'])
@@ -103,14 +106,17 @@ class ImportIdentityView(views.APIView):
                 user.save()
 
             return Response({"status": f"Identity '{name}' imported successfully."}, status=status.HTTP_201_CREATED)
+        # UPDATED: Catch specific errors for better user feedback
+        except DecryptionError as e:
+            logger.warning(f"Failed import attempt for {user.username}: {e}")
+            return Response({"error": "Failed to import identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
         except (ValueError, TypeError) as e:
              logger.warning(f"Failed to import identity for {user.username}: {e}")
-             return Response({"error": "Invalid private key format."}, status=status.HTTP_400_BAD_REQUEST)
+             return Response({"error": "Invalid private key format. Please ensure it is a valid PEM file."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
-            return Response({"error": "Failed to import identity. Check your password or key file."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "An unexpected server error occurred during import."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# NEW: View for exporting the user's private key
 class ExportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -132,18 +138,21 @@ class ExportIdentityView(views.APIView):
             identity = identity_service.get_identity_by_name(name)
 
             if not identity or 'private_key' not in identity:
-                return Response({"error": f"Could not find or decrypt the '{name}' identity. Check your password."}, status=status.HTTP_404_NOT_FOUND)
+                return Response({"error": f"Could not find the '{name}' identity."}, status=status.HTTP_404_NOT_FOUND)
 
             private_key = identity['private_key']
-
             response = HttpResponse(private_key, content_type='application/x-pem-file')
             response['Content-Disposition'] = f'attachment; filename="{user.username}_axon_key.pem"'
             return response
-
+        # UPDATED: Catch specific errors for better user feedback
+        except DecryptionError as e:
+            logger.warning(f"Failed export attempt for {user.username}: {e}")
+            return Response({"error": "Failed to export identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as e:
             logger.error(f"Failed to export identity for {user.username}: {e}", exc_info=True)
-            return Response({"error": "Failed to export identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "An unexpected server error occurred during export."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# ... (rest of the file is unchanged) ...
 class UpdateNicknameView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -174,8 +183,6 @@ class UserProfileView(views.APIView):
             "pubkey": user.pubkey
         })
 
-# --- Private Messaging Views ---
-# ... (rest of the file is unchanged) ...
 class SendPrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -279,7 +286,6 @@ class PrivateMessageListView(views.APIView):
         serializer = PrivateMessageSerializer(decrypted_messages, many=True)
         return Response(serializer.data)
 
-# --- File Handling Views ---
 class FileUploadView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -372,7 +378,6 @@ class FileStatusView(views.APIView):
             logger.error(f"Error checking status for file {file_id}: {e}", exc_info=True)
             return Response({"error": "Could not determine file status."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# --- Content & Moderation Views ---
 class MessageBoardListView(generics.ListAPIView):
     queryset = MessageBoard.objects.all()
     permission_classes = [permissions.IsAuthenticated]
@@ -512,7 +517,6 @@ class UnpinContentView(views.APIView):
         content_obj.is_pinned = False; content_obj.pinned_by = None; content_obj.save()
         return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)
 
-# --- BitSync Protocol Views ---
 @method_decorator(csrf_exempt, name='dispatch')
 class SyncView(views.APIView):
     permission_classes = [TrustedPeerPermission]
