@@ -10,7 +10,8 @@ from .views import (
     UnlockIdentityView,
     ImportIdentityView,
     UpdateNicknameView,
-    UserProfileView, # NEW: Import profile view
+    UserProfileView,
+    ExportIdentityView, # NEW: Import export view
     LogoutView,
     RequestContentExtensionView,
     ReviewContentExtensionView,
@@ -40,9 +41,10 @@ urlpatterns = [
     # Identity & User Profile
     path('identity/unlock/', UnlockIdentityView.as_view(), name='unlock-identity'),
     path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
+    path('identity/export/', ExportIdentityView.as_view(), name='export-identity'), # NEW: Export identity endpoint
     path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
     path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
-    path('user/profile/', UserProfileView.as_view(), name='user-profile'), # NEW: User profile endpoint
+    path('user/profile/', UserProfileView.as_view(), name='user-profile'),
 
     # Private Messaging
     path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),

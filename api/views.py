@@ -1,8 +1,7 @@
 # Full path: axon_bbs/api/views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
-# CORRECTED: Changed Http44 to Http404
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.http import HttpResponse, Http404, JsonResponse
 from django.contrib.auth import get_user_model
 from django.conf import settings
@@ -63,13 +62,23 @@ class UnlockIdentityView(views.APIView):
             logger.error(f"Failed to unlock identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "Failed to unlock identity."}, status=status.HTTP_401_UNAUTHORIZED)
 
+# UPDATED: Now accepts file uploads in addition to raw text
 class ImportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
     def post(self, request, *args, **kwargs):
         user = request.user
-        name = request.data.get('name', 'imported_default')
-        private_key_pem = request.data.get('private_key')
         password = request.data.get('password')
+        private_key_pem = request.data.get('private_key')
+        name = request.data.get('name', 'default')
+
+        if 'key_file' in request.FILES:
+            key_file = request.FILES['key_file']
+            try:
+                private_key_pem = key_file.read().decode('utf-8')
+            except Exception as e:
+                return Response({"error": f"Could not read the provided file: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
         if not all([private_key_pem, password]):
             return Response({"error": "Private key and current password are required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -82,8 +91,10 @@ class ImportIdentityView(views.APIView):
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(identity_storage_path, encryption_key)
 
-            if identity_service.get_identity_by_name(name):
-                return Response({"error": f"An identity with the name '{name}' already exists."}, status=status.HTTP_409_CONFLICT)
+            # Overwrite the existing key by removing it first, if it exists
+            existing_identity = identity_service.get_identity_by_name(name)
+            if existing_identity:
+                identity_service.remove_identity(existing_identity['id'])
 
             new_identity = identity_service.add_existing_identity(name, private_key_pem)
 
@@ -98,6 +109,40 @@ class ImportIdentityView(views.APIView):
         except Exception as e:
             logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "Failed to import identity. Check your password or key file."}, status=status.HTTP_401_UNAUTHORIZED)
+
+# NEW: View for exporting the user's private key
+class ExportIdentityView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        password = request.data.get('password')
+        name = request.data.get('name', 'default')
+
+        if not password:
+            return Response({"error": "Password is required to export your key."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
+            salt_path = os.path.join(user_data_dir, 'salt.bin')
+            with open(salt_path, 'rb') as f: salt = f.read()
+            encryption_key = derive_key_from_password(password, salt)
+            identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
+            identity_service = IdentityService(identity_storage_path, encryption_key)
+            identity = identity_service.get_identity_by_name(name)
+
+            if not identity or 'private_key' not in identity:
+                return Response({"error": f"Could not find or decrypt the '{name}' identity. Check your password."}, status=status.HTTP_404_NOT_FOUND)
+
+            private_key = identity['private_key']
+
+            response = HttpResponse(private_key, content_type='application/x-pem-file')
+            response['Content-Disposition'] = f'attachment; filename="{user.username}_axon_key.pem"'
+            return response
+
+        except Exception as e:
+            logger.error(f"Failed to export identity for {user.username}: {e}", exc_info=True)
+            return Response({"error": "Failed to export identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
 
 class UpdateNicknameView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -130,6 +175,7 @@ class UserProfileView(views.APIView):
         })
 
 # --- Private Messaging Views ---
+# ... (rest of the file is unchanged) ...
 class SendPrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
