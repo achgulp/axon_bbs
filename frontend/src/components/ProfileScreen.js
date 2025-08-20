@@ -14,7 +14,8 @@ const ProfileScreen = () => {
 
   // State for key management
   const [exportPassword, setExportPassword] = useState('');
-  const [importPassword, setImportPassword] = useState('');
+  const [importAccountPassword, setImportAccountPassword] = useState('');
+  const [importKeyPassword, setImportKeyPassword] = useState('');
   const [keyFile, setKeyFile] = useState(null);
 
   const fetchProfile = useCallback(() => {
@@ -55,12 +56,12 @@ const ProfileScreen = () => {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `${profile.username}_axon_key.pem`);
+      link.setAttribute('download', `${profile.username}_axon_key_encrypted.pem`);
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
       window.URL.revokeObjectURL(url);
-      setSuccess('Private key has been downloaded.');
+      setSuccess('Encrypted private key has been downloaded.');
       setExportPassword('');
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to export key. Check your password.');
@@ -75,16 +76,20 @@ const ProfileScreen = () => {
     setError(''); setSuccess(''); setIsLoading(true);
     const formData = new FormData();
     formData.append('key_file', keyFile);
-    formData.append('password', importPassword);
+    formData.append('account_password', importAccountPassword);
+    if (importKeyPassword) {
+      formData.append('key_file_password', importKeyPassword);
+    }
     formData.append('name', 'default');
     try {
       await apiClient.post('/api/identity/import/', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setSuccess('Key imported successfully! Your profile has been updated.');
-      setImportPassword('');
+      setImportAccountPassword('');
+      setImportKeyPassword('');
       setKeyFile(null);
-      fetchProfile(); // Refresh profile to show new pubkey
+      fetchProfile();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to import key. Check your password and file.');
+      setError(err.response?.data?.error || 'Failed to import key. Check your passwords and file.');
     } finally {
       setIsLoading(false);
     }
@@ -123,10 +128,10 @@ const ProfileScreen = () => {
         <SubHeader text="Manage Identity" />
         {/* --- EXPORT KEY --- */}
         <div className="mb-6 border-b border-gray-700 pb-6">
-          <h4 className="font-bold text-gray-300 mb-2">Backup Your Private Key</h4>
-          <p className="text-gray-400 text-xs italic mb-2">Enter your current password to download your encrypted private key. Keep this file safe!</p>
+          <h4 className="font-bold text-gray-300 mb-2">Backup Your Private Key (Encrypted)</h4>
+          <p className="text-gray-400 text-xs italic mb-2">Enter your current account password. The downloaded .pem file will be encrypted with this password.</p>
           <form onSubmit={handleExportKey} className="flex items-center gap-4">
-            <input type="password" value={exportPassword} onChange={e => setExportPassword(e.target.value)} placeholder="Enter current password" required className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input type="password" value={exportPassword} onChange={e => setExportPassword(e.target.value)} placeholder="Enter current account password" required className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <button type="submit" disabled={isLoading || !exportPassword} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:bg-gray-500 whitespace-nowrap">
               Download Key
             </button>
@@ -142,11 +147,15 @@ const ProfileScreen = () => {
               <input type="file" onChange={e => setKeyFile(e.target.files[0])} accept=".pem" required className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"/>
             </div>
             <div className="mb-4">
-              <label className="block text-gray-300 text-sm font-bold mb-2">Current Password</label>
-              <input type="password" value={importPassword} onChange={e => setImportPassword(e.target.value)} placeholder="Enter current password" required className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="block text-gray-300 text-sm font-bold mb-2">Current Account Password</label>
+              <input type="password" value={importAccountPassword} onChange={e => setImportAccountPassword(e.target.value)} placeholder="Enter your account password" required className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div className="mb-4">
+              <label className="block text-gray-300 text-sm font-bold mb-2">Password for Key File (if it's encrypted)</label>
+              <input type="password" value={importKeyPassword} onChange={e => setImportKeyPassword(e.target.value)} placeholder="Leave blank if not encrypted" className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div className="text-right">
-              <button type="submit" disabled={isLoading || !importPassword || !keyFile} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:bg-gray-500">
+              <button type="submit" disabled={isLoading || !importAccountPassword || !keyFile} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:bg-gray-500">
                 Import and Overwrite Key
               </button>
             </div>

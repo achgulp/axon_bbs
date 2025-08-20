@@ -29,7 +29,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (RegisterView, LogoutView, UnlockIdentityView, ImportIdentityView are unchanged from the previous fix) ...
+# ... (Views from Register to Unlock are unchanged from the last fix) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -66,13 +66,15 @@ class UnlockIdentityView(views.APIView):
             logger.error(f"Failed to unlock identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred during unlock."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# UPDATED: Now accepts a password for the key file
 class ImportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request, *args, **kwargs):
         user = request.user
-        password = request.data.get('password')
+        account_password = request.data.get('account_password')
+        key_file_password = request.data.get('key_file_password', None) # Optional password for the PEM
         private_key_pem = request.data.get('private_key')
         name = request.data.get('name', 'default')
 
@@ -83,20 +85,24 @@ class ImportIdentityView(views.APIView):
             except Exception as e:
                 return Response({"error": f"Could not read the provided file: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not all([private_key_pem, password]):
-            return Response({"error": "A private key file and your current password are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([private_key_pem, account_password]):
+            return Response({"error": "A private key and your current account password are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            # Validate the incoming key format BEFORE making any changes.
             try:
-                serialization.load_pem_private_key(private_key_pem.strip().encode(), password=None)
+                serialization.load_pem_private_key(
+                    private_key_pem.strip().encode(),
+                    password=key_file_password.encode() if key_file_password else None
+                )
             except Exception as e:
-                logger.warning(f"Invalid PEM format provided for user {user.username}: {e}")
-                raise ValueError("Invalid private key format.")
+                logger.warning(f"Invalid PEM format or wrong key password for user {user.username}: {e}")
+                raise ValueError("Invalid private key format or incorrect key password.")
 
             user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
             salt_path = os.path.join(user_data_dir, 'salt.bin')
             with open(salt_path, 'rb') as f: salt = f.read()
-            encryption_key = derive_key_from_password(password, salt)
+            encryption_key = derive_key_from_password(account_password, salt)
             identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
             identity_service = IdentityService(identity_storage_path, encryption_key)
 
@@ -113,15 +119,15 @@ class ImportIdentityView(views.APIView):
             return Response({"status": f"Identity '{name}' imported successfully."}, status=status.HTTP_201_CREATED)
         except DecryptionError as e:
             logger.warning(f"Failed import attempt for {user.username}: {e}")
-            return Response({"error": "Failed to import identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Failed to import identity. Please check your account password."}, status=status.HTTP_401_UNAUTHORIZED)
         except ValueError as e:
              logger.warning(f"Failed to import identity for {user.username}: {e}")
-             return Response({"error": "Invalid private key format. Please ensure it is a valid PEM file."}, status=status.HTTP_400_BAD_REQUEST)
+             return Response({"error": "Invalid private key format. Please ensure it is a valid PEM file and the key password is correct."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected server error occurred during import."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# UPDATED: This view has been rewritten to be more robust and prevent corruption.
+# UPDATED: Now encrypts the exported key with the user's password
 class ExportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -131,7 +137,7 @@ class ExportIdentityView(views.APIView):
         name = request.data.get('name', 'default')
 
         if not password:
-            return Response({"error": "Password is required to export your key."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Password is required to export and encrypt your key."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
@@ -147,23 +153,22 @@ class ExportIdentityView(views.APIView):
 
             private_key_pem_from_storage = identity['private_key']
 
-            # Sanitize and reserialize the key to guarantee a clean output
             try:
                 key_object = serialization.load_pem_private_key(
                     private_key_pem_from_storage.strip().encode(),
                     password=None
                 )
-                clean_pem_output = key_object.private_bytes(
+                encrypted_pem_output = key_object.private_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PrivateFormat.TraditionalOpenSSL,
-                    encryption_algorithm=serialization.NoEncryption()
+                    encryption_algorithm=serialization.BestAvailableEncryption(password.encode())
                 )
             except Exception as e:
                 logger.error(f"FATAL: The stored private key for user {user.username} is corrupted and cannot be parsed: {e}")
                 raise ValueError("The stored private key is corrupted and cannot be exported.")
 
-            response = HttpResponse(clean_pem_output, content_type='application/x-pem-file')
-            response['Content-Disposition'] = f'attachment; filename="{user.username}_axon_key.pem"'
+            response = HttpResponse(encrypted_pem_output, content_type='application/x-pem-file')
+            response['Content-Disposition'] = f'attachment; filename="{user.username}_axon_key_encrypted.pem"'
             return response
         except DecryptionError as e:
             logger.warning(f"Failed export attempt for {user.username}: {e}")
