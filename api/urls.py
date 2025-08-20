@@ -9,6 +9,7 @@ from .views import (
     BanPubkeyView,
     UnlockIdentityView,
     ImportIdentityView,
+    UpdateNicknameView, # NEW: Import nickname view
     LogoutView,
     RequestContentExtensionView,
     ReviewContentExtensionView,
@@ -20,8 +21,8 @@ from .views import (
     FileDownloadView,
     FileStatusView,
     GetPublicKeyView,
-    SendPrivateMessageView, # NEW: Import PM view
-    PrivateMessageListView, # NEW: Import PM view
+    SendPrivateMessageView,
+    PrivateMessageListView,
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -39,8 +40,10 @@ urlpatterns = [
     path('identity/unlock/', UnlockIdentityView.as_view(), name='unlock-identity'),
     path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
     path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
+    # NEW: Nickname management
+    path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
 
-    # NEW: Private Messaging
+    # Private Messaging
     path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),
     path('pm/list/', PrivateMessageListView.as_view(), name='pm-list'),
 

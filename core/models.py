@@ -50,6 +50,9 @@ class BannedPubkey(models.Model):
     pubkey = models.TextField(unique=True)
     is_temporary = models.BooleanField(default=False)
     expires_at = models.DateTimeField(null=True, blank=True, help_text="If the ban is temporary, this is when it expires.")
+    # NEW: Added federated_action_id to link to the source action
+    federated_action_id = models.UUIDField(null=True, blank=True, unique=True, help_text="The ID of the federated action that created this ban.")
+
     def __str__(self):
         status = "Temporarily Banned" if self.is_temporary and self.expires_at and self.expires_at > timezone.now() else "Banned"
         return f"[{status}] pubkey starting with {self.pubkey[:12]}..."
@@ -168,3 +171,20 @@ class ContentExtensionRequest(models.Model):
         unique_together = ('content_id', 'user')
     def __str__(self):
         return f"Extension Request for {self.content_type} {self.id} by {self.user.username}"
+
+# NEW: Model for broadcasting moderation actions across the federation.
+class FederatedAction(models.Model):
+    ACTION_CHOICES = [
+        ('ban_pubkey', 'Ban Pubkey'),
+        ('unpin_content', 'Unpin Content'),
+    ]
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    action_type = models.CharField(max_length=50, choices=ACTION_CHOICES)
+    pubkey_target = models.TextField(blank=True, null=True, help_text="The pubkey targeted by the action (e.g., for a ban).")
+    content_hash_target = models.CharField(max_length=64, blank=True, null=True, help_text="The content_hash of the item being acted upon.")
+    action_details = models.JSONField(default=dict, help_text="Additional details, e.g., {'is_temporary': true, 'duration_hours': 72}")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    def __str__(self):
+        target = self.pubkey_target[:12] if self.pubkey_target else self.content_hash_target[:12]
+        return f"'{self.action_type}' on target '{target}...'"

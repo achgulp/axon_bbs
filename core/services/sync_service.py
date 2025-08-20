@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 
-from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User
+from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey
 from .encryption_utils import generate_checksum
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class SyncService:
                 else:
                     logger.warning("Sync service cannot run without a configured local instance identity. Will check again in %s seconds.", self.poll_interval)
             except Exception as e:
-                 logger.error(f"Error in sync service poll loop: {e}", exc_info=True)
+                  logger.error(f"Error in sync service poll loop: {e}", exc_info=True)
             
             time.sleep(self.poll_interval)
     
@@ -121,10 +121,16 @@ class SyncService:
                 if response.status_code == 200:
                     response_data = response.json()
                     manifests = response_data.get('manifests', [])
+                    # NEW: Get federated actions from the payload
+                    federated_actions = response_data.get('federated_actions', [])
                     server_timestamp_str = response_data.get('server_timestamp')
-                    logger.info(f"<-- Received {len(manifests)} new manifest(s) from peer {peer.web_ui_onion_url}")
+
+                    logger.info(f"<-- Received {len(manifests)} new manifest(s) and {len(federated_actions)} action(s) from peer {peer.web_ui_onion_url}")
                     if manifests:
                         self._process_received_manifests(manifests)
+                    # NEW: Process received actions
+                    if federated_actions:
+                        self._process_received_actions(federated_actions)
                 else:
                     logger.warning(f"<-- Failed to sync with peer {peer.web_ui_onion_url}: Status {response.status_code}")
             
@@ -168,6 +174,56 @@ class SyncService:
 
             if not exists:
                 self._schedule_download(manifest)
+
+    # NEW: Logic to handle incoming federated moderation actions
+    def _process_received_actions(self, actions: list):
+        for action_data in actions:
+            action_id = action_data.get('id')
+            if FederatedAction.objects.filter(id=action_id).exists():
+                continue # Action already processed
+
+            action_type = action_data.get('action_type')
+            logger.info(f"Processing federated action: {action_type} ({action_id})")
+
+            try:
+                # Create a local copy of the action record
+                FederatedAction.objects.create(
+                    id=action_id,
+                    action_type=action_type,
+                    pubkey_target=action_data.get('pubkey_target'),
+                    content_hash_target=action_data.get('content_hash_target'),
+                    action_details=action_data.get('action_details', {}),
+                    created_at=django_timezone.datetime.fromisoformat(action_data.get('created_at'))
+                )
+
+                if action_type == 'ban_pubkey':
+                    pubkey = action_data.get('pubkey_target')
+                    details = action_data.get('action_details', {})
+                    is_temporary = details.get('is_temporary', False)
+                    duration = details.get('duration_hours')
+                    expires_at = None
+                    if is_temporary and duration:
+                        expires_at = django_timezone.now() + timedelta(hours=int(duration))
+                    
+                    BannedPubkey.objects.update_or_create(
+                        pubkey=pubkey,
+                        defaults={
+                            'is_temporary': is_temporary,
+                            'expires_at': expires_at,
+                            'federated_action_id': action_id
+                        }
+                    )
+                    logger.info(f"Federated ban applied for pubkey: {pubkey[:12]}...")
+
+                elif action_type == 'unpin_content':
+                    content_hash = action_data.get('content_hash_target')
+                    Message.objects.filter(manifest__content_hash=content_hash).update(is_pinned=False, pinned_by=None)
+                    FileAttachment.objects.filter(manifest__content_hash=content_hash).update(is_pinned=False, pinned_by=None)
+                    logger.info(f"Federated unpin applied for content hash: {content_hash[:12]}...")
+
+            except Exception as e:
+                logger.error(f"Failed to process federated action {action_id}: {e}", exc_info=True)
+
 
     def _process_completed_download(self, manifest, encrypted_data):
         from .service_manager import service_manager
@@ -301,7 +357,7 @@ class SyncService:
                              f.write(chunk_data)
                     logger.info(f"  - Chunk {chunk_index + 1}/{num_chunks} for '{item_name}' downloaded.")
                 else: 
-                    logger.error(f"   - Failed to download/verify chunk {chunk_index + 1} for '{item_name}'. Will retry on next sync.")
+                     logger.error(f"   - Failed to download/verify chunk {chunk_index + 1} for '{item_name}'. Will retry on next sync.")
         
         if len(downloaded_chunks) == num_chunks:
             logger.info(f"Download complete for '{item_name}'.")

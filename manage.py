@@ -6,7 +6,7 @@ import os
 import sys
 
 # --- Application Version ---
-APP_VERSION = "9.4.0"
+APP_VERSION = "9.5.0"
 
 def main():
     """Run administrative tasks."""

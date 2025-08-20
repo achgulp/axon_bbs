@@ -15,10 +15,11 @@ from django.utils import timezone
 from django.apps import apps
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from django.db import IntegrityError
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer
 from .permissions import TrustedPeerPermission
-from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage
+from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_checksum, generate_short_id
 from core.services.service_manager import service_manager
@@ -61,10 +62,64 @@ class UnlockIdentityView(views.APIView):
             logger.error(f"Failed to unlock identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "Failed to unlock identity."}, status=status.HTTP_401_UNAUTHORIZED)
 
+# UPDATED: Implemented the ImportIdentityView logic
 class ImportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request, *args, **kwargs):
-        return Response(status=status.HTTP_501_NOT_IMPLEMENTED)
+        user = request.user
+        name = request.data.get('name', 'imported_default')
+        private_key_pem = request.data.get('private_key')
+        password = request.data.get('password')
+
+        if not all([private_key_pem, password]):
+            return Response({"error": "Private key and current password are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
+            salt_path = os.path.join(user_data_dir, 'salt.bin')
+            with open(salt_path, 'rb') as f: salt = f.read()
+            encryption_key = derive_key_from_password(password, salt)
+            identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
+            identity_service = IdentityService(identity_storage_path, encryption_key)
+
+            # Check if an identity with this name already exists
+            if identity_service.get_identity_by_name(name):
+                return Response({"error": f"An identity with the name '{name}' already exists."}, status=status.HTTP_409_CONFLICT)
+
+            new_identity = identity_service.add_existing_identity(name, private_key_pem)
+
+            # If this is the "default" identity, update the user's main pubkey
+            if name == "default":
+                user.pubkey = new_identity['public_key']
+                user.save()
+
+            return Response({"status": f"Identity '{name}' imported successfully."}, status=status.HTTP_201_CREATED)
+        except (ValueError, TypeError) as e:
+             logger.warning(f"Failed to import identity for {user.username}: {e}")
+             return Response({"error": "Invalid private key format."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
+            return Response({"error": "Failed to import identity. Check your password or key file."}, status=status.HTTP_401_UNAUTHORIZED)
+
+# NEW: View for users to set or update their nickname
+class UpdateNicknameView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        nickname = request.data.get('nickname')
+        if not nickname:
+            return Response({"error": "Nickname cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = request.user
+            user.nickname = nickname
+            user.save()
+            return Response({"status": "Nickname updated successfully.", "nickname": nickname}, status=status.HTTP_200_OK)
+        except IntegrityError:
+            return Response({"error": "This nickname is already taken."}, status=status.HTTP_409_CONFLICT)
+        except Exception as e:
+            logger.error(f"Could not update nickname for {request.user.username}: {e}", exc_info=True)
+            return Response({"error": "An error occurred while updating the nickname."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # --- Private Messaging Views ---
 class SendPrivateMessageView(views.APIView):
@@ -334,7 +389,23 @@ class BanPubkeyView(views.APIView):
             if not duration_hours: return Response({"error": "Duration in hours is required for a temporary ban."}, status=status.HTTP_400_BAD_REQUEST)
             try: expires_at = timezone.now() + timedelta(hours=int(duration_hours))
             except (ValueError, TypeError): return Response({"error": "Invalid duration format."}, status=status.HTTP_400_BAD_REQUEST)
-        BannedPubkey.objects.update_or_create(pubkey=pubkey, defaults={'is_temporary': is_temporary, 'expires_at': expires_at})
+        
+        # UPDATED: Create FederatedAction when banning
+        action_details = {'is_temporary': is_temporary}
+        if is_temporary:
+            action_details['duration_hours'] = duration_hours
+            
+        action = FederatedAction.objects.create(
+            action_type='ban_pubkey',
+            pubkey_target=pubkey,
+            action_details=action_details
+        )
+        
+        BannedPubkey.objects.update_or_create(
+            pubkey=pubkey, 
+            defaults={'is_temporary': is_temporary, 'expires_at': expires_at, 'federated_action_id': action.id}
+        )
+
         status_msg = f"Pubkey temporarily banned until {expires_at.strftime('%Y-%m-%d %H:%M:%S %Z')}." if is_temporary else "Pubkey permanently banned."
         return Response({"status": status_msg}, status=status.HTTP_200_OK)
 
@@ -378,6 +449,14 @@ class UnpinContentView(views.APIView):
         try: model = apps.get_model('core', content_type.capitalize()); content_obj = model.objects.get(pk=content_id)
         except (LookupError, model.DoesNotExist): return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
         if content_obj.pinned_by and content_obj.pinned_by.is_staff and not request.user.is_staff: return Response({"error": "Moderators cannot unpin content pinned by an Admin."}, status=status.HTTP_403_FORBIDDEN)
+        
+        # UPDATED: Create FederatedAction when unpinning
+        if content_obj.is_pinned and content_obj.manifest and content_obj.manifest.get('content_hash'):
+             FederatedAction.objects.create(
+                action_type='unpin_content',
+                content_hash_target=content_obj.manifest.get('content_hash')
+            )
+
         content_obj.is_pinned = False; content_obj.pinned_by = None; content_obj.save()
         return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)
 
@@ -395,6 +474,8 @@ class SyncView(views.APIView):
             new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
+            # NEW: Include federated actions in the sync payload
+            new_actions = FederatedAction.objects.filter(created_at__gt=since_dt)
 
             manifests = []
             all_items = list(new_messages) + list(new_files) + list(new_pms)
@@ -413,8 +494,21 @@ class SyncView(views.APIView):
                 
                 manifests.append(item_manifest)
 
+            # NEW: Serialize the federated actions
+            actions_payload = [
+                {
+                    "id": str(action.id),
+                    "action_type": action.action_type,
+                    "pubkey_target": action.pubkey_target,
+                    "content_hash_target": action.content_hash_target,
+                    "action_details": action.action_details,
+                    "created_at": action.created_at.isoformat(),
+                } for action in new_actions
+            ]
+
             return JsonResponse({
                 "manifests": manifests,
+                "federated_actions": actions_payload, # NEW: Add actions to response
                 "server_timestamp": server_now.isoformat()
             }, status=status.HTTP_200_OK)
 
