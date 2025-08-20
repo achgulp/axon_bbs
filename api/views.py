@@ -20,7 +20,6 @@ from django.db import IntegrityError
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer
 from .permissions import TrustedPeerPermission
 from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction
-# UPDATED: Import the new custom exception
 from core.services.identity_service import IdentityService, DecryptionError
 from core.services.encryption_utils import derive_key_from_password, generate_checksum, generate_short_id
 from core.services.service_manager import service_manager
@@ -30,7 +29,6 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 # --- Auth & Identity Views ---
-# ... (RegisterView, LogoutView, UnlockIdentityView are unchanged) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -62,7 +60,7 @@ class UnlockIdentityView(views.APIView):
             return Response({"status": "identity unlocked"}, status=status.HTTP_200_OK)
         except DecryptionError as e:
             logger.warning(f"Failed unlock attempt for {user.username}: {e}")
-            return Response({"error": "Failed to unlock identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Unlock failed. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as e:
             logger.error(f"Failed to unlock identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred during unlock."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -106,7 +104,6 @@ class ImportIdentityView(views.APIView):
                 user.save()
 
             return Response({"status": f"Identity '{name}' imported successfully."}, status=status.HTTP_201_CREATED)
-        # UPDATED: Catch specific errors for better user feedback
         except DecryptionError as e:
             logger.warning(f"Failed import attempt for {user.username}: {e}")
             return Response({"error": "Failed to import identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
@@ -144,7 +141,6 @@ class ExportIdentityView(views.APIView):
             response = HttpResponse(private_key, content_type='application/x-pem-file')
             response['Content-Disposition'] = f'attachment; filename="{user.username}_axon_key.pem"'
             return response
-        # UPDATED: Catch specific errors for better user feedback
         except DecryptionError as e:
             logger.warning(f"Failed export attempt for {user.username}: {e}")
             return Response({"error": "Failed to export identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)

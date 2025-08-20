@@ -104,7 +104,6 @@ class IdentityService:
         Adds an existing private key as a new identity.
         """
         try:
-            # UPDATED: Strip whitespace from the key to prevent parsing errors
             cleaned_pem = private_key_pem.strip()
             private_key = serialization.load_pem_private_key(cleaned_pem.encode(), password=None)
             
