@@ -232,15 +232,14 @@ class UploadAvatarView(views.APIView):
             if img.mode != 'RGB':
                 img = img.convert('RGB')
 
-            # UPDATED: Resize to 128x128
             img.thumbnail((128, 128))
             
             thumb_io = io.BytesIO()
             img.save(thumb_io, format='PNG')
             
             user = request.user
-            user.avatar.save(f'{user.username}_avatar.png', ContentFile(thumb_io.getvalue()), save=False)
-            user.save()
+            # UPDATED: Changed save=False to save=True to correctly link the file to the user model.
+            user.avatar.save(f'{user.username}_avatar.png', ContentFile(thumb_io.getvalue()), save=True)
 
             return Response({"status": "Avatar updated.", "avatar_url": user.avatar.url})
 
