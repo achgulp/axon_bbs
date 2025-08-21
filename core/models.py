@@ -38,7 +38,6 @@ class User(AbstractUser):
     def __str__(self):
         return self.username
     
-    # UPDATED: Add save method to normalize the public key format on every save.
     def save(self, *args, **kwargs):
         if self.pubkey:
             try:
@@ -48,10 +47,9 @@ class User(AbstractUser):
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
                 ).decode('utf-8').strip()
             except Exception as e:
-                # We don't want to block user creation/updates if the key is bad,
-                # just log it. Admin can fix it later.
                 print(f"Warning: Could not normalize public key for user {self.username}: {e}")
-        super().save(*args, **kwargs)
+        # UPDATED: Corrected the super() call for AbstractUser
+        super(User, self).save(*args, **kwargs)
 
 
 class IgnoredPubkey(models.Model):
