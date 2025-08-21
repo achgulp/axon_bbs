@@ -19,6 +19,8 @@ class User(AbstractUser):
     is_banned = models.BooleanField(default=False, help_text="Designates if the user is banned from the local instance.")
     pubkey = models.TextField(blank=True, null=True, help_text="User's public key (PEM).")
     nickname = models.CharField(max_length=50, unique=True, blank=True, null=True, help_text="User's chosen nickname.")
+    # NEW: Field to store user avatar
+    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     groups = models.ManyToManyField(
         'auth.Group',
         verbose_name='groups',
@@ -85,7 +87,6 @@ class Alias(models.Model):
     def __str__(self):
         return f"{self.nickname} ({self.pubkey[:12]}...)"
     
-    # UPDATED: Sanitize nickname and pubkey on every save.
     def save(self, *args, **kwargs):
         if self.nickname:
             self.nickname = self.nickname.lower()

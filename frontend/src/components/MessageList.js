@@ -18,11 +18,9 @@ const AttachmentItem = ({ attachment, onDownload }) => {
         setStatus('error');
       });
   }, [attachment.id]);
-
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
-
   useEffect(() => {
     if (status === 'syncing') {
       const interval = setInterval(() => {
@@ -32,7 +30,6 @@ const AttachmentItem = ({ attachment, onDownload }) => {
       return () => clearInterval(interval);
     }
   }, [status, fetchStatus]);
-
   return (
     <li key={attachment.id} className="flex items-center gap-4">
       <span className="text-gray-200">{attachment.filename}</span>
@@ -71,14 +68,12 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [attachments, setAttachments] = useState([]);
-
   const fetchMessages = useCallback(async () => {
     try {
       const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
       setMessages(response.data);
     } catch (err) { console.error("Failed to fetch messages:", err); }
   }, [board.id]);
-
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
   const handlePostMessage = useCallback(async () => {
@@ -98,7 +93,6 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
       }
     }
   }, [subject, body, board.name, attachments, fetchMessages]);
-
   const handleFileUpload = async () => {
     if (!selectedFile) { setUploadError('Please select a file first.'); return; }
     setIsUploading(true); setUploadError('');
@@ -114,7 +108,6 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
       setIsUploading(false);
     }
   };
-
   const handleFileDownload = useCallback(async (fileId, filename) => {
     try {
       const response = await apiClient.get(`/api/files/download/${fileId}/`, {
@@ -138,17 +131,14 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
       }
     }
   }, []);
-  
-  // NEW: Handle public reply
   const handleReply = () => {
     if (!selectedMessage) return;
     const quotedBody = selectedMessage.body.split('\n').map(line => `> ${line}`).join('\n');
     setSubject(`Re: ${selectedMessage.subject}`);
     setBody(`\n\nOn ${new Date(selectedMessage.created_at).toLocaleString()}, ${selectedMessage.author_display} wrote:\n${quotedBody}`);
-    setSelectedMessage(null); // Go back to message list view
-    setShowPostForm(true); // Show the pre-filled form
+    setSelectedMessage(null);
+    setShowPostForm(true);
   };
-
   const handleUnlockSuccess = () => {
     setNeedsUnlock(false);
     if (postUnlockAction) {
@@ -164,8 +154,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
             <button onClick={() => setSelectedMessage(null)} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
               ← Back to {board.name}
             </button>
-            {/* NEW: Reply and PM Buttons */}
-            <div className="flex gap-2">
+             <div className="flex gap-2">
                 <button onClick={handleReply} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                     Reply
                 </button>
@@ -176,7 +165,10 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
         </div>
         <div className="bg-gray-800 p-4 rounded border border-gray-700">
           <h3 className="text-xl font-bold text-white mb-1">{selectedMessage.subject}</h3>
-          <p className="text-sm text-gray-400 mb-2">by {selectedMessage.author_display} on {new Date(selectedMessage.created_at).toLocaleString()}</p>
+          <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
+            <img src={selectedMessage.author_avatar_url || '/default_avatar.png'} alt="author avatar" className="w-6 h-6 rounded-full bg-gray-700" />
+            <span>by {selectedMessage.author_display} on {new Date(selectedMessage.created_at).toLocaleString()}</span>
+          </div>
           <p className="text-gray-300 whitespace-pre-wrap mb-4">{selectedMessage.body}</p>
           
           {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
@@ -257,7 +249,10 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
                   {msg.subject}
                   {msg.attachments && msg.attachments.length > 0 && <span className="ml-2 text-xs text-blue-400">[+{msg.attachments.length} file(s)]</span>}
                 </td>
-                <td className="p-3 text-gray-400">{msg.author_display}</td>
+                <td className="p-3 text-gray-400 flex items-center gap-2">
+                  <img src={msg.author_avatar_url || '/default_avatar.png'} alt="author avatar" className="w-8 h-8 rounded-full bg-gray-700" />
+                  {msg.author_display}
+                </td>
                 <td className="p-3 text-gray-400">{new Date(msg.created_at).toLocaleString()}</td>
               </tr>
             ))}

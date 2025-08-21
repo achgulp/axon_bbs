@@ -12,6 +12,7 @@ from .views import (
     UpdateNicknameView,
     UserProfileView,
     ExportIdentityView,
+    UploadAvatarView, # NEW: Import avatar view
     LogoutView,
     RequestContentExtensionView,
     ReviewContentExtensionView,
@@ -25,7 +26,7 @@ from .views import (
     GetPublicKeyView,
     SendPrivateMessageView,
     PrivateMessageListView,
-    PrivateMessageOutboxView, # NEW: Import Outbox view
+    PrivateMessageOutboxView,
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -46,11 +47,12 @@ urlpatterns = [
     path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
     path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
     path('user/profile/', UserProfileView.as_view(), name='user-profile'),
+    path('user/avatar/', UploadAvatarView.as_view(), name='user-avatar'), # NEW: Avatar upload endpoint
 
     # Private Messaging
     path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),
     path('pm/list/', PrivateMessageListView.as_view(), name='pm-list'),
-    path('pm/outbox/', PrivateMessageOutboxView.as_view(), name='pm-outbox'), # NEW: Outbox endpoint
+    path('pm/outbox/', PrivateMessageOutboxView.as_view(), name='pm-outbox'),
 
     # Content & Moderation
     path('boards/', MessageBoardListView.as_view(), name='board-list'),

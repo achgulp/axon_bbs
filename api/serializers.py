@@ -57,12 +57,14 @@ class FileAttachmentSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     author_display = serializers.SerializerMethodField()
+    # NEW: Add author avatar URL
+    author_avatar_url = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S.%fZ", read_only=True)
     attachments = FileAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Message
-        fields = ('id', 'subject', 'body', 'created_at', 'author_display', 'attachments', 'pubkey')
+        fields = ('id', 'subject', 'body', 'created_at', 'author_display', 'author_avatar_url', 'attachments', 'pubkey')
 
     def get_author_display(self, obj):
         if obj.author:
@@ -76,14 +78,20 @@ class MessageSerializer(serializers.ModelSerializer):
                 return f"Moo-{short_id}"
         
         return 'Anonymous'
+    
+    def get_author_avatar_url(self, obj):
+        if obj.author and obj.author.avatar:
+            return obj.author.avatar.url
+        return None
 
 class PrivateMessageSerializer(serializers.ModelSerializer):
     author_display = serializers.SerializerMethodField()
+    author_avatar_url = serializers.SerializerMethodField()
     decrypted_body = serializers.CharField(read_only=True)
     
     class Meta:
         model = PrivateMessage
-        fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'author_display')
+        fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'author_display', 'author_avatar_url')
         read_only_fields = fields
 
     def get_author_display(self, obj):
@@ -97,15 +105,26 @@ class PrivateMessageSerializer(serializers.ModelSerializer):
                 short_id = generate_short_id(obj.sender_pubkey, length=8)
                 return f"Moo-{short_id}"
         return "Unknown Sender"
-
+    
+    def get_author_avatar_url(self, obj):
+        # In the inbox, the author is the sender
+        if obj.author and obj.author.avatar:
+            return obj.author.avatar.url
+        # For remote users, find the local user record via pubkey
+        if obj.sender_pubkey:
+            user = User.objects.filter(pubkey=obj.sender_pubkey).first()
+            if user and user.avatar:
+                return user.avatar.url
+        return None
 
 class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
     recipient_display = serializers.SerializerMethodField()
+    recipient_avatar_url = serializers.SerializerMethodField()
     decrypted_body = serializers.CharField(read_only=True)
     
     class Meta:
         model = PrivateMessage
-        fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'recipient_display', 'recipient_pubkey')
+        fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'recipient_display', 'recipient_avatar_url', 'recipient_pubkey')
         read_only_fields = fields
 
     def get_recipient_display(self, obj):
@@ -119,6 +138,12 @@ class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
                 short_id = generate_short_id(obj.recipient_pubkey, length=8)
                 return f"Moo-{short_id}"
         return 'Unknown Recipient'
+
+    def get_recipient_avatar_url(self, obj):
+        if obj.recipient and obj.recipient.avatar:
+            return obj.recipient.avatar.url
+        return None
+
 
 class ContentExtensionRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField()

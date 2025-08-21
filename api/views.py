@@ -17,6 +17,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.db import IntegrityError
 from cryptography.hazmat.primitives import serialization
+# NEW: Import Pillow for image processing
+from PIL import Image
+from django.core.files.base import ContentFile
+import io
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
 from .permissions import TrustedPeerPermission
@@ -29,6 +33,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
+# ... (Views from Register to ExportIdentity are unchanged) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -198,6 +203,7 @@ class UpdateNicknameView(views.APIView):
             logger.error(f"Could not update nickname for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "An error occurred while updating the nickname."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# UPDATED: Now returns the avatar URL
 class UserProfileView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -206,8 +212,48 @@ class UserProfileView(views.APIView):
         return Response({
             "username": user.username,
             "nickname": user.nickname,
-            "pubkey": user.pubkey
+            "pubkey": user.pubkey,
+            "avatar_url": user.avatar.url if user.avatar else None
         })
+
+# NEW: View for uploading and processing a user avatar
+class UploadAvatarView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        if 'avatar' not in request.FILES:
+            return Response({"error": "No avatar file provided."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        file = request.FILES['avatar']
+        
+        # Validate file size (e.g., 1MB limit)
+        if file.size > 1024 * 1024:
+            return Response({"error": "Avatar file size cannot exceed 1MB."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            img = Image.open(file)
+            
+            # Convert to RGB if it's not
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+
+            # Resize to 32x32
+            img.thumbnail((32, 32))
+            
+            thumb_io = io.BytesIO()
+            img.save(thumb_io, format='PNG')
+            
+            user = request.user
+            # Save the resized image to the user's avatar field
+            user.avatar.save(f'{user.username}_avatar.png', ContentFile(thumb_io.getvalue()), save=False)
+            user.save()
+
+            return Response({"status": "Avatar updated.", "avatar_url": user.avatar.url})
+
+        except Exception as e:
+            logger.error(f"Could not process avatar for {request.user.username}: {e}")
+            return Response({"error": "Invalid image file. Please upload a valid PNG, JPG, or GIF."}, status=status.HTTP_400_BAD_REQUEST)
 
 class SendPrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
