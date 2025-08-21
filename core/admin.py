@@ -12,13 +12,21 @@ from django.conf import settings
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
 
+# UPDATED: Added pubkey_checksum to the list display and defined the method
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ('username', 'email', 'access_level', 'is_staff', 'is_banned')
+    list_display = ('username', 'email', 'access_level', 'is_staff', 'is_banned', 'pubkey_checksum')
     fieldsets = BaseUserAdmin.fieldsets + (
         ('BBS Info', {'fields': ('access_level', 'is_banned', 'pubkey', 'nickname')}),
     )
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups', 'is_banned')
+    readonly_fields = BaseUserAdmin.readonly_fields + ('pubkey_checksum',)
+
+    @admin.display(description='Pubkey Checksum')
+    def pubkey_checksum(self, obj):
+        if not obj.pubkey:
+            return "No pubkey"
+        return generate_checksum(obj.pubkey)
 
 @admin.register(MessageBoard)
 class MessageBoardAdmin(admin.ModelAdmin):
@@ -61,7 +69,6 @@ class PrivateMessageAdmin(admin.ModelAdmin):
     list_filter = ('author', 'recipient', 'is_read')
     date_hierarchy = 'created_at'
 
-# NEW: Registration for the FileAttachment model
 @admin.register(FileAttachment)
 class FileAttachmentAdmin(admin.ModelAdmin):
     list_display = ('filename', 'author', 'content_type', 'size', 'created_at')
@@ -126,6 +133,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                 format=serialization.PrivateFormat.PKCS8,
                 encryption_algorithm=serialization.NoEncryption()
             ).decode('utf-8')
+            
             encrypted_private = f.encrypt(private_pem.encode()).decode()
             instance.pubkey = public_key_pem
             instance.encrypted_private_key = encrypted_private
