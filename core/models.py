@@ -71,6 +71,11 @@ class Alias(models.Model):
         verbose_name_plural = "aliases"
     def __str__(self):
         return f"{self.nickname} ({self.pubkey[:12]}...)"
+    
+    # UPDATED: Override the save method to enforce lowercase nicknames
+    def save(self, *args, **kwargs):
+        self.nickname = self.nickname.lower()
+        super(Alias, self).save(*args, **kwargs)
 
 class ValidFileType(models.Model):
     mime_type = models.CharField(max_length=100, unique=True, help_text="e.g., 'image/jpeg'")
