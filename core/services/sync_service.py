@@ -146,7 +146,6 @@ class SyncService:
         try:
             encrypted_data = future.result()
             if encrypted_data:
-                # UPDATED: Pass the raw encrypted data directly, no decryption here
                 self._process_completed_download(manifest, encrypted_data)
         except Exception as e:
             logger.error(f"Download failed for {content_hash[:10]}... with error: {e}")
@@ -232,11 +231,10 @@ class SyncService:
             return
 
         logger.info(f"Processing newly completed download for hash {content_hash[:10]}...")
-        # UPDATED: We no longer decrypt here. The raw encrypted data is passed to get_decrypted_content later.
-        decrypted_data = None
-        
+        decrypted_data = self._decrypt_data(encrypted_data, manifest)
+        if not decrypted_data: return
+
         try:
-            # We still need to re-key the manifest for our own instance and peers.
             final_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
             logger.info(f"Manifest {content_hash[:10]} successfully re-keyed for local peers.")
         except Exception as e:
@@ -245,15 +243,8 @@ class SyncService:
         
         content_type = final_manifest.get('content_type')
         try:
-            # This is a temporary measure to get the recipient pubkey. This will be improved.
-            # In a real scenario, some metadata might be unencrypted. For now, we decrypt just to route.
-            temp_decrypted_data = self._decrypt_data(encrypted_data, manifest)
-            if not temp_decrypted_data:
-                logger.error(f"Failed to temporarily decrypt manifest {content_hash[:10]} for routing.")
-                return
-
             if content_type == 'message':
-                content = json.loads(temp_decrypted_data)
+                content = json.loads(decrypted_data)
                 
                 required_hashes = content.get('attachment_hashes', [])
                 if required_hashes:
@@ -281,39 +272,29 @@ class SyncService:
                 logger.info(f"Successfully saved new file: '{final_manifest.get('filename')}'")
             
             elif content_type == 'pm':
-                pm_content = json.loads(temp_decrypted_data)
+                pm_content = json.loads(decrypted_data)
                 sender_pubkey = pm_content.get('sender_pubkey')
+                # UPDATED: Use the explicit recipient pubkey from the manifest
+                recipient_pubkey = pm_content.get('recipient_pubkey')
+
+                if not recipient_pubkey:
+                    logger.error(f"Received PM manifest {content_hash[:10]} is missing the recipient_pubkey field.")
+                    return
                 
-                # Find the intended recipient by checking local user keys against the E2E envelopes
-                e2e_body = pm_content.get('body', {})
-                if isinstance(e2e_body, dict) and 'recipient_copy' in e2e_body:
-                    # This logic assumes the recipient's user pubkey is known.
-                    # A better way is to find a user whose private key can decrypt the message.
-                    # For now, we find all local users and check if they are the recipient.
-                    all_local_users = User.objects.filter(pubkey__isnull=False)
-                    for user in all_local_users:
-                        try:
-                            from core.services.identity_service import IdentityService
-                            from core.services.encryption_utils import derive_key_from_password, decrypt_with_private_key
-                            # This is a simplified check. A full check would require the user's password.
-                            # We will assume for now that if a user with a pubkey exists, they are the recipient.
-                            # This needs a more robust implementation for multi-user instances.
-                            
-                            # Based on the new design, we check if the manifest was encrypted for any of our users.
-                            # We find the recipient pubkey by looking for a user that is NOT the sender.
-                            if user.pubkey != sender_pubkey:
-                                recipient_user = user
-                                PrivateMessage.objects.create(
-                                    recipient=recipient_user,
-                                    recipient_pubkey=recipient_user.pubkey,
-                                    sender_pubkey=sender_pubkey,
-                                    subject=pm_content.get('subject'),
-                                    manifest=final_manifest
-                                )
-                                logger.info(f"Successfully received and saved a federated PM for user '{recipient_user.username}'.")
-                                break # Assume one recipient per instance
-                        except Exception:
-                            continue
+                # Find the local user who this message is for.
+                recipient_user = User.objects.filter(pubkey=recipient_pubkey).first()
+
+                if recipient_user:
+                    PrivateMessage.objects.create(
+                        recipient=recipient_user,
+                        recipient_pubkey=recipient_user.pubkey,
+                        sender_pubkey=sender_pubkey,
+                        subject=pm_content.get('subject'),
+                        manifest=final_manifest
+                    )
+                    logger.info(f"Successfully received and saved a federated PM for user '{recipient_user.username}'.")
+                else:
+                    logger.warning(f"Received a PM for a pubkey not belonging to any local user: {recipient_pubkey[:12]}")
 
         except Exception as e:
             logger.error(f"Failed to create database object from manifest {content_hash[:10]}: {e}")
@@ -430,6 +411,5 @@ class SyncService:
             logger.info("Content is being downloaded by the background service; UI download will wait.")
         encrypted_data = self._download_content(manifest)
         if encrypted_data:
-            # UPDATED: This now ONLY decrypts the transport layer. E2E is handled in the view.
             return self._decrypt_data(encrypted_data, manifest)
         return None
