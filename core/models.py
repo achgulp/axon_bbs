@@ -37,6 +37,22 @@ class User(AbstractUser):
     )
     def __str__(self):
         return self.username
+    
+    # UPDATED: Add save method to normalize the public key format on every save.
+    def save(self, *args, **kwargs):
+        if self.pubkey:
+            try:
+                pubkey_obj = serialization.load_pem_public_key(self.pubkey.encode())
+                self.pubkey = pubkey_obj.public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                ).decode('utf-8').strip()
+            except Exception as e:
+                # We don't want to block user creation/updates if the key is bad,
+                # just log it. Admin can fix it later.
+                print(f"Warning: Could not normalize public key for user {self.username}: {e}")
+        super().save(*args, **kwargs)
+
 
 class IgnoredPubkey(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='ignored_pubkeys')
