@@ -123,7 +123,8 @@ const ProfileScreen = () => {
       
       <div className="bg-gray-800 p-4 rounded mb-6 border border-gray-700">
         <div className="flex items-start gap-4 mb-4">
-          <img src={profile?.avatar_url || '/default_avatar.png'} alt="Avatar" className="w-16 h-16 rounded-full bg-gray-700 border-2 border-gray-600" />
+          {/* UPDATED: Increased avatar display size */}
+          <img src={profile?.avatar_url || '/default_avatar.png'} alt="Avatar" className="w-32 h-32 rounded-full bg-gray-700 border-2 border-gray-600" />
           <div>
             <div className="mb-2">
               <label className="block text-gray-400 text-sm font-bold">Username</label>
@@ -149,7 +150,8 @@ const ProfileScreen = () => {
       <div className="bg-gray-800 p-4 rounded border border-gray-700">
         <SubHeader text="Manage Identity & Avatar" />
         <div className="mb-6 border-b border-gray-700 pb-6">
-          <h4 className="font-bold text-gray-300 mb-2">Change Your Avatar (32x32)</h4>
+          {/* UPDATED: Corrected text label */}
+          <h4 className="font-bold text-gray-300 mb-2">Change Your Avatar (128x128)</h4>
            <form onSubmit={handleAvatarUpload} className="flex items-center gap-4">
             <input type="file" onChange={e => setAvatarFile(e.target.files[0])} accept="image/png, image/jpeg, image/gif" required className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"/>
             <button type="submit" disabled={isLoading || !avatarFile} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:bg-gray-500 whitespace-nowrap">
