@@ -274,14 +274,12 @@ class SyncService:
             elif content_type == 'pm':
                 pm_content = json.loads(decrypted_data)
                 sender_pubkey = pm_content.get('sender_pubkey')
-                # UPDATED: Use the explicit recipient pubkey from the manifest
                 recipient_pubkey = pm_content.get('recipient_pubkey')
 
                 if not recipient_pubkey:
                     logger.error(f"Received PM manifest {content_hash[:10]} is missing the recipient_pubkey field.")
                     return
                 
-                # Find the local user who this message is for.
                 recipient_user = User.objects.filter(pubkey=recipient_pubkey).first()
 
                 if recipient_user:
@@ -294,7 +292,9 @@ class SyncService:
                     )
                     logger.info(f"Successfully received and saved a federated PM for user '{recipient_user.username}'.")
                 else:
-                    logger.warning(f"Received a PM for a pubkey not belonging to any local user: {recipient_pubkey[:12]}")
+                    # UPDATED: Log the checksum of the pubkey for easier debugging.
+                    recipient_checksum = generate_checksum(recipient_pubkey)
+                    logger.warning(f"Received a PM for a pubkey not belonging to any local user. Checksum: {recipient_checksum}")
 
         except Exception as e:
             logger.error(f"Failed to create database object from manifest {content_hash[:10]}: {e}")
