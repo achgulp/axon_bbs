@@ -72,9 +72,9 @@ class Alias(models.Model):
     def __str__(self):
         return f"{self.nickname} ({self.pubkey[:12]}...)"
     
-    # UPDATED: Override the save method to enforce lowercase nicknames
     def save(self, *args, **kwargs):
-        self.nickname = self.nickname.lower()
+        if self.nickname:
+            self.nickname = self.nickname.lower()
         super(Alias, self).save(*args, **kwargs)
 
 class ValidFileType(models.Model):
