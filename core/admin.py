@@ -12,7 +12,6 @@ from django.conf import settings
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
 
-# UPDATED: Added pubkey_checksum to the list display and defined the method
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     list_display = ('username', 'email', 'access_level', 'is_staff', 'is_banned', 'pubkey_checksum')
@@ -181,8 +180,17 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
         self.message_user(request, f"Successfully reset sync timestamp for {rows_updated} peer(s).", level='SUCCESS')
 
 
+# UPDATED: Added checksum display to the Alias admin panel
 @admin.register(Alias)
 class AliasAdmin(admin.ModelAdmin):
-    list_display = ('nickname', 'pubkey', 'verified', 'added_at')
+    list_display = ('nickname', 'pubkey_checksum', 'verified', 'added_at')
     list_filter = ('verified',)
     search_fields = ('nickname', 'pubkey')
+    readonly_fields = ('added_at', 'pubkey_checksum',)
+    list_display_links = ('nickname', 'pubkey_checksum',)
+
+    @admin.display(description='Pubkey Checksum')
+    def pubkey_checksum(self, obj):
+        if not obj.pubkey:
+            return "No pubkey"
+        return generate_checksum(obj.pubkey)
