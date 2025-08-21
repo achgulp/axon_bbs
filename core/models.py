@@ -48,7 +48,6 @@ class User(AbstractUser):
                 ).decode('utf-8').strip()
             except Exception as e:
                 print(f"Warning: Could not normalize public key for user {self.username}: {e}")
-        # UPDATED: Corrected the super() call for AbstractUser
         super(User, self).save(*args, **kwargs)
 
 
@@ -86,9 +85,19 @@ class Alias(models.Model):
     def __str__(self):
         return f"{self.nickname} ({self.pubkey[:12]}...)"
     
+    # UPDATED: Sanitize nickname and pubkey on every save.
     def save(self, *args, **kwargs):
         if self.nickname:
             self.nickname = self.nickname.lower()
+        if self.pubkey:
+            try:
+                pubkey_obj = serialization.load_pem_public_key(self.pubkey.encode())
+                self.pubkey = pubkey_obj.public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                ).decode('utf-8').strip()
+            except Exception as e:
+                raise ValidationError(f"Invalid public key format for Alias: {e}")
         super(Alias, self).save(*args, **kwargs)
 
 class ValidFileType(models.Model):
