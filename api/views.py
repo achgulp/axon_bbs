@@ -176,7 +176,7 @@ class ExportIdentityView(views.APIView):
         except ValueError as e:
              return Response({"error": f"Could not export key: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception as e:
-            logger.error(f"Failed to export identity for {user.username}: {e}", exc_info=True)
+            logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected server error occurred during export."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class UpdateNicknameView(views.APIView):
@@ -229,8 +229,9 @@ class SendPrivateMessageView(views.APIView):
         if pubkey:
             recipient_pubkey = pubkey
         else:
-            local_user = User.objects.filter(username=identifier).first()
-            alias = Alias.objects.filter(nickname=identifier).first()
+            # UPDATED: All lookups are now case-insensitive
+            local_user = User.objects.filter(username__iexact=identifier).first()
+            alias = Alias.objects.filter(nickname__iexact=identifier).first()
             if local_user and local_user.pubkey:
                 recipient_pubkey = local_user.pubkey
             elif alias and alias.pubkey:
@@ -248,7 +249,7 @@ class SendPrivateMessageView(views.APIView):
 
             if is_new_contact and is_remote_user:
                 nickname_to_create = identifier
-                if not Alias.objects.filter(nickname=nickname_to_create).exists():
+                if not Alias.objects.filter(nickname__iexact=nickname_to_create).exists():
                     Alias.objects.create(pubkey=recipient_pubkey, nickname=nickname_to_create)
                     logger.info(f"Created new alias '{nickname_to_create}' for first-time contact.")
                 else:
