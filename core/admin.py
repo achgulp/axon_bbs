@@ -12,6 +12,31 @@ from django.conf import settings
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
 
+def rekey_content_action(modeladmin, request, queryset):
+    """Shared admin action to re-key manifests for selected content."""
+    if not service_manager.bitsync_service:
+        modeladmin.message_user(request, "BitSyncService is not available.", level='ERROR')
+        return
+
+    updated_count = 0
+    for item in queryset:
+        name = getattr(item, 'subject', getattr(item, 'filename', str(item.id)))
+        try:
+            if not item.manifest:
+                modeladmin.message_user(request, f"Content '{name}' has no manifest to re-key.", level='WARNING')
+                continue
+            
+            new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(item.manifest)
+            
+            item.manifest = new_manifest
+            item.save()
+            updated_count += 1
+        except Exception as e:
+            modeladmin.message_user(request, f"Failed to re-key content '{name}': {e}", level='ERROR')
+    
+    modeladmin.message_user(request, f"Successfully updated manifests for {updated_count} item(s).")
+rekey_content_action.short_description = "Re-key content for all trusted peers"
+
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     list_display = ('username', 'email', 'access_level', 'is_staff', 'is_banned', 'pubkey_checksum')
@@ -37,36 +62,14 @@ class MessageAdmin(admin.ModelAdmin):
     list_display = ('subject', 'author', 'board', 'created_at', 'expires_at', 'is_pinned')
     list_filter = ('board', 'author', 'is_pinned')
     date_hierarchy = 'created_at'
-    actions = ['rekey_messages']
-
-    @admin.action(description='Re-key message for all trusted peers')
-    def rekey_messages(self, request, queryset):
-        if not service_manager.bitsync_service:
-            self.message_user(request, "BitSyncService is not available.", level='ERROR')
-            return
-
-        updated_count = 0
-        for message in queryset:
-            try:
-                if not message.manifest:
-                    self.message_user(request, f"Message '{message.subject}' has no manifest to re-key.", level='WARNING')
-                    continue
-                
-                new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(message.manifest)
-                
-                message.manifest = new_manifest
-                message.save()
-                updated_count += 1
-            except Exception as e:
-                self.message_user(request, f"Failed to re-key message '{message.subject}': {e}", level='ERROR')
-        
-        self.message_user(request, f"Successfully updated manifests for {updated_count} message(s).")
+    actions = [rekey_content_action]
 
 @admin.register(PrivateMessage)
 class PrivateMessageAdmin(admin.ModelAdmin):
     list_display = ('subject', 'author', 'recipient', 'created_at', 'is_read')
     list_filter = ('author', 'recipient', 'is_read')
     date_hierarchy = 'created_at'
+    actions = [rekey_content_action]
 
 @admin.register(FileAttachment)
 class FileAttachmentAdmin(admin.ModelAdmin):
@@ -74,6 +77,7 @@ class FileAttachmentAdmin(admin.ModelAdmin):
     list_filter = ('author', 'content_type')
     date_hierarchy = 'created_at'
     readonly_fields = ('id', 'created_at', 'expires_at', 'pinned_by')
+    actions = [rekey_content_action]
 
 @admin.register(BannedPubkey)
 class BannedPubkeyAdmin(admin.ModelAdmin):
@@ -150,7 +154,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             
             peer_url = instance.web_ui_onion_url.strip('/')
             target_url = f"{peer_url}/api/identity/public_key/"
-            proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+            proxies = {'http': 'socks5h://1227.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
             
             try:
                 self.message_user(request, f"Fetching key from {peer_url}...", level='INFO')

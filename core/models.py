@@ -41,6 +41,8 @@ class User(AbstractUser):
         return self.username
     
     def save(self, *args, **kwargs):
+        if self.nickname:
+            self.nickname = self.nickname.lower()
         if self.pubkey:
             try:
                 pubkey_obj = serialization.load_pem_public_key(self.pubkey.encode())
