@@ -1,4 +1,4 @@
-// Full path: frontend/src/applets/FloatUpMaze.js
+// Full path: axon_bbs/frontend/src/applets/FloatUpMaze.js
 
 // --- Start of Applet API Helper ---
 window.bbs = {
@@ -109,9 +109,34 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const zebraBitmap = [ [T, T, T, T, T, W, K, W, K, T, T, T, T, T, T, T],[T, T, T, T, W, K, W, K, W, K, T, T, T, T, T, T],[T, T, T, T, K, W, K, W, K, W, T, T, T, T, T, T],[T, T, T, W, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, K, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, W, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, K, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, W, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, K, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, W, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, W, W, T, T, W, W, T, T, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, W, W, T, T, W, W, T, T, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
         const simpleBombBitmap = [ [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, BR, BR, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, BR, OR, FY, BR, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, BR, FY, OR, BR, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T, T],[T, T, T, T, T, T, DG, DG, K, K, W, K, K, W, K, K, DG, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T],[T, T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
         
-        function createBitmapDataURL(bitmapData, width, height) { const tempCanvas = document.createElement('canvas'); tempCanvas.width = width; tempCanvas.height = height; const tempCtx = tempCanvas.getContext('2d'); if (!tempCtx) { return null; } const imageData = tempCtx.createImageData(width, height); const data = imageData.data; for (let y = 0; y < height; y++) { for (let x = 0; x < width; x++) { const color = bitmapData[y][x]; const index = (y * width + x) * 4; if (color) { const r = parseInt(color.slice(1, 3), 16); const g = parseInt(color.slice(3, 5), 16); const b = parseInt(color.slice(5, 7), 16); data[index] = r; data[index + 1] = g; data[index + 2] = b; data[index + 3] = 255; } else { data[index + 3] = 0; } } } tempCtx.putImageData(imageData, 0, 0); return tempCanvas.toDataURL('image/png'); }
-        const characters = { giraffe: { dataUrl: createBitmapDataURL(giraffeBitmap, 16, 16) }, elephant: { dataUrl: createBitmapDataURL(elephantBitmap, 16, 16) }, zebra: { dataUrl: createBitmapDataURL(zebraBitmap, 16, 16) } };
-        const bombDataUrl = createBitmapDataURL(simpleBombBitmap, 24, 24);
+        // UPDATED: Replaced the image generation function with a more reliable one that uses fillRect instead of direct ImageData manipulation.
+        function createBitmapDataURL(bitmapData) {
+            const height = bitmapData.length;
+            if (height === 0) return null;
+            const width = bitmapData[0].length;
+            if (width === 0) return null;
+        
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+            const tempCtx = tempCanvas.getContext('2d');
+            if (!tempCtx) { return null; }
+        
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const color = bitmapData[y][x];
+                    if (color) {
+                        tempCtx.fillStyle = color;
+                        tempCtx.fillRect(x, y, 1, 1);
+                    }
+                }
+            }
+            return tempCanvas.toDataURL('image/png');
+        }
+        
+        // UPDATED: Calls to the image generation function no longer need width/height arguments.
+        const characters = { giraffe: { dataUrl: createBitmapDataURL(giraffeBitmap) }, elephant: { dataUrl: createBitmapDataURL(elephantBitmap) }, zebra: { dataUrl: createBitmapDataURL(zebraBitmap) } };
+        const bombDataUrl = createBitmapDataURL(simpleBombBitmap);
 
         let sounds = {}, audioInitialized = false;
 
@@ -180,3 +205,4 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         debugLog(`FATAL ERROR: ${e.message}`);
     }
 })();
+

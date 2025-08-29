@@ -6,7 +6,8 @@ import os
 import sys
 
 # --- Application Version ---
-APP_VERSION = "9.7.0"
+# UPDATED: Version number incremented to reflect the new Applet Platform feature.
+APP_VERSION = "10.1.0"
 
 def main():
     """Run administrative tasks."""
@@ -35,3 +36,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -17,34 +17,75 @@ const AppletRunner = ({ applet, onBack }) => {
 
   useEffect(() => {
     const handleMessage = async (event) => {
+      // Security: Ensure the message is from our iframe
       if (event.source !== iframeRef.current?.contentWindow) return;
 
       const { command, payload, requestId } = event.data;
-      console.log(`[Host] Received command '${command}' from applet with ID ${requestId}.`); // DEBUG
       
       let response = { command: `response_${command}`, requestId, payload: null, error: null };
 
       try {
-        if (command === 'getUserInfo') {
-          if (profile) {
-            response.payload = profile;
-          } else {
-            const freshProfile = await apiClient.get('/api/user/profile/');
-            setProfile(freshProfile.data);
-            response.payload = freshProfile.data;
-          }
+        switch (command) {
+          case 'getUserInfo':
+            if (profile) {
+              response.payload = profile;
+            } else {
+              // Fetch profile on demand if not already loaded
+              const freshProfile = await apiClient.get('/api/user/profile/');
+              setProfile(freshProfile.data);
+              response.payload = freshProfile.data;
+            }
+            break;
+
+          // UPDATED: Added handler for the 'getData' command from the applet API.
+          case 'getData':
+            // This currently returns an empty object because the backend API endpoint
+            // for applet data storage has not been implemented yet.
+            // When implemented, this will fetch user-specific data for this applet.
+            try {
+                // NOTE: The endpoint `/api/applets/${applet.id}/data/` needs to be created on the backend.
+                const dataResponse = await apiClient.get(`/api/applets/${applet.id}/data/`);
+                response.payload = dataResponse.data;
+            } catch (apiError) {
+                if (apiError.response && apiError.response.status === 404) {
+                    // It's not an error if no data has been saved yet. Return an empty object.
+                    response.payload = {}; 
+                } else {
+                    console.error("API error fetching applet data:", apiError);
+                    response.error = "Could not fetch saved data from the server.";
+                }
+            }
+            break;
+
+          // UPDATED: Added handler for the 'saveData' command from the applet API.
+          case 'saveData':
+            // This currently sends data to a non-existent endpoint. It allows the
+            // applet to function, but data will not persist until the backend is built.
+            try {
+              // NOTE: The endpoint `/api/applets/${applet.id}/data/` needs to be created on the backend.
+              await apiClient.post(`/api/applets/${applet.id}/data/`, payload);
+              response.payload = { status: 'ok' };
+            } catch (apiError) {
+              console.error("API error saving applet data:", apiError);
+              response.error = "Could not save data to the server.";
+            }
+            break;
+
+          default:
+            response.error = `Unknown command: ${command}`;
+            break;
         }
       } catch (e) {
         response.error = e.message;
       }
       
-      console.log(`[Host] Sending response for '${command}' to applet with ID ${requestId}.`); // DEBUG
+      // Send the response back to the applet in the iframe
       iframeRef.current.contentWindow.postMessage(response, '*');
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [profile]);
+  }, [profile, applet.id]); // Dependency array includes applet.id for API calls
 
   useEffect(() => {
     if (!applet?.code_manifest?.content_hash) {
@@ -68,13 +109,14 @@ const AppletRunner = ({ applet, onBack }) => {
 
   const getIframeContent = () => {
     if (!appletCode) return '';
+    // This creates the basic HTML structure that the applet's JS will run inside of.
     return `
       <!DOCTYPE html>
       <html>
         <head><title>${applet.name}</title></head>
         <body>
           <div id="applet-root"></div>
-          <script>${appletCode}</script>
+          <script type="text/javascript">${appletCode}</script>
         </body>
       </html>
     `;
@@ -106,3 +148,4 @@ const AppletRunner = ({ applet, onBack }) => {
 };
 
 export default AppletRunner;
+
