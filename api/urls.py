@@ -12,7 +12,7 @@ from .views import (
     UpdateNicknameView,
     UserProfileView,
     ExportIdentityView,
-    UploadAvatarView, # NEW: Import avatar view
+    UploadAvatarView,
     LogoutView,
     RequestContentExtensionView,
     ReviewContentExtensionView,
@@ -27,6 +27,7 @@ from .views import (
     SendPrivateMessageView,
     PrivateMessageListView,
     PrivateMessageOutboxView,
+    AppletListView,
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -47,7 +48,7 @@ urlpatterns = [
     path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
     path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
     path('user/profile/', UserProfileView.as_view(), name='user-profile'),
-    path('user/avatar/', UploadAvatarView.as_view(), name='user-avatar'), # NEW: Avatar upload endpoint
+    path('user/avatar/', UploadAvatarView.as_view(), name='user-avatar'),
 
     # Private Messaging
     path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),
@@ -70,6 +71,9 @@ urlpatterns = [
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('files/download/<uuid:file_id>/', FileDownloadView.as_view(), name='file-download'),
     path('files/status/<uuid:file_id>/', FileStatusView.as_view(), name='file-status'),
+
+    # Applet Framework
+    path('applets/', AppletListView.as_view(), name='applet-list'),
 
     # BitSync P2P Protocol
     path('sync/', SyncView.as_view(), name='sync'),

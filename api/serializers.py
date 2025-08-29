@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest, FileAttachment, PrivateMessage
+from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest, FileAttachment, PrivateMessage, Applet
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
 import os
@@ -57,7 +57,6 @@ class FileAttachmentSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     author_display = serializers.SerializerMethodField()
-    # NEW: Add author avatar URL
     author_avatar_url = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S.%fZ", read_only=True)
     attachments = FileAttachmentSerializer(many=True, read_only=True)
@@ -152,3 +151,9 @@ class ContentExtensionRequestSerializer(serializers.ModelSerializer):
         model = ContentExtensionRequest
         fields = ('id', 'content_id', 'content_type', 'user', 'request_date', 'status', 'reviewed_by', 'reviewed_at')
         read_only_fields = ('id', 'user', 'request_date', 'status', 'reviewed_by', 'reviewed_at')
+
+class AppletSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Applet
+        fields = ('id', 'name', 'description', 'author_pubkey', 'code_manifest', 'created_at')
+        read_only_fields = fields
