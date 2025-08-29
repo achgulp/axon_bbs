@@ -37,6 +37,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         .controls button, .start-button { background-color: #3b82f6; color: white; border: none; padding: 10px 15px; margin: 5px; border-radius: 8px; font-size: 16px; cursor: pointer; }
         .char-select button { background-color: #4a5568; width: 48px; height: 48px; padding: 0; display: inline-flex; justify-content: center; align-items: center; border-radius: 8px; border: none; }
         .char-select button.selected { background-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.5); }
+        .char-select img { width: 32px; height: 32px; } /* UPDATED: CSS to control icon size and centering */
         .message-area { margin-top: 10px; font-size: 18px; font-weight: bold; min-height: 25px; color: #cbd5e0; }
         .score-stats-area { display: flex; justify-content: center; font-size: 14px; margin-top: 5px; color: #a0aec0; min-height: 20px; }
         #debug-dialog { position: absolute; top: 10px; left: 10px; width: 250px; height: 150px; background-color: rgba(0,0,0,0.7); border: 1px solid #4a5568; border-radius: 5px; color: #fc8181; font-family: monospace; font-size: 10px; overflow-y: scroll; padding: 5px; z-index: 1000; }
@@ -55,9 +56,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             <div class="score-stats-area"><div id="statsArea"></div></div>
             <div class="char-select my-3">
                 <span class="mr-2 font-semibold align-middle">Character:</span>
-                <button id="charGiraffe" data-char="giraffe" title="Giraffe"><canvas width="32" height="32"></canvas></button>
-                <button id="charElephant" data-char="elephant" title="Elephant"><canvas width="32" height="32"></canvas></button>
-                <button id="charZebra" data-char="zebra" title="Zebra"><canvas width="32" height="32"></canvas></button>
+                <button id="charGiraffe" data-char="giraffe" title="Giraffe"><img id="imgGiraffe" alt="Giraffe"></button>
+                <button id="charElephant" data-char="elephant" title="Elephant"><img id="imgElephant" alt="Elephant"></button>
+                <button id="charZebra" data-char="zebra" title="Zebra"><img id="imgZebra" alt="Zebra"></button>
             </div>
             <div class="controls mb-3">
                 <button id="leftButton">← Left</button>
@@ -112,17 +113,41 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const characterBitmaps = { giraffe: giraffeBitmap, elephant: elephantBitmap, zebra: zebraBitmap };
         let sounds = {}, audioInitialized = false;
         
-        function drawBitmap(ctx, bitmap, x, y, scale = 1) {
+        // This function creates a data URL from a bitmap, scaled up by 2x.
+        function createScaledDataURL(bitmapData) {
+            const height = bitmapData.length;
+            if (height === 0) return null;
+            const width = bitmapData[0].length;
+            const scale = 2;
+
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = width * scale;
+            tempCanvas.height = height * scale;
+            const tempCtx = tempCanvas.getContext('2d');
+            if (!tempCtx) { return null; }
+            tempCtx.imageSmoothingEnabled = false;
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    if (bitmapData[y][x]) {
+                        tempCtx.fillStyle = bitmapData[y][x];
+                        tempCtx.fillRect(x * scale, y * scale, scale, scale);
+                    }
+                }
+            }
+            return tempCanvas.toDataURL('image/png');
+        }
+
+        function drawBitmap(ctx, bitmap, x, y) {
             const height = bitmap.length;
             if (height === 0) return;
             const width = bitmap[0].length;
-            if (width === 0) return;
 
             for (let row = 0; row < height; row++) {
                 for (let col = 0; col < width; col++) {
                     if (bitmap[row][col]) {
                         ctx.fillStyle = bitmap[row][col];
-                        ctx.fillRect(x + (col * scale), y + (row * scale), scale, scale);
+                        ctx.fillRect(x + col, y + row, 1, 1);
                     }
                 }
             }
@@ -134,19 +159,10 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         
         function setupUI() {
             debugLog("Setting up UI...");
-            const charCanvases = {
-                giraffe: document.querySelector('#charGiraffe canvas'),
-                elephant: document.querySelector('#charElephant canvas'),
-                zebra: document.querySelector('#charZebra canvas')
-            };
-
-            for (const charName in charCanvases) {
-                const btnCanvas = charCanvases[charName];
-                const btnCtx = btnCanvas.getContext('2d');
-                btnCtx.imageSmoothingEnabled = false;
-                // Draw the character icons directly onto their canvases, scaled up and centered.
-                drawBitmap(btnCtx, characterBitmaps[charName], 0, 0, 2);
-            }
+            // UPDATED: This is the definitive fix for rendering icons.
+            document.getElementById('imgGiraffe').src = createScaledDataURL(giraffeBitmap);
+            document.getElementById('imgElephant').src = createScaledDataURL(elephantBitmap);
+            document.getElementById('imgZebra').src = createScaledDataURL(zebraBitmap);
             
             messageArea.textContent = "Select character & Start!";
             startButton.disabled = false;
