@@ -20,7 +20,8 @@ const AppletRunner = ({ applet, onBack }) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
 
       const { command, payload, requestId } = event.data;
-      // Prepare a response object
+      console.log(`[Host] Received command '${command}' from applet with ID ${requestId}.`); // DEBUG
+      
       let response = { command: `response_${command}`, requestId, payload: null, error: null };
 
       try {
@@ -28,24 +29,22 @@ const AppletRunner = ({ applet, onBack }) => {
           if (profile) {
             response.payload = profile;
           } else {
-            // If profile hasn't loaded yet, wait for it
             const freshProfile = await apiClient.get('/api/user/profile/');
             setProfile(freshProfile.data);
             response.payload = freshProfile.data;
           }
         }
-        // ... (future implementation for getData/saveData)
       } catch (e) {
         response.error = e.message;
       }
       
-      // Send the response back to the iframe
+      console.log(`[Host] Sending response for '${command}' to applet with ID ${requestId}.`); // DEBUG
       iframeRef.current.contentWindow.postMessage(response, '*');
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [profile]); // Rerun when profile is loaded
+  }, [profile]);
 
   useEffect(() => {
     if (!applet?.code_manifest?.content_hash) {

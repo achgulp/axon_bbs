@@ -32,8 +32,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (All views from RegisterView to UnpinContentView remain unchanged) ...
-
+# ... (All views from RegisterView to FileDownloadView remain unchanged) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -491,7 +490,6 @@ class DownloadContentView(views.APIView):
         manifest = None
         models_to_check = [Message, FileAttachment, PrivateMessage, Applet]
         for model in models_to_check:
-            # Note: Applet uses 'code_manifest' field name
             manifest_field_name = 'code_manifest' if model is Applet else 'manifest'
             filter_kwargs = {f'{manifest_field_name}__content_hash': content_hash}
             
@@ -508,9 +506,10 @@ class DownloadContentView(views.APIView):
             if decrypted_data is None:
                 return Response({"error": "Failed to retrieve or decrypt content from the network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             
+            # UPDATED: Log the successful download for debugging
+            logger.info(f"User '{request.user.username}' successfully decrypted and downloaded content with hash: {content_hash[:12]}...")
+
             content_details = json.loads(decrypted_data.decode('utf-8'))
-            
-            # Assuming applet code is stored under a 'code' key
             applet_code = content_details.get('code', '')
             
             return HttpResponse(applet_code, content_type='application/javascript')
@@ -684,7 +683,6 @@ class SyncView(views.APIView):
             server_now = timezone.now()
             since_dt = timezone.datetime.fromisoformat(since_str.replace(' ', '+'))
             
-            # UPDATED: Query now includes Applets that are NOT local
             new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
