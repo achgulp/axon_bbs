@@ -35,7 +35,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         .game-container { background-color: #2d3748; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; width: 300px; }
         canvas { display: block; margin: 0 auto 15px auto; background-color: #e0f2fe; border: 1px solid #4a5568; max-width: 100%; height: auto; image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;}
         .controls button, .start-button { background-color: #3b82f6; color: white; border: none; padding: 10px 15px; margin: 5px; border-radius: 8px; font-size: 16px; cursor: pointer; }
-        .char-select button { background-color: #4a5568; width: 48px; height: 48px; padding: 5px; display: inline-flex; justify-content: center; align-items: center; border-radius: 8px; }
+        .char-select button { background-color: #4a5568; width: 48px; height: 48px; padding: 0; display: inline-flex; justify-content: center; align-items: center; border-radius: 8px; border: none; }
         .char-select button.selected { background-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.5); }
         .message-area { margin-top: 10px; font-size: 18px; font-weight: bold; min-height: 25px; color: #cbd5e0; }
         .score-stats-area { display: flex; justify-content: center; font-size: 14px; margin-top: 5px; color: #a0aec0; min-height: 20px; }
@@ -144,8 +144,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 const btnCanvas = charCanvases[charName];
                 const btnCtx = btnCanvas.getContext('2d');
                 btnCtx.imageSmoothingEnabled = false;
-                // Draw the character icons directly onto their canvases
-                drawBitmap(btnCtx, characterBitmaps[charName], 8, 8, 2);
+                // Draw the character icons directly onto their canvases, scaled up and centered.
+                drawBitmap(btnCtx, characterBitmaps[charName], 0, 0, 2);
             }
             
             messageArea.textContent = "Select character & Start!";
@@ -176,24 +176,36 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         async function startGame() { if (!selectedCharacter) { messageArea.textContent = "Select a character!"; return; } if (!audioInitialized) await initializeAudio(); if (typeof Tone !== 'undefined') await Tone.start(); proceedWithStart(); }
         function proceedWithStart() { isGameRunning=true; isGameOver=false; isExploding=false; saucer.active=false; saucer.beamActive=false; saucer.state='idle'; messageArea.textContent = "Go! Reach the Tree!"; defineTrophy(); generateSafePath(); placeMines(); initializePlayer(); startButton.disabled=true; charButtons.forEach(b=>b.disabled=true); leftButton.disabled=false; rightButton.disabled=false; if(animationFrameId) cancelAnimationFrame(animationFrameId); gameLoop(); }
         function resetGameAfterDelay() { leftButton.disabled = true; rightButton.disabled = true; moveLeft=false; moveRight=false; setTimeout(resetGame, 3000); }
-        function resetGame() { 
-            isGameOver=false; isGameRunning=false; isExploding=false; 
-            saucer.active=false; saucer.beamActive=false; saucer.state='idle'; 
-            playSound('beam','stop'); 
-            player=null; mines=[]; safePathSegments=[]; 
-            updateStatsDisplay(); 
-            messageArea.textContent="Select character & Start!"; 
+        
+        // This is the fully corrected reset logic.
+        function resetGame() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            isGameRunning = false;
+            isGameOver = false;
+            isExploding = false;
+            saucer.active = false;
+            saucer.beamActive = false;
+            saucer.state = 'idle';
+            playSound('beam', 'stop');
+            player = null;
+            mines = [];
+            safePathSegments = [];
+            updateStatsDisplay();
+            messageArea.textContent = "Select character & Start!";
             startButton.disabled = false;
             charButtons.forEach(b => {
                 b.disabled = false;
                 b.classList.remove('selected');
             });
             selectedCharacter = null;
-            leftButton.disabled=true; rightButton.disabled=true; 
-            clearCanvas(); 
-            defineTrophy(); 
-            drawTrophy(); 
-            if(animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId=null; } 
+            leftButton.disabled = true;
+            rightButton.disabled = true;
+            clearCanvas();
+            defineTrophy();
+            drawTrophy();
         }
         
         startButton.addEventListener('click', startGame);
@@ -206,7 +218,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         // 2. RUNTIME: Call the functions to initialize and run the applet.
         debugLog("Applet initializing...");
-        if (window.BBS_APPLET_CHECKSUM) {
+        // Checksum is now reliably available here.
+        if (typeof window.BBS_APPLET_CHECKSUM !== 'undefined') {
              debugLog(`Code Checksum: ${window.BBS_APPLET_CHECKSUM.substring(0, 16)}...`);
         }
         
