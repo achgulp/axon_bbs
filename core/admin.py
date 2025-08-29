@@ -198,9 +198,9 @@ class AliasAdmin(admin.ModelAdmin):
             return "No pubkey"
         return generate_checksum(obj.pubkey)
 
-# New Custom Admin Form for Applets
 class AppletAdminForm(forms.ModelForm):
-    applet_code_file = forms.FileField(required=True, help_text="Upload the applet's JavaScript source file.")
+    # Make the file field optional. It's required only if the object is new.
+    applet_code_file = forms.FileField(required=False, help_text="Upload a new file to generate/regenerate the manifest.")
 
     class Meta:
         model = Applet
@@ -211,7 +211,8 @@ class AppletAdmin(admin.ModelAdmin):
     form = AppletAdminForm
     list_display = ('name', 'author_pubkey', 'is_local', 'created_at')
     search_fields = ('name', 'description')
-    readonly_fields = ('id', 'created_at')
+    # Make code_manifest read-only to prevent manual editing errors
+    readonly_fields = ('id', 'created_at', 'code_manifest')
     fieldsets = (
         (None, {
             'fields': ('name', 'description', 'author_pubkey', 'is_local')
@@ -222,15 +223,20 @@ class AppletAdmin(admin.ModelAdmin):
     )
 
     def save_model(self, request, obj, form, change):
+        # 'change' is True if we are editing an existing object
         uploaded_file = form.cleaned_data.get('applet_code_file', None)
+        
+        # We must have a file if it's a new applet
+        if not change and not uploaded_file:
+            self.message_user(request, "You must upload a code file when creating a new applet.", level='ERROR')
+            return
+
         if uploaded_file:
-            # Read the code from the uploaded file
             js_code = uploaded_file.read().decode('utf-8')
             content_to_encrypt = {"type": "applet_code", "code": js_code}
             
             recipients = None
             if obj.is_local:
-                # If local, only encrypt for our own instance
                 try:
                     local_instance = TrustedInstance.objects.get(is_trusted_peer=False)
                     recipients = [local_instance.pubkey]
@@ -238,7 +244,6 @@ class AppletAdmin(admin.ModelAdmin):
                     self.message_user(request, "Cannot create local applet: No local instance configured.", level='ERROR')
                     return
 
-            # Generate the BitSync manifest
             _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(
                 content_to_encrypt, 
                 recipients_pubkeys=recipients

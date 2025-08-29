@@ -32,7 +32,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (All existing views from RegisterView to UserProfileView remain unchanged) ...
+# ... (All views from RegisterView to UnpinContentView remain unchanged) ...
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -479,7 +479,6 @@ class FileDownloadView(views.APIView):
             logger.error(f"Error during file download for file {file_id}: {e}", exc_info=True)
             return Response({"error": "An error occurred while preparing the file for download."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# NEW: Generic view to download any content via BitSync
 class DownloadContentView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request, content_hash, *args, **kwargs):
@@ -489,30 +488,32 @@ class DownloadContentView(views.APIView):
         if not service_manager.sync_service:
             return Response({"error": "Sync service is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-        # Find any piece of content that has a manifest with this content_hash
         manifest = None
         models_to_check = [Message, FileAttachment, PrivateMessage, Applet]
         for model in models_to_check:
-            item = model.objects.filter(manifest__content_hash=content_hash).first()
+            # Note: Applet uses 'code_manifest' field name
+            manifest_field_name = 'code_manifest' if model is Applet else 'manifest'
+            filter_kwargs = {f'{manifest_field_name}__content_hash': content_hash}
+            
+            item = model.objects.filter(**filter_kwargs).first()
             if item:
-                manifest = item.manifest
+                manifest = getattr(item, manifest_field_name)
                 break
         
         if not manifest:
-            # Check the 'code_manifest' field for Applets specifically
-            applet = Applet.objects.filter(code_manifest__content_hash=content_hash).first()
-            if applet:
-                manifest = applet.code_manifest
-            else:
-                raise Http404("Content with the specified hash not found.")
+            raise Http404("Content with the specified hash not found.")
 
         try:
             decrypted_data = service_manager.sync_service.get_decrypted_content(manifest)
             if decrypted_data is None:
                 return Response({"error": "Failed to retrieve or decrypt content from the network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             
-            # For now, return as plain text, assuming it's JS/HTML code
-            return HttpResponse(decrypted_data, content_type='text/plain')
+            content_details = json.loads(decrypted_data.decode('utf-8'))
+            
+            # Assuming applet code is stored under a 'code' key
+            applet_code = content_details.get('code', '')
+            
+            return HttpResponse(applet_code, content_type='application/javascript')
         except Exception as e:
             logger.error(f"Error during generic content download for hash {content_hash}: {e}", exc_info=True)
             return Response({"error": "An error occurred while preparing content for download."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -683,16 +684,23 @@ class SyncView(views.APIView):
             server_now = timezone.now()
             since_dt = timezone.datetime.fromisoformat(since_str.replace(' ', '+'))
             
+            # UPDATED: Query now includes Applets that are NOT local
             new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
+            new_applets = Applet.objects.filter(created_at__gt=since_dt, is_local=False, code_manifest__isnull=False)
             new_actions = FederatedAction.objects.filter(created_at__gt=since_dt)
 
             manifests = []
-            all_items = list(new_messages) + list(new_files) + list(new_pms)
+            all_items = list(new_messages) + list(new_files) + list(new_pms) + list(new_applets)
 
             for item in all_items:
-                item_manifest = item.manifest
+                if isinstance(item, Applet):
+                    item_manifest = item.code_manifest
+                    item_manifest['content_type'] = 'applet'
+                else:
+                    item_manifest = item.manifest
+                
                 if isinstance(item, Message):
                     item_manifest['content_type'] = 'message'
                 elif isinstance(item, FileAttachment):
@@ -732,7 +740,8 @@ class BitSyncHasContentView(views.APIView):
     def get(self, request, content_hash, *args, **kwargs):
         has_content = Message.objects.filter(manifest__content_hash=content_hash).exists() or \
                       FileAttachment.objects.filter(manifest__content_hash=content_hash).exists() or \
-                      PrivateMessage.objects.filter(manifest__content_hash=content_hash).exists()
+                      PrivateMessage.objects.filter(manifest__content_hash=content_hash).exists() or \
+                      Applet.objects.filter(code_manifest__content_hash=content_hash).exists()
         return Response(status=status.HTTP_200_OK if has_content else status.HTTP_404_NOT_FOUND)
 
 @method_decorator(csrf_exempt, name='dispatch')
