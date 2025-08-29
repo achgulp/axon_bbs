@@ -199,7 +199,12 @@ class AliasAdmin(admin.ModelAdmin):
         return generate_checksum(obj.pubkey)
 
 class AppletAdminForm(forms.ModelForm):
-    # Make the file field optional. It's required only if the object is new.
+    # New, optional field to select a local user.
+    author = forms.ModelChoiceField(
+        queryset=User.objects.filter(pubkey__isnull=False),
+        required=False,
+        help_text="Optional: Select a local user to automatically use their public key as the author."
+    )
     applet_code_file = forms.FileField(required=False, help_text="Upload a new file to generate/regenerate the manifest.")
 
     class Meta:
@@ -211,11 +216,10 @@ class AppletAdmin(admin.ModelAdmin):
     form = AppletAdminForm
     list_display = ('name', 'author_pubkey', 'is_local', 'created_at')
     search_fields = ('name', 'description')
-    # Make code_manifest read-only to prevent manual editing errors
     readonly_fields = ('id', 'created_at', 'code_manifest')
     fieldsets = (
         (None, {
-            'fields': ('name', 'description', 'author_pubkey', 'is_local')
+            'fields': ('name', 'description', 'author', 'author_pubkey', 'is_local')
         }),
         ('Code', {
             'fields': ('applet_code_file', 'code_manifest')
@@ -223,10 +227,13 @@ class AppletAdmin(admin.ModelAdmin):
     )
 
     def save_model(self, request, obj, form, change):
-        # 'change' is True if we are editing an existing object
         uploaded_file = form.cleaned_data.get('applet_code_file', None)
+        selected_author = form.cleaned_data.get('author', None)
         
-        # We must have a file if it's a new applet
+        # If a local user was selected, use their pubkey
+        if selected_author:
+            obj.author_pubkey = selected_author.pubkey
+
         if not change and not uploaded_file:
             self.message_user(request, "You must upload a code file when creating a new applet.", level='ERROR')
             return
