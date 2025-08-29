@@ -55,9 +55,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             <div class="score-stats-area"><div id="statsArea"></div></div>
             <div class="char-select my-3">
                 <span class="mr-2 font-semibold align-middle">Character:</span>
-                <button id="charGiraffe" data-char="giraffe" title="Giraffe"><img id="imgGiraffe" alt="Giraffe"></button>
-                <button id="charElephant" data-char="elephant" title="Elephant"><img id="imgElephant" alt="Elephant"></button>
-                <button id="charZebra" data-char="zebra" title="Zebra"><img id="imgZebra" alt="Zebra"></button>
+                <button id="charGiraffe" data-char="giraffe" title="Giraffe"><canvas width="32" height="32"></canvas></button>
+                <button id="charElephant" data-char="elephant" title="Elephant"><canvas width="32" height="32"></canvas></button>
+                <button id="charZebra" data-char="zebra" title="Zebra"><canvas width="32" height="32"></canvas></button>
             </div>
             <div class="controls mb-3">
                 <button id="leftButton">← Left</button>
@@ -111,33 +111,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         
         const characterBitmaps = { giraffe: giraffeBitmap, elephant: elephantBitmap, zebra: zebraBitmap };
         let sounds = {}, audioInitialized = false;
-
-        // UPDATED: This function now uses the more direct 'fillRect' method which is less prone to browser inconsistencies.
-        function createButtonImageDataUrl(bitmapData) {
-            const height = bitmapData.length;
-            if (height === 0) return null;
-            const width = bitmapData[0].length;
-            if (width === 0) return null;
         
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = width;
-            tempCanvas.height = height;
-            const tempCtx = tempCanvas.getContext('2d');
-            if (!tempCtx) { return null; }
-            
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const color = bitmapData[y][x];
-                    if (color) {
-                        tempCtx.fillStyle = color;
-                        tempCtx.fillRect(x, y, 1, 1);
-                    }
-                }
-            }
-            return tempCanvas.toDataURL('image/png');
-        }
-        
-        function drawBitmap(ctx, bitmap, x, y) {
+        function drawBitmap(ctx, bitmap, x, y, scale = 1) {
             const height = bitmap.length;
             if (height === 0) return;
             const width = bitmap[0].length;
@@ -147,7 +122,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 for (let col = 0; col < width; col++) {
                     if (bitmap[row][col]) {
                         ctx.fillStyle = bitmap[row][col];
-                        ctx.fillRect(x + col, y + row, 1, 1);
+                        ctx.fillRect(x + (col * scale), y + (row * scale), scale, scale);
                     }
                 }
             }
@@ -159,9 +134,20 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         
         function setupUI() {
             debugLog("Setting up UI...");
-            document.getElementById('imgGiraffe').src = createButtonImageDataUrl(giraffeBitmap);
-            document.getElementById('imgElephant').src = createButtonImageDataUrl(elephantBitmap);
-            document.getElementById('imgZebra').src = createButtonImageDataUrl(zebraBitmap);
+            const charCanvases = {
+                giraffe: document.querySelector('#charGiraffe canvas'),
+                elephant: document.querySelector('#charElephant canvas'),
+                zebra: document.querySelector('#charZebra canvas')
+            };
+
+            for (const charName in charCanvases) {
+                const btnCanvas = charCanvases[charName];
+                const btnCtx = btnCanvas.getContext('2d');
+                btnCtx.imageSmoothingEnabled = false;
+                // Draw the character icons directly onto their canvases
+                drawBitmap(btnCtx, characterBitmaps[charName], 8, 8, 2);
+            }
+            
             messageArea.textContent = "Select character & Start!";
             startButton.disabled = false;
         }
@@ -220,9 +206,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         // 2. RUNTIME: Call the functions to initialize and run the applet.
         debugLog("Applet initializing...");
-        // NEW: Display the checksum passed in from the AppletRunner
         if (window.BBS_APPLET_CHECKSUM) {
-            debugLog(`Code Checksum: ${window.BBS_APPLET_CHECKSUM.substring(0, 16)}...`);
+             debugLog(`Code Checksum: ${window.BBS_APPLET_CHECKSUM.substring(0, 16)}...`);
         }
         
         const [user, savedData] = await Promise.all([bbs.getUserInfo(), bbs.getData()]);
