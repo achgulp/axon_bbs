@@ -17,75 +17,37 @@ const AppletRunner = ({ applet, onBack }) => {
 
   useEffect(() => {
     const handleMessage = async (event) => {
-      // Security: Ensure the message is from our iframe
+      // Security: Ensure the message is from the iframe we created
       if (event.source !== iframeRef.current?.contentWindow) return;
 
       const { command, payload, requestId } = event.data;
+      console.log(`[Host] Received command '${command}' from applet with ID ${requestId}.`);
       
       let response = { command: `response_${command}`, requestId, payload: null, error: null };
 
       try {
-        switch (command) {
-          case 'getUserInfo':
-            if (profile) {
-              response.payload = profile;
-            } else {
-              // Fetch profile on demand if not already loaded
-              const freshProfile = await apiClient.get('/api/user/profile/');
-              setProfile(freshProfile.data);
-              response.payload = freshProfile.data;
-            }
-            break;
-
-          // UPDATED: Added handler for the 'getData' command from the applet API.
-          case 'getData':
-            // This currently returns an empty object because the backend API endpoint
-            // for applet data storage has not been implemented yet.
-            // When implemented, this will fetch user-specific data for this applet.
-            try {
-                // NOTE: The endpoint `/api/applets/${applet.id}/data/` needs to be created on the backend.
-                const dataResponse = await apiClient.get(`/api/applets/${applet.id}/data/`);
-                response.payload = dataResponse.data;
-            } catch (apiError) {
-                if (apiError.response && apiError.response.status === 404) {
-                    // It's not an error if no data has been saved yet. Return an empty object.
-                    response.payload = {}; 
-                } else {
-                    console.error("API error fetching applet data:", apiError);
-                    response.error = "Could not fetch saved data from the server.";
-                }
-            }
-            break;
-
-          // UPDATED: Added handler for the 'saveData' command from the applet API.
-          case 'saveData':
-            // This currently sends data to a non-existent endpoint. It allows the
-            // applet to function, but data will not persist until the backend is built.
-            try {
-              // NOTE: The endpoint `/api/applets/${applet.id}/data/` needs to be created on the backend.
-              await apiClient.post(`/api/applets/${applet.id}/data/`, payload);
-              response.payload = { status: 'ok' };
-            } catch (apiError) {
-              console.error("API error saving applet data:", apiError);
-              response.error = "Could not save data to the server.";
-            }
-            break;
-
-          default:
-            response.error = `Unknown command: ${command}`;
-            break;
+        if (command === 'getUserInfo') {
+          // Use cached profile if available, otherwise fetch it.
+          if (profile) {
+            response.payload = profile;
+          } else {
+            const freshProfile = await apiClient.get('/api/user/profile/');
+            setProfile(freshProfile.data);
+            response.payload = freshProfile.data;
+          }
         }
+        // NOTE: getData and saveData handlers will be added here in the future
       } catch (e) {
         response.error = e.message;
       }
       
-      // Send the response back to the applet in the iframe
+      console.log(`[Host] Sending response for '${command}' to applet with ID ${requestId}.`);
       iframeRef.current.contentWindow.postMessage(response, '*');
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [profile, applet.id]); // Dependency array includes applet.id for API calls
+  }, [profile]); // Re-create the handler if the profile changes
 
   useEffect(() => {
     if (!applet?.code_manifest?.content_hash) {
@@ -109,14 +71,22 @@ const AppletRunner = ({ applet, onBack }) => {
 
   const getIframeContent = () => {
     if (!appletCode) return '';
-    // This creates the basic HTML structure that the applet's JS will run inside of.
+    
+    const checksum = applet?.code_manifest?.content_hash || 'N/A';
+    // This creates the full HTML document that will be loaded into the iframe.
     return `
       <!DOCTYPE html>
       <html>
-        <head><title>${applet.name}</title></head>
+        <head>
+          <title>${applet.name}</title>
+          <script>
+            // Make the checksum available for the applet to read for debugging.
+            window.BBS_APPLET_CHECKSUM = '${checksum}';
+          </script>
+        </head>
         <body>
           <div id="applet-root"></div>
-          <script type="text/javascript">${appletCode}</script>
+          <script>${appletCode}</script>
         </body>
       </html>
     `;
@@ -139,6 +109,8 @@ const AppletRunner = ({ applet, onBack }) => {
             title={applet.name}
             srcDoc={getIframeContent()}
             className="w-full h-full"
+            // The sandbox attribute is a critical security feature.
+            // "allow-scripts" is necessary for the applet to run.
             sandbox="allow-scripts"
           />
         )}
@@ -148,4 +120,5 @@ const AppletRunner = ({ applet, onBack }) => {
 };
 
 export default AppletRunner;
+
 

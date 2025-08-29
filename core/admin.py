@@ -23,13 +23,17 @@ def rekey_content_action(modeladmin, request, queryset):
     for item in queryset:
         name = getattr(item, 'subject', getattr(item, 'filename', str(item.id)))
         try:
-            if not item.manifest:
+            # Determine the correct manifest field based on the model
+            manifest_field = 'code_manifest' if isinstance(item, Applet) else 'manifest'
+            manifest = getattr(item, manifest_field)
+
+            if not manifest:
                 modeladmin.message_user(request, f"Content '{name}' has no manifest to re-key.", level='WARNING')
                 continue
             
-            new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(item.manifest)
+            new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
             
-            item.manifest = new_manifest
+            setattr(item, manifest_field, new_manifest)
             item.save()
             updated_count += 1
         except Exception as e:
@@ -155,7 +159,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             
             peer_url = instance.web_ui_onion_url.strip('/')
             target_url = f"{peer_url}/api/identity/public_key/"
-            proxies = {'http': 'socks5h://1227.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+            proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
             
             try:
                 self.message_user(request, f"Fetching key from {peer_url}...", level='INFO')
@@ -199,7 +203,6 @@ class AliasAdmin(admin.ModelAdmin):
         return generate_checksum(obj.pubkey)
 
 class AppletAdminForm(forms.ModelForm):
-    # New, optional field to select a local user.
     author = forms.ModelChoiceField(
         queryset=User.objects.filter(pubkey__isnull=False),
         required=False,
@@ -214,23 +217,30 @@ class AppletAdminForm(forms.ModelForm):
 @admin.register(Applet)
 class AppletAdmin(admin.ModelAdmin):
     form = AppletAdminForm
-    list_display = ('name', 'author_pubkey', 'is_local', 'created_at')
+    
+    @admin.display(description='Code Checksum')
+    def code_checksum(self, obj):
+        if obj.code_manifest and 'content_hash' in obj.code_manifest:
+            return obj.code_manifest['content_hash'][:16] + '...'
+        return "Not Generated"
+
+    list_display = ('name', 'author_pubkey', 'is_local', 'created_at', 'code_checksum')
     search_fields = ('name', 'description')
-    readonly_fields = ('id', 'created_at', 'code_manifest')
+    readonly_fields = ('id', 'created_at', 'code_manifest', 'code_checksum')
     fieldsets = (
         (None, {
             'fields': ('name', 'description', 'author', 'author_pubkey', 'is_local')
         }),
         ('Code', {
-            'fields': ('applet_code_file', 'code_manifest')
+            'fields': ('applet_code_file', 'code_manifest', 'code_checksum')
         }),
     )
+    actions = [rekey_content_action]
 
     def save_model(self, request, obj, form, change):
         uploaded_file = form.cleaned_data.get('applet_code_file', None)
         selected_author = form.cleaned_data.get('author', None)
         
-        # If a local user was selected, use their pubkey
         if selected_author:
             obj.author_pubkey = selected_author.pubkey
 
@@ -251,6 +261,10 @@ class AppletAdmin(admin.ModelAdmin):
                     self.message_user(request, "Cannot create local applet: No local instance configured.", level='ERROR')
                     return
 
+            if not service_manager.bitsync_service:
+                self.message_user(request, "BitSync service is not available. Cannot create manifest.", level='ERROR')
+                return
+
             _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(
                 content_to_encrypt, 
                 recipients_pubkeys=recipients
@@ -258,3 +272,5 @@ class AppletAdmin(admin.ModelAdmin):
             obj.code_manifest = manifest
         
         super().save_model(request, obj, form, change)
+
+
