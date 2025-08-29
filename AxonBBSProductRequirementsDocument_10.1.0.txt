@@ -31,16 +31,18 @@ New: I want to browse a list of available applets (games and applications).
 
 New: I want to run an applet in a secure environment within the BBS.
 
+New: I want my progress in an applet (like high scores) to be saved automatically.
+
 New: I want to embed applets, like a video player or a chess game, directly into my message board posts.
 
 As an Applet Developer...
 New: I want to package my application (HTML/JS/CSS) into a single JavaScript file bundle that can be shared via a BitSync manifest.
 
-New: I want a simple, secure API (hooks) to allow my applet to request and save data to the BitSync network.
+New: I want a simple, secure API (hooks) to allow my applet to request and save its own data to the BitSync network.
 
 New: I want my applet to run in a secure sandbox (<iframe>) so it cannot interfere with the main BBS application or compromise user security.
 
-New: I want my applet to fetch the current user's nickname and public key.
+New: I want my applet to be able to fetch the current user's nickname and public key.
 
 New: I want my applet to be responsive and provide a good user experience on mobile, tablet, and desktop screens.
 
@@ -70,6 +72,8 @@ New: I want to be able to easily update an applet's code by uploading a new file
 
 New: I want a simple way to assign authorship of an applet to a local user by selecting their username from a list.
 
+New: I want to see the checksum of an applet's code in the admin panel to verify its integrity.
+
 3. The BitSync Protocol & E2E Encryption
 The BitSync protocol is the custom P2P layer for Axon BBS, designed to synchronize encrypted content between trusted peers over Tor. It handles the transport and storage of all shared content, including messages, files, and applet data.
 
@@ -88,57 +92,102 @@ bbs.getData(): To fetch and decrypt the applet's shared data.
 
 bbs.saveData(newData): To create a new BitSync manifest for updated applet data and broadcast it to the network.
 
-Responsive Design: Applets are required to be responsive and usable across all screen sizes (mobile, tablet, and desktop). This is achieved using standard CSS media queries within the applet's code.
+Responsive Design: Applets are required to be responsive and usable across all screen sizes (mobile, tablet, and desktop).
 
 Embedding in Messages: The frontend will parse message bodies for a special tag (e.g., [APPLET](code_hash, data_hash)). When found, it will render the specified applet in-line with its data.
 
 5. Full Project File Structure
 axon_bbs/
-├── axon_project/
-│   ├── settings.py
-│   └── urls.py
-├── core/
-│   ├── management/
-│   │   └── commands/
-│   ├── migrations/
-│   ├── services/
-│   │   ├── bitsync_service.py
-│   │   ├── content_validator.py
-│   │   ├── encryption_utils.py
-│   │   ├── identity_service.py
-│   │   ├── service_manager.py
-│   │   ├── sync_service.py
-│   │   └── tor_service.py
-│   ├── admin.py
-│   ├── apps.py
-│   └── models.py
-├── api/
-│   ├── permissions.py
-│   ├── serializers.py
-│   ├── urls.py
-│   └── views.py
-├── frontend/
-│   ├── build/
-│   ├── public/
-│   ├── src/
-│   │   ├── applet_api/
-│   │   │   └── api.js              # New: API helper for applet developers
-│   │   ├── applets/
-│   │   │   └── FloatUpMaze.js      # New: Source code for our first game applet
-│   │   ├── components/
-│   │   │   ├── AppletRunner.js   # New: Component to host the sandboxed iframe
-│   │   │   └── AppletView.js     # New: A view to browse and launch applets
-│   │   ├── App.js
-│   │   ├── apiClient.js
-│   │   └── index.js
-│   └── package.json
-├── data/
-│   └── axon_bbs.sqlite3
-├── logs/
-│   └── bbs.log
-├── media/
-│   └── avatars/
+├── .env
 ├── manage.py
 ├── requirements.txt
-└── ... (diagnostic scripts)
+├── media/
+│   └── avatars/
+├── logs/
+│   └── bbs.log
+├── data/
+│   ├── axon_bbs.sqlite3
+│   ├── bitsync_chunks/
+│   └── user_data/
+├── axon_project/
+│   ├── __init__.py
+│   ├── asgi.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+├── api/
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── permissions.py
+│   ├── serializers.py
+│   ├── tests.py
+│   ├── urls.py
+│   └── views.py
+├── core/
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── tests.py
+│   ├── management/
+│   │   ├── __init__.py
+│   │   └── commands/
+│   │       ├── __init__.py
+│   │       ├── check_local_content.py
+│   │       ├── cleanup_orphaned_files.py
+│   │       ├── compare_sync_status.py
+│   │       ├── diagnose_sync_content.py
+│   │       ├── reset_peer_sync_time.py
+│   │       └── update_peer_key.py
+│   ├── migrations/
+│   │   ├── ... (migration files) ...
+│   └── services/
+│       ├── __init__.py
+│       ├── bitsync_service.py
+│       ├── content_validator.py
+│       ├── encryption_utils.py
+│       ├── identity_service.py
+│       ├── service_manager.py
+│       ├── sync_service.py
+│       └── tor_service.py
+├── frontend/
+│   ├── build/
+│   ├── node_modules/
+│   ├── public/
+│   │   ├── index.html
+│   │   └── ... (other public assets) ...
+│   ├── src/
+│   │   ├── App.js
+│   │   ├── apiClient.js
+│   │   ├── index.js
+│   │   ├── applet_api/
+│   │   │   └── api.js
+│   │   ├── applets/
+│   │   │   └── FloatUpMaze.js
+│   │   └── components/
+│   │       ├── AnsiViewer.js
+│   │       ├── AppletRunner.js
+│   │       ├── AppletView.js
+│   │       ├── LoginScreen.js
+│   │       ├── MessageList.js
+│   │       ├── ProfileScreen.js
+│   │       ├── RegisterScreen.js
+│   │       └── UnlockForm.js
+│   ├── package.json
+│   └── tailwind.config.js
+└── (diagnostic_scripts)/
+    ├── check_trusted_instances.py
+    ├── extract_instance_key.py
+    ├── extract_key.py
+    ├── extract_manifest.py
+    ├── extract_pubkey.py
+    ├── generate_secret_key.py
+    ├── minimal_test.py
+    ├── recover_identity.py
+    ├── test_crypto_cycle.py
+    ├── test_decryption.py
+    ├── test_onion_connection.py
+    └── websocket_proxy_test.py
 

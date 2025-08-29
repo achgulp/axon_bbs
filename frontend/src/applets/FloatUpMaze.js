@@ -37,7 +37,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         .controls button, .start-button { background-color: #3b82f6; color: white; border: none; padding: 10px 15px; margin: 5px; border-radius: 8px; font-size: 16px; cursor: pointer; }
         .char-select button { background-color: #4a5568; width: 48px; height: 48px; padding: 0; display: inline-flex; justify-content: center; align-items: center; border-radius: 8px; border: none; }
         .char-select button.selected { background-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.5); }
-        .char-select img { width: 32px; height: 32px; } /* UPDATED: CSS to control icon size and centering */
         .message-area { margin-top: 10px; font-size: 18px; font-weight: bold; min-height: 25px; color: #cbd5e0; }
         .score-stats-area { display: flex; justify-content: center; font-size: 14px; margin-top: 5px; color: #a0aec0; min-height: 20px; }
         #debug-dialog { position: absolute; top: 10px; left: 10px; width: 250px; height: 150px; background-color: rgba(0,0,0,0.7); border: 1px solid #4a5568; border-radius: 5px; color: #fc8181; font-family: monospace; font-size: 10px; overflow-y: scroll; padding: 5px; z-index: 1000; }
@@ -56,9 +55,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             <div class="score-stats-area"><div id="statsArea"></div></div>
             <div class="char-select my-3">
                 <span class="mr-2 font-semibold align-middle">Character:</span>
-                <button id="charGiraffe" data-char="giraffe" title="Giraffe"><img id="imgGiraffe" alt="Giraffe"></button>
-                <button id="charElephant" data-char="elephant" title="Elephant"><img id="imgElephant" alt="Elephant"></button>
-                <button id="charZebra" data-char="zebra" title="Zebra"><img id="imgZebra" alt="Zebra"></button>
+                <button id="charGiraffe" data-char="giraffe" title="Giraffe"><canvas width="48" height="48"></canvas></button>
+                <button id="charElephant" data-char="elephant" title="Elephant"><canvas width="48" height="48"></canvas></button>
+                <button id="charZebra" data-char="zebra" title="Zebra"><canvas width="48" height="48"></canvas></button>
             </div>
             <div class="controls mb-3">
                 <button id="leftButton">← Left</button>
@@ -102,6 +101,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         let selectedCharacter = null;
         let moveLeft = false, moveRight = false;
         let animationFrameId = null;
+        let approachingTopOutcome = null; 
         let saucer = { active: false, x: 0, y: -30, width: 40, height: 20, speed: 2, state: 'idle', beamActive: false, pullSpeed: 1.5 };
         
         const T = null, K = '#000000', W = '#FFFFFF', G = '#808080', LG = '#D3D3D3', Y = '#FFD700', BR = '#A0522D', DG = '#333333', OR = '#FFA500', FY = '#FFFF00', SC = '#C0C0C0', BC = 'rgba(173, 216, 230, 0.5)', GC = '#228B22', LGC = '#90EE90', TRUNK_C = '#8B4513';
@@ -113,41 +113,17 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const characterBitmaps = { giraffe: giraffeBitmap, elephant: elephantBitmap, zebra: zebraBitmap };
         let sounds = {}, audioInitialized = false;
         
-        // This function creates a data URL from a bitmap, scaled up by 2x.
-        function createScaledDataURL(bitmapData) {
-            const height = bitmapData.length;
-            if (height === 0) return null;
-            const width = bitmapData[0].length;
-            const scale = 2;
-
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = width * scale;
-            tempCanvas.height = height * scale;
-            const tempCtx = tempCanvas.getContext('2d');
-            if (!tempCtx) { return null; }
-            tempCtx.imageSmoothingEnabled = false;
-
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    if (bitmapData[y][x]) {
-                        tempCtx.fillStyle = bitmapData[y][x];
-                        tempCtx.fillRect(x * scale, y * scale, scale, scale);
-                    }
-                }
-            }
-            return tempCanvas.toDataURL('image/png');
-        }
-
-        function drawBitmap(ctx, bitmap, x, y) {
+        function drawBitmap(ctx, bitmap, x, y, scale = 1) {
             const height = bitmap.length;
             if (height === 0) return;
             const width = bitmap[0].length;
+            if (width === 0) return;
 
             for (let row = 0; row < height; row++) {
                 for (let col = 0; col < width; col++) {
                     if (bitmap[row][col]) {
                         ctx.fillStyle = bitmap[row][col];
-                        ctx.fillRect(x + col, y + row, 1, 1);
+                        ctx.fillRect(x + (col * scale), y + (row * scale), scale, scale);
                     }
                 }
             }
@@ -159,10 +135,23 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         
         function setupUI() {
             debugLog("Setting up UI...");
-            // UPDATED: This is the definitive fix for rendering icons.
-            document.getElementById('imgGiraffe').src = createScaledDataURL(giraffeBitmap);
-            document.getElementById('imgElephant').src = createScaledDataURL(elephantBitmap);
-            document.getElementById('imgZebra').src = createScaledDataURL(zebraBitmap);
+            const charCanvases = {
+                giraffe: document.querySelector('#charGiraffe canvas'),
+                elephant: document.querySelector('#charElephant canvas'),
+                zebra: document.querySelector('#charZebra canvas')
+            };
+            
+            for (const charName in charCanvases) {
+                const btnCanvas = charCanvases[charName];
+                const btnCtx = btnCanvas.getContext('2d');
+                btnCtx.imageSmoothingEnabled = false;
+                const bitmap = characterBitmaps[charName];
+                const scale = 2;
+                // Correctly calculate centered position
+                const x = (btnCanvas.width - (bitmap[0].length * scale)) / 2;
+                const y = (btnCanvas.height - (bitmap.length * scale)) / 2;
+                drawBitmap(btnCtx, bitmap, x, y, scale);
+            }
             
             messageArea.textContent = "Select character & Start!";
             startButton.disabled = false;
@@ -184,16 +173,75 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         function drawSaucer() { if (!saucer.active) return; ctx.fillStyle = SC; ctx.beginPath(); ctx.ellipse(saucer.x + 20, saucer.y + 10, 20, 10, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = LG; ctx.beginPath(); ctx.ellipse(saucer.x + 20, saucer.y + 5, 10, 5, 0, 0, Math.PI * 2); ctx.fill(); }
         function drawTractorBeam() { if (!saucer.beamActive || !player) return; const pX = player.x + 8, pY = player.y + 8; ctx.beginPath(); ctx.moveTo(saucer.x + 6, saucer.y + 20); ctx.lineTo(pX - 12, pY); ctx.lineTo(pX + 12, pY); ctx.lineTo(saucer.x + 34, saucer.y + 20); ctx.closePath(); ctx.fillStyle = BC; ctx.fill(); }
         function checkCollision(r1, r2) { if(!r1 || !r2) return false; return r1.x < r2.x + r2.width && r1.x + r1.width > r2.x && r1.y < r2.y + r2.height && r1.y + r1.height > r2.y; }
-        function updatePlayerPosition() { if (!player || isGameOver || isExploding) return; if (trophy && checkCollision(player, trophy) && saucer.state !== 'beaming') return handleWin(); if (saucer.state === 'beaming') { const dX = saucer.x + 20 - (player.x + 8), dY = saucer.y - (player.y + 8); const dist = Math.sqrt(dX*dX + dY*dY); if (dist < 16) { playSound('beam', 'stop'); player = null; saucer.active = false; saucer.beamActive = false; saucer.state = 'idle'; return handleLose("Abducted!"); } player.x += (dX / dist) * 1.5; player.y += (dY / dist) * 1.5; return; } let nX = player.x; if (moveLeft) nX -= 1.5; if (moveRight) nX += 1.5; if (nX < 0 || nX + 16 > canvas.width) playSound('collision'); player.x = Math.max(0, Math.min(canvas.width - 16, nX)); const nY = player.y - 1.0; const triggerY = canvas.height/2; if(nY < triggerY && !saucer.active && !saucer.beamActive) { saucer.active = true; saucer.state = 'entering'; saucer.y = -20; saucer.x = Math.max(0, Math.min(canvas.width-40, player.x-12)); saucer.targetY=triggerY-30; } player.y=nY; if (player.y + 16 <= 0) return handleLose("Floated into space!"); if (saucer.state !== 'beaming') { for(const m of mines) { if (checkCollision(player, m)) return triggerExplosion(player.x+8, player.y+8);}}}
+        
+        function updatePlayerPosition() {
+            if (!player || isGameOver || isExploding) return;
+            if (trophy && checkCollision(player, trophy) && saucer.state !== 'beaming') return handleWin();
+            
+            if (saucer.state === 'beaming') {
+                const dX = saucer.x + 20 - (player.x + 8), dY = saucer.y - (player.y + 8);
+                const dist = Math.sqrt(dX*dX + dY*dY);
+                if (dist < 16) {
+                    playSound('beam', 'stop');
+                    player = null;
+                    saucer.active = false;
+                    saucer.beamActive = false;
+                    saucer.state = 'idle';
+                    return handleLose("Abducted!");
+                }
+                player.x += (dX / dist) * 1.5;
+                player.y += (dY / dist) * 1.5;
+                return;
+            }
+
+            let nX = player.x;
+            if (moveLeft) nX -= 1.5;
+            if (moveRight) nX += 1.5;
+            if (nX < 0 || nX + 16 > canvas.width) playSound('collision');
+            player.x = Math.max(0, Math.min(canvas.width - 16, nX));
+            
+            const nY = player.y - 1.0;
+            const triggerY = canvas.height / 2;
+            
+            if (nY < triggerY && !saucer.active && approachingTopOutcome === null) {
+                if (Math.random() < 0.15) {
+                    approachingTopOutcome = 'saucer';
+                    saucer.active = true;
+                    saucer.state = 'entering';
+                    saucer.y = -20;
+                    saucer.x = Math.max(0, Math.min(canvas.width-40, player.x-12));
+                    saucer.targetY = triggerY - 30;
+                } else {
+                    approachingTopOutcome = 'space';
+                }
+            }
+
+            player.y = nY;
+            if (player.y + 16 <= 0) return handleLose("Floated into space!");
+            if (saucer.state !== 'beaming') {
+                for (const m of mines) {
+                    if (checkCollision(player, m)) return triggerExplosion(player.x + 8, player.y + 8);
+                }
+            }
+        }
         function updateSaucer() { if (!saucer.active || isExploding || isGameOver) return; if (saucer.state === 'entering' && saucer.y < saucer.targetY) { saucer.y += 2; if (saucer.y >= saucer.targetY) { saucer.y=saucer.targetY; saucer.state='beaming'; saucer.beamActive=true; playSound('beam','start');}}}
         function updateExplosion() { if (!isExploding) return; explosionParticles.forEach((p, i) => { p.x += p.dx; p.y += p.dy; p.life--; if(p.life <= 0) explosionParticles.splice(i,1);}); explosionTimer--; if (explosionTimer <= 0 && explosionParticles.length === 0) { isExploding = false; handleLose("Hit a mine!"); } }
         function triggerExplosion(x,y) { if (isExploding||isGameOver||saucer.state === 'beaming') return; isExploding=true; isGameRunning=false; playSound('explosion'); explosionTimer=60; explosionParticles=[]; for(let i=0; i<30; i++){const a=(Math.PI*2/30)*i, s=Math.random()*3+1; explosionParticles.push({x,y,dx:Math.cos(a)*s,dy:Math.sin(a)*s,size:Math.random()*3+1,color:`hsl(${Math.random()*60},100%,50%)`,life:Math.random()*30+20});}}
         function gameLoop() { clearCanvas(); updateSaucer(); if (isExploding) { drawTrophy(); drawMines(); if(saucer.active) drawSaucer(); updateExplosion(); drawExplosion(); } else if (!isGameOver) { drawTrophy(); drawMines(); if (isGameRunning) updatePlayerPosition(); drawPlayer(); if(saucer.active) drawSaucer(); if(saucer.beamActive) drawTractorBeam(); } else { drawTrophy(); drawMines(); if(saucer.active) drawSaucer(); } animationFrameId = requestAnimationFrame(gameLoop); }
         async function startGame() { if (!selectedCharacter) { messageArea.textContent = "Select a character!"; return; } if (!audioInitialized) await initializeAudio(); if (typeof Tone !== 'undefined') await Tone.start(); proceedWithStart(); }
-        function proceedWithStart() { isGameRunning=true; isGameOver=false; isExploding=false; saucer.active=false; saucer.beamActive=false; saucer.state='idle'; messageArea.textContent = "Go! Reach the Tree!"; defineTrophy(); generateSafePath(); placeMines(); initializePlayer(); startButton.disabled=true; charButtons.forEach(b=>b.disabled=true); leftButton.disabled=false; rightButton.disabled=false; if(animationFrameId) cancelAnimationFrame(animationFrameId); gameLoop(); }
+        function proceedWithStart() { 
+            isGameRunning=true; isGameOver=false; isExploding=false; 
+            saucer.active=false; saucer.beamActive=false; saucer.state='idle';
+            approachingTopOutcome = null; 
+            messageArea.textContent = "Go! Reach the Tree!"; 
+            defineTrophy(); generateSafePath(); placeMines(); initializePlayer(); 
+            startButton.disabled=true; charButtons.forEach(b=>b.disabled=true); 
+            leftButton.disabled=false; rightButton.disabled=false; 
+            if(animationFrameId) cancelAnimationFrame(animationFrameId); 
+            gameLoop(); 
+        }
         function resetGameAfterDelay() { leftButton.disabled = true; rightButton.disabled = true; moveLeft=false; moveRight=false; setTimeout(resetGame, 3000); }
         
-        // This is the fully corrected reset logic.
         function resetGame() {
             if (animationFrameId) {
                 cancelAnimationFrame(animationFrameId);
@@ -205,6 +253,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             saucer.active = false;
             saucer.beamActive = false;
             saucer.state = 'idle';
+            approachingTopOutcome = null;
             playSound('beam', 'stop');
             player = null;
             mines = [];
@@ -234,7 +283,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         // 2. RUNTIME: Call the functions to initialize and run the applet.
         debugLog("Applet initializing...");
-        // Checksum is now reliably available here.
         if (typeof window.BBS_APPLET_CHECKSUM !== 'undefined') {
              debugLog(`Code Checksum: ${window.BBS_APPLET_CHECKSUM.substring(0, 16)}...`);
         }

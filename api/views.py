@@ -23,7 +23,7 @@ import io
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer, AppletSerializer
 from .permissions import TrustedPeerPermission
-from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction, Applet
+from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction, Applet, AppletData
 from core.services.identity_service import IdentityService, DecryptionError
 from core.services.encryption_utils import derive_key_from_password, generate_checksum, generate_short_id, encrypt_with_public_key, decrypt_with_private_key
 from core.services.service_manager import service_manager
@@ -506,7 +506,6 @@ class DownloadContentView(views.APIView):
             if decrypted_data is None:
                 return Response({"error": "Failed to retrieve or decrypt content from the network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             
-            # UPDATED: Log the successful download for debugging
             logger.info(f"User '{request.user.username}' successfully decrypted and downloaded content with hash: {content_hash[:12]}...")
 
             content_details = json.loads(decrypted_data.decode('utf-8'))
@@ -557,7 +556,7 @@ class PostMessageView(views.APIView):
             return Response({"error": "Subject and body are required."}, status=status.HTTP_400_BAD_REQUEST)
         if not request.session.get('unencrypted_priv_key'):
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
-            
+        
         try:
             board, _ = MessageBoard.objects.get_or_create(name=board_name)
             attachments = FileAttachment.objects.filter(id__in=attachment_ids, author=user)
@@ -777,3 +776,66 @@ class AppletListView(generics.ListAPIView):
     queryset = Applet.objects.all()
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = AppletSerializer
+
+class GetSaveAppletDataView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, applet_id, *args, **kwargs):
+        """
+        Handles the applet's bbs.getData() call.
+        """
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            applet_data = AppletData.objects.get(applet_id=applet_id, owner=request.user)
+            decrypted_bytes = service_manager.sync_service.get_decrypted_content(applet_data.data_manifest)
+            if decrypted_bytes:
+                content = json.loads(decrypted_bytes.decode('utf-8'))
+                # The actual user data is nested inside the content blob
+                return Response(content.get('data'))
+            else:
+                return Response(None, status=status.HTTP_204_NO_CONTENT)
+        except AppletData.DoesNotExist:
+            return Response(None, status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            logger.error(f"Error getting applet data for {request.user.username} and applet {applet_id}: {e}")
+            return Response({"error": "Could not retrieve applet data."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def post(self, request, applet_id, *args, **kwargs):
+        """
+        Handles the applet's bbs.saveData(newData) call.
+        """
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            applet = Applet.objects.get(id=applet_id)
+            user = request.user
+            new_data = request.data
+
+            content_to_encrypt = {
+                "type": "applet_data",
+                "applet_id": str(applet.id),
+                "owner_pubkey": user.pubkey,
+                "data": new_data
+            }
+            
+            # Applet data is private, so it's only encrypted for the owner.
+            _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(
+                content_to_encrypt,
+                recipients_pubkeys=[user.pubkey]
+            )
+
+            AppletData.objects.update_or_create(
+                applet=applet,
+                owner=user,
+                defaults={'data_manifest': manifest}
+            )
+            logger.info(f"User {user.username} saved data for applet '{applet.name}'.")
+            return Response({"status": "data saved successfully"}, status=status.HTTP_200_OK)
+        except Applet.DoesNotExist:
+            return Response({"error": "Applet not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error saving applet data for {request.user.username}: {e}", exc_info=True)
+            return Response({"error": "An unexpected error occurred while saving data."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

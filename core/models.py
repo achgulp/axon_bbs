@@ -20,6 +20,7 @@ class User(AbstractUser):
     pubkey = models.TextField(blank=True, null=True, help_text="User's public key (PEM).")
     nickname = models.CharField(max_length=50, unique=True, blank=True, null=True, help_text="User's chosen nickname.")
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
+   
     groups = models.ManyToManyField(
         'auth.Group',
         verbose_name='groups',
@@ -37,6 +38,7 @@ class User(AbstractUser):
         related_query_name="user",
     )
     def __str__(self):
+ 
         return self.username
     
     def save(self, *args, **kwargs):
@@ -46,11 +48,13 @@ class User(AbstractUser):
             try:
                 pubkey_obj = serialization.load_pem_public_key(self.pubkey.encode())
                 self.pubkey = pubkey_obj.public_bytes(
+ 
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
                 ).decode('utf-8').strip()
             except Exception as e:
                 print(f"Warning: Could not normalize public key for user {self.username}: {e}")
+     
         super(User, self).save(*args, **kwargs)
 
 
@@ -108,6 +112,7 @@ class ValidFileType(models.Model):
     is_enabled = models.BooleanField(default=True, help_text="Disable to temporarily disallow this file type.")
 
     def __str__(self):
+    
         return f"{self.mime_type} ({self.description})"
 
 class Content(models.Model):
@@ -125,6 +130,7 @@ class MessageBoard(models.Model):
     description = models.TextField(blank=True)
     required_access_level = models.PositiveIntegerField(default=10)
     def __str__(self):
+        
         return self.name
 
 class FileAttachment(Content):
@@ -158,6 +164,7 @@ class PrivateMessage(Content):
     def __str__(self):
         recipient_display = "Unknown"
         if self.recipient:
+            
             recipient_display = self.recipient.username
         else:
             recipient_display = f"PubKey starting with {self.recipient_pubkey[:12]}..."
@@ -170,12 +177,14 @@ class TrustedInstance(models.Model):
     added_at = models.DateTimeField(auto_now_add=True)
     last_synced_at = models.DateTimeField(blank=True, null=True)
     is_trusted_peer = models.BooleanField(default=False, help_text="Check if this is a trusted peer (uncheck for local).")
+    
     def save(self, *args, **kwargs):
         if self.pubkey:
             try:
                 pubkey_obj = serialization.load_pem_public_key(self.pubkey.encode())
                 self.pubkey = pubkey_obj.public_bytes(
                     encoding=serialization.Encoding.PEM,
+                    
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
                 ).decode('utf-8').strip()
             except Exception as e:
@@ -187,6 +196,7 @@ class TrustedInstance(models.Model):
 class ContentExtensionRequest(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
+      
         ('approved', 'Approved'),
         ('denied', 'Denied'),
     ]
@@ -222,7 +232,6 @@ class Applet(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True, help_text="The unique name of the applet.")
     description = models.TextField(blank=True)
-    # UPDATED: Added blank=True to make the field optional at the database level.
     author_pubkey = models.TextField(blank=True, help_text="Public key of the applet's author.")
     code_manifest = models.JSONField(help_text="BitSync manifest for the applet's code bundle.")
     is_local = models.BooleanField(default=False, help_text="If checked, this applet's code will not be swarmed to peers.")
@@ -230,3 +239,16 @@ class Applet(models.Model):
 
     def __str__(self):
         return self.name
+
+class AppletData(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    applet = models.ForeignKey(Applet, on_delete=models.CASCADE, related_name='data_instances')
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='applet_data')
+    data_manifest = models.JSONField(help_text="BitSync manifest for the user's applet data.")
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('applet', 'owner')
+
+    def __str__(self):
+        return f"Data for '{self.applet.name}' owned by {self.owner.username}"

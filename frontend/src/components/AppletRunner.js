@@ -26,28 +26,53 @@ const AppletRunner = ({ applet, onBack }) => {
       try {
         switch (command) {
           case 'getUserInfo':
-            if (profile) {
+            if (profile) 
+{
               response.payload = profile;
             } else {
               const freshProfile = await apiClient.get('/api/user/profile/');
               setProfile(freshProfile.data);
               response.payload = freshProfile.data;
             }
+          
             break;
-          // Handlers for getData and saveData will be added here
+          // UPDATED: Handle new commands for data persistence
+          case 'getData':
+            try {
+              const dataResponse = await apiClient.get(`/api/applets/${applet.id}/data/`);
+              // If status is 204, there's no content, which is a valid success case (no data yet)
+              response.payload = dataResponse.status === 204 ? null : dataResponse.data;
+            } catch (err) {
+              if (err.response && err.response.status === 404) {
+                // Treat 404 as "no data found" instead of an error for the applet
+                response.payload = null; 
+              } else {
+                throw err; // Re-throw other errors
+              }
+            }
+            break;
+          case 'saveData':
+            const saveResponse = await apiClient.post(`/api/applets/${applet.id}/data/`, payload);
+            response.payload = saveResponse.data;
+            break;
           default:
-            break;
+            // For unknown commands, do nothing, allowing other message handlers to potentially act
+            return; 
         }
       } catch (e) {
-        response.error = e.message;
+        console.error(`Error processing applet command '${command}':`, e);
+        response.error = e.response?.data?.error || e.message || 'An unknown error occurred.';
       }
       
-      iframeRef.current.contentWindow.postMessage(response, '*');
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(response, '*');
+      }
     };
 
     window.addEventListener('message', handleMessage);
+  
     return () => window.removeEventListener('message', handleMessage);
-  }, [profile]);
+  }, [profile, applet.id]);
 
   useEffect(() => {
     if (!applet?.code_manifest?.content_hash) {
@@ -63,6 +88,7 @@ const AppletRunner = ({ applet, onBack }) => {
         setAppletCode(response.data);
       })
       .catch(err => {
+       
         console.error("Failed to download applet code:", err);
         setError(err.response?.data?.error || "Could not download applet code.");
       })
@@ -73,10 +99,6 @@ const AppletRunner = ({ applet, onBack }) => {
     if (!appletCode) return '';
     
     const checksum = applet?.code_manifest?.content_hash || 'N/A';
-    
-    // UPDATED: This structure fixes the race condition for the checksum.
-    // The applet's code is now wrapped in a DOMContentLoaded event listener.
-    // This ensures the `window` object is fully available before the applet script runs.
     return `
       <!DOCTYPE html>
       <html>
@@ -93,6 +115,7 @@ const AppletRunner = ({ applet, onBack }) => {
               } catch (e) {
                 const root = document.getElementById('applet-root');
                 if (root) {
+             
                   root.innerHTML = '<p style="color: red; font-family: monospace;">Applet Failed to Execute: ' + e.message + '</p>';
                 }
                 console.error("Applet execution error:", e);
@@ -114,6 +137,7 @@ const AppletRunner = ({ applet, onBack }) => {
       </div>
       <div className="w-full h-[75vh] bg-gray-900 border border-gray-700 rounded overflow-hidden">
         {isLoading && <div className="p-4">Loading applet code...</div>}
+     
         {error && <div className="p-4 text-red-500">{error}</div>}
         {!isLoading && !error && (
           <iframe
@@ -122,6 +146,7 @@ const AppletRunner = ({ applet, onBack }) => {
             srcDoc={getIframeContent()}
             className="w-full h-full"
             sandbox="allow-scripts"
+          
           />
         )}
       </div>
@@ -130,5 +155,3 @@ const AppletRunner = ({ applet, onBack }) => {
 };
 
 export default AppletRunner;
-
-

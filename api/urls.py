@@ -11,6 +11,7 @@ from .views import (
     ImportIdentityView,
     UpdateNicknameView,
     UserProfileView,
+  
     ExportIdentityView,
     UploadAvatarView,
     LogoutView,
@@ -22,13 +23,14 @@ from .views import (
     BitSyncChunkView,
     FileUploadView,
     FileDownloadView,
-    DownloadContentView, # NEW
+    DownloadContentView,
     FileStatusView,
     GetPublicKeyView,
     SendPrivateMessageView,
     PrivateMessageListView,
     PrivateMessageOutboxView,
     AppletListView,
+    GetSaveAppletDataView, # NEW
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -38,7 +40,8 @@ from rest_framework_simplejwt.views import (
 urlpatterns = [
     # Auth
     path('register/', RegisterView.as_view(), name='register'),
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    
+path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
     
@@ -57,6 +60,7 @@ urlpatterns = [
     path('pm/outbox/', PrivateMessageOutboxView.as_view(), name='pm-outbox'),
 
     # Content & Moderation
+ 
     path('boards/', MessageBoardListView.as_view(), name='board-list'),
     path('boards/<int:pk>/messages/', MessageListView.as_view(), name='message-list'),
     path('messages/post/', PostMessageView.as_view(), name='post-message'),
@@ -72,10 +76,13 @@ urlpatterns = [
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('files/download/<uuid:file_id>/', FileDownloadView.as_view(), name='file-download'),
     path('files/status/<uuid:file_id>/', FileStatusView.as_view(), name='file-status'),
-    path('content/download/<str:content_hash>/', DownloadContentView.as_view(), name='content-download'), # NEW
+    path('content/download/<str:content_hash>/', DownloadContentView.as_view(), name='content-download'),
 
     # Applet Framework
+ 
     path('applets/', AppletListView.as_view(), name='applet-list'),
+    # NEW: Endpoint for applets to get/save their data
+    path('applets/<uuid:applet_id>/data/', GetSaveAppletDataView.as_view(), name='applet-data'),
 
     # BitSync P2P Protocol
     path('sync/', SyncView.as_view(), name='sync'),

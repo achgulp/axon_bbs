@@ -6,8 +6,8 @@ import os
 import sys
 
 # --- Application Version ---
-# UPDATED: Version number incremented to reflect the new Applet Platform feature.
-APP_VERSION = "10.1.0"
+# UPDATED: Version number incremented to reflect applet data persistence.
+APP_VERSION = "10.2.0"
 
 def main():
     """Run administrative tasks."""
@@ -18,6 +18,7 @@ def main():
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:
+        
         raise ImportError(
             "Couldn't import Django. Are you sure it's installed and "
             "available on your PYTHONPATH environment variable? Did you "
@@ -28,6 +29,7 @@ def main():
     is_reloader = os.environ.get('RUN_MAIN') == 'true'
 
     if is_runserver and not is_reloader:
+       
         print("Starting development server at http://127.0.0.1:8000/")
         print("Admin site available at http://127.0.0.1:8000/admin/")
 
@@ -36,4 +38,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
