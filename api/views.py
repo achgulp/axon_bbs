@@ -32,6 +32,8 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
+# ... (All existing views from RegisterView to UserProfileView remain unchanged) ...
+
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -476,6 +478,45 @@ class FileDownloadView(views.APIView):
         except Exception as e:
             logger.error(f"Error during file download for file {file_id}: {e}", exc_info=True)
             return Response({"error": "An error occurred while preparing the file for download."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# NEW: Generic view to download any content via BitSync
+class DownloadContentView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def get(self, request, content_hash, *args, **kwargs):
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        if not service_manager.sync_service:
+            return Response({"error": "Sync service is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        # Find any piece of content that has a manifest with this content_hash
+        manifest = None
+        models_to_check = [Message, FileAttachment, PrivateMessage, Applet]
+        for model in models_to_check:
+            item = model.objects.filter(manifest__content_hash=content_hash).first()
+            if item:
+                manifest = item.manifest
+                break
+        
+        if not manifest:
+            # Check the 'code_manifest' field for Applets specifically
+            applet = Applet.objects.filter(code_manifest__content_hash=content_hash).first()
+            if applet:
+                manifest = applet.code_manifest
+            else:
+                raise Http404("Content with the specified hash not found.")
+
+        try:
+            decrypted_data = service_manager.sync_service.get_decrypted_content(manifest)
+            if decrypted_data is None:
+                return Response({"error": "Failed to retrieve or decrypt content from the network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            
+            # For now, return as plain text, assuming it's JS/HTML code
+            return HttpResponse(decrypted_data, content_type='text/plain')
+        except Exception as e:
+            logger.error(f"Error during generic content download for hash {content_hash}: {e}", exc_info=True)
+            return Response({"error": "An error occurred while preparing content for download."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class FileStatusView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]

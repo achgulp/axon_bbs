@@ -224,6 +224,7 @@ class Applet(models.Model):
     description = models.TextField(blank=True)
     author_pubkey = models.TextField(help_text="Public key of the applet's author.")
     code_manifest = models.JSONField(help_text="BitSync manifest for the applet's code bundle.")
+    is_local = models.BooleanField(default=False, help_text="If checked, this applet's code will not be swarmed to peers.")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

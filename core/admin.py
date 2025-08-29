@@ -1,6 +1,7 @@
 # Full path: axon_bbs/core/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django import forms
 from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment, Applet
 import base64
 import json
@@ -197,9 +198,51 @@ class AliasAdmin(admin.ModelAdmin):
             return "No pubkey"
         return generate_checksum(obj.pubkey)
 
-# New Admin Registration for Applets
+# New Custom Admin Form for Applets
+class AppletAdminForm(forms.ModelForm):
+    applet_code_file = forms.FileField(required=True, help_text="Upload the applet's JavaScript source file.")
+
+    class Meta:
+        model = Applet
+        fields = '__all__'
+
 @admin.register(Applet)
 class AppletAdmin(admin.ModelAdmin):
-    list_display = ('name', 'author_pubkey', 'created_at')
+    form = AppletAdminForm
+    list_display = ('name', 'author_pubkey', 'is_local', 'created_at')
     search_fields = ('name', 'description')
     readonly_fields = ('id', 'created_at')
+    fieldsets = (
+        (None, {
+            'fields': ('name', 'description', 'author_pubkey', 'is_local')
+        }),
+        ('Code', {
+            'fields': ('applet_code_file', 'code_manifest')
+        }),
+    )
+
+    def save_model(self, request, obj, form, change):
+        uploaded_file = form.cleaned_data.get('applet_code_file', None)
+        if uploaded_file:
+            # Read the code from the uploaded file
+            js_code = uploaded_file.read().decode('utf-8')
+            content_to_encrypt = {"type": "applet_code", "code": js_code}
+            
+            recipients = None
+            if obj.is_local:
+                # If local, only encrypt for our own instance
+                try:
+                    local_instance = TrustedInstance.objects.get(is_trusted_peer=False)
+                    recipients = [local_instance.pubkey]
+                except TrustedInstance.DoesNotExist:
+                    self.message_user(request, "Cannot create local applet: No local instance configured.", level='ERROR')
+                    return
+
+            # Generate the BitSync manifest
+            _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(
+                content_to_encrypt, 
+                recipients_pubkeys=recipients
+            )
+            obj.code_manifest = manifest
+        
+        super().save_model(request, obj, form, change)

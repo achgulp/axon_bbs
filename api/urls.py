@@ -22,6 +22,7 @@ from .views import (
     BitSyncChunkView,
     FileUploadView,
     FileDownloadView,
+    DownloadContentView, # NEW
     FileStatusView,
     GetPublicKeyView,
     SendPrivateMessageView,
@@ -67,10 +68,11 @@ urlpatterns = [
     path('content/review-extension/<int:pk>/', ReviewContentExtensionView.as_view(), name='review-extension'),
     path('content/unpin/', UnpinContentView.as_view(), name='unpin-content'),
 
-    # File Handling
+    # File & Content Handling
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('files/download/<uuid:file_id>/', FileDownloadView.as_view(), name='file-download'),
     path('files/status/<uuid:file_id>/', FileStatusView.as_view(), name='file-status'),
+    path('content/download/<str:content_hash>/', DownloadContentView.as_view(), name='content-download'), # NEW
 
     # Applet Framework
     path('applets/', AppletListView.as_view(), name='applet-list'),
