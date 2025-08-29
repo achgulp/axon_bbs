@@ -1,7 +1,7 @@
 # Full path: axon_bbs/core/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment
+from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment, Applet
 import base64
 import json
 import requests
@@ -183,8 +183,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
         rows_updated = queryset.update(last_synced_at=None)
         self.message_user(request, f"Successfully reset sync timestamp for {rows_updated} peer(s).", level='SUCCESS')
 
-
-# UPDATED: Added checksum display to the Alias admin panel
 @admin.register(Alias)
 class AliasAdmin(admin.ModelAdmin):
     list_display = ('nickname', 'pubkey_checksum', 'verified', 'added_at')
@@ -198,3 +196,10 @@ class AliasAdmin(admin.ModelAdmin):
         if not obj.pubkey:
             return "No pubkey"
         return generate_checksum(obj.pubkey)
+
+# New Admin Registration for Applets
+@admin.register(Applet)
+class AppletAdmin(admin.ModelAdmin):
+    list_display = ('name', 'author_pubkey', 'created_at')
+    search_fields = ('name', 'description')
+    readonly_fields = ('id', 'created_at')

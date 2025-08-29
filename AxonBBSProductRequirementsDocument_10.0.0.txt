@@ -1,0 +1,219 @@
+Axon BBS - Product Requirements Document
+Version: 10.0.0 (Applet Platform Integration)
+Date: August 28, 2025
+
+1. Overview
+Axon BBS is a modern, anonymous bulletin board system (BBS) built on a private, federated network of trusted nodes. It prioritizes user privacy and architectural resilience through a custom P2P data synchronization protocol named BitSync. This version expands the platform's capabilities with a secure, sandboxed 
+
+
+Applet system, allowing for the sharing and execution of modular games and applications whose data is also synchronized by BitSync.
+
+This document consolidates the project's evolution, replacing all previous versions. The initial concepts involving Nostr and IPFS have been superseded by the BitSync protocol, which handles all content federation and P2P transfer. This version fully documents the implemented feature set, including true end-to-end encrypted private messaging, user avatars, enhanced identity management, a comprehensive suite of diagnostic and administrative tools, and the new Applet Platform.
+
+
+
+2. User Roles & Stories
+As a User...
+I want to generate a new identity keypair or import an existing one so I can control my account. 
+
+I want to securely back up my private key to a password-encrypted 
+
+.pem file so I can restore my account later. 
+
+I want to upload a 128x128 avatar image to my profile, which will appear next to my messages on boards and in private mail. 
+
+I want to unlock my identity with my password once per session so I don't have to re-enter it for every cryptographic action. 
+
+I want to send and receive true end-to-end (E2E) encrypted private messages with other users, including those on different federated instances. The message must be unreadable by the server administrators. 
+
+
+I want an outbox to view the private messages I have sent, and the ability to forward them to other users. 
+
+I want to start a private message with the author of a public post by clicking a "Send Private Message" button on their message. 
+
+I want the system to remember remote users I've messaged by creating a local, case-insensitive alias so I can contact them again easily. 
+
+I want to post on public message boards and read posts from others. 
+
+I want to choose a unique, case-insensitive nickname that is associated with my public key. 
+
+I want a personal ignore list to hide all content from specific users based on their public keys. 
+
+I want to request an extension on the lifespan of my content before it is deleted. 
+
+New: I want to browse a list of available applets (games and applications) shared by other users.
+
+New: I want to run an applet in a secure environment within the BBS.
+
+New: I want to embed certain applets, like a video player or a chess game, directly into my message board posts.
+
+As an Applet Developer...
+New: I want to package my application (HTML/JS/CSS) into a single file bundle that can be shared via a BitSync manifest.
+
+New: I want a simple, secure API (hooks) to allow my applet to request data from and save data to the BitSync network.
+
+New: I want my applet to run in a secure sandbox (<iframe>) so it cannot interfere with the main BBS application or compromise user security.
+
+New: I want the ability to get the current user's nickname and public key so my applet can be aware of who is using it.
+
+As a Moderator...
+I want all the powers of a User. 
+
+I want to be able to temporarily or permanently ban users from the local BBS instance by their public key. 
+
+I want to review and approve or deny user requests for extending the lifespan of their content. 
+
+I want to be able to unpin any user's content to enforce content policies, except for content pinned by an Admin. 
+
+I want my moderation actions (like bans) to be broadcast to peer instances so they can take action, protecting the federated network. 
+
+As a SysOp (Admin)...
+I want all the powers of a Moderator. 
+
+I want to be able to override pinning rules and unpin any content on the server. 
+
+I want to configure and manage a whitelist of trusted federated BBS peers via their .onion URLs. 
+
+I want to automatically fetch a peer's public key using only their onion URL to prevent copy-paste errors. 
+
+I want to reset the synchronization timestamp for a peer to force a full content re-sync for troubleshooting. 
+
+I want to explicitly mark which peers are trusted for syncing via an 
+
+is_trusted_peer checkbox. 
+
+I want to set the default time durations for how long content is stored on my BBS. 
+
+I want the ability to re-key existing message manifests to grant access to newly added trusted peers. 
+
+I want to see the checksum of user, alias, and trusted instance public keys in the admin panel to easily diagnose key mismatches and federation issues. 
+
+3. The BitSync Protocol & E2E Encryption
+The BitSync protocol is the custom P2P layer for Axon BBS, designed to synchronize encrypted content between trusted peers over Tor.
+
+
+Content Manifest: For each piece of content, the originating node generates a JSON Manifest containing a unique content hash, hashes for each data chunk, and encryption details. 
+
+
+Transport Encryption: The content is first encrypted with a one-time AES key. This AES key is then separately encrypted for the public key of each trusted peer instance, creating a "digital envelope" for each peer. This ensures only trusted servers can decrypt the content for transport and storage. 
+
+
+
+
+End-to-End (E2E) Encryption for Private Messages: For private messages, a "double encryption" model is used. The message body is first encrypted with the recipient's user public key (the inner E2E layer). This encrypted payload is then encrypted again using the transport layer method described above. This ensures that only the final recipient can decrypt the actual message content. 
+
+
+
+
+
+Swarming and Redundancy: A node can poll all its trusted peers to see who has a piece of content, allowing it to download different chunks from different peers in parallel, increasing speed and resilience. 
+
+
+Resilient Sync Service: The background SyncService is designed to be resilient to network instability, automatically resuming incomplete downloads and using a grace period to prevent missed manifests. 
+
+4. The Applet Platform
+The Applet Platform allows for the execution of modular games and applications within the Axon BBS. Applets and their data are treated as first-class content, synchronized via BitSync.
+
+Core Concept: An applet is a self-contained bundle of code (typically a single JavaScript file) that can be shared and run. Each applet has two distinct manifests: one for its code and one for its data.
+
+Secure Execution: Applets are executed in a sandboxed <iframe> to prevent them from accessing the main application's data (like session tokens) or performing malicious actions.
+
+Applet API (Hooks): The main BBS application provides a secure API to the sandboxed applet for interacting with the system. This API includes functions such as:
+
+getData(): To fetch and decrypt the applet's shared data (e.g., game state, document content).
+
+saveData(newData): To create a new BitSync manifest for updated applet data and broadcast it to the network.
+
+onDataUpdate(callback): To register a listener that is triggered when new data for the applet is synced from the network.
+
+getUserInfo(): To get the current user's profile information (nickname, public key).
+
+Embedding in Messages: The frontend will parse message bodies for a special tag (e.g., [APPLET](code_hash, data_hash)). When found, it will render the specified applet in-line with its data, allowing for interactive content within a message thread.
+
+Example Applets:
+
+Video Player: An applet that takes a BitSync manifest hash for a video file and renders a player.
+
+Productivity Suite: Simple, collaborative document and spreadsheet editors.
+
+Fortress: A turn-based graphical strategy game where users submit simple AI scripts to attack a host's fortress, with the game state and scripts synced after each turn.
+
+5. Key Administrative & Diagnostic Tools
+The project includes several command-line utilities for maintenance and troubleshooting. 
+
+
+check_trusted_instances.py: A diagnostic tool to verify the local instance configuration and check for conflicting setups. 
+
+
+extract_instance_key.py: A script to decrypt and display the local instance's private key, using the Django SECRET_KEY. 
+
+
+extract_key.py: A tool to decrypt and display a specific user's private key, requiring their password. 
+
+
+extract_manifest.py: An interactive script to view the full JSON manifest of any piece of content in the database for debugging. 
+
+
+recover_identity.py: A script to safely delete a user's corrupted identity files and generate a new, clean identity. 
+
+
+extract_pubkey.py: A utility to derive and display the public key from a given private key .pem file. 
+
+6. Full Project File Structure
+axon_bbs/
+├── axon_project/
+│   ├── settings.py
+│   └── urls.py
+├── core/
+│   ├── management/
+│   │   └── commands/
+│   │       ├── check_local_content.py
+│   │       ├── cleanup_orphaned_files.py
+│   │       ├── compare_sync_status.py
+│   │       ├── diagnose_sync_content.py
+│   │       ├── reset_peer_sync_time.py
+│   │       └── update_peer_key.py
+│   ├── migrations/
+│   ├── services/
+│   │   ├── bitsync_service.py
+│   │   ├── content_validator.py
+│   │   ├── encryption_utils.py
+│   │   ├── identity_service.py
+│   │   ├── service_manager.py
+│   │   ├── sync_service.py
+│   │   └── tor_service.py
+│   ├── admin.py
+│   ├── apps.py
+│   └── models.py  # New 'Applet' model will be added here
+├── api/
+│   ├── permissions.py
+│   ├── serializers.py # New 'AppletSerializer' will be added here
+│   ├── urls.py        # New endpoints for applets will be added here
+│   └── views.py         # New views for applet management will be added here
+├── frontend/
+│   ├── build/
+│   ├── public/
+│   ├── src/
+│   │   ├── applets/              # New: Directory for default/built-in applet source code
+│   │   │   ├── VideoPlayer.js
+│   │   │   └── FortressGame.js
+│   │   ├── components/
+│   │   │   ├── AppletRunner.js   # New: Component to host the sandboxed iframe and API
+│   │   │   └── AppletView.js     # New: A view to browse and launch installed applets
+│   │   ├── App.js
+│   │   ├── apiClient.js
+│   │   └── index.js
+│   └── package.json
+├── data/
+│   └── axon_bbs.sqlite3
+├── logs/
+│   └── bbs.log
+├── media/
+│   └── avatars/
+├── manage.py
+├── requirements.txt
+├── test_crypto_cycle.py
+├── test_decryption.py
+├── extract_manifest.py
+├── recover_identity.py
+└── extract_pubkey.py
