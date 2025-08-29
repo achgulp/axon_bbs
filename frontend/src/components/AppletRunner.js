@@ -16,24 +16,37 @@ const AppletRunner = ({ applet, onBack }) => {
   }, []);
 
   useEffect(() => {
-    const handleMessage = (event) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return;
+    const handleMessage = async (event) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+
+      const { command, payload, requestId } = event.data;
+      let response = { command: `response_${command}`, requestId, payload: null, error: null };
+
+      try {
+        if (command === 'getUserInfo') {
+          response.payload = profile;
+        } else if (command === 'getData') {
+          // Future implementation: fetch data manifest from applet model
+          console.log("Applet requested data. (Not yet implemented)");
+          response.payload = {}; // Return empty object for now
+        } else if (command === 'saveData') {
+          // Future implementation: save data and create new manifest
+          console.log("Applet wants to save data:", payload);
+          response.payload = { success: true };
+        }
+      } catch (e) {
+        response.error = e.message;
       }
-      const { command } = event.data;
-      if (command === 'getUserInfo') {
-        iframeRef.current.contentWindow.postMessage({
-          command: 'userInfo',
-          payload: profile,
-        }, '*');
-      }
+      
+      iframeRef.current.contentWindow.postMessage(response, '*');
     };
+
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [profile]);
+  }, [profile, applet]);
 
   useEffect(() => {
-    if (!applet || !applet.code_manifest || !applet.code_manifest.content_hash) {
+    if (!applet?.code_manifest?.content_hash) {
       setError("Applet has an invalid code manifest.");
       setIsLoading(false);
       return;
@@ -47,15 +60,9 @@ const AppletRunner = ({ applet, onBack }) => {
       })
       .catch(err => {
         console.error("Failed to download applet code:", err);
-        if (err.response && err.response.data.error === 'identity_locked') {
-          setError("Your identity is locked. Please unlock it to run applets.");
-        } else {
-          setError("Could not download applet code. It may still be syncing.");
-        }
+        setError(err.response?.data?.error || "Could not download applet code.");
       })
-      .finally(() => {
-        setIsLoading(false);
-      });
+      .finally(() => setIsLoading(false));
   }, [applet]);
 
   const getIframeContent = () => {
@@ -63,12 +70,7 @@ const AppletRunner = ({ applet, onBack }) => {
     return `
       <!DOCTYPE html>
       <html>
-        <head>
-          <title>${applet.name}</title>
-          <style>
-            body { margin: 0; padding: 0; background-color: #1a202c; color: #e2e8f0; font-family: sans-serif; }
-          </style>
-        </head>
+        <head><title>${applet.name}</title></head>
         <body>
           <div id="applet-root"></div>
           <script>${appletCode}</script>
