@@ -1,7 +1,7 @@
 // Full path: axon_bbs/frontend/src/components/AppletView.js
 import React, { useState, useEffect } from 'react';
 import apiClient from '../apiClient';
-import AppletRunner from './AppletRunner'; // NEW
+import AppletRunner from './AppletRunner';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
@@ -9,10 +9,9 @@ const AppletView = () => {
   const [applets, setApplets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [runningApplet, setRunningApplet] = useState(null); // NEW
+  const [runningApplet, setRunningApplet] = useState(null);
 
   useEffect(() => {
-    // Only fetch applets if we are in the list view
     if (!runningApplet) {
       setIsLoading(true);
       apiClient.get('/api/applets/')
@@ -27,14 +26,12 @@ const AppletView = () => {
           setIsLoading(false);
         });
     }
-  }, [runningApplet]); // Re-fetch when we return to the list view
+  }, [runningApplet]);
 
-  // If an applet is selected to run, render the AppletRunner
   if (runningApplet) {
     return <AppletRunner applet={runningApplet} onBack={() => setRunningApplet(null)} />;
   }
 
-  // Otherwise, render the list of available applets
   return (
     <div>
       <Header text="Applet Browser" />
@@ -55,9 +52,9 @@ const AppletView = () => {
                 <h3 className="font-bold text-lg text-gray-200">{applet.name}</h3>
                 <p className="text-sm text-gray-400">{applet.description}</p>
               </div>
-              <button 
+              <button
                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-                onClick={() => setRunningApplet(applet)} // UPDATED
+                onClick={() => setRunningApplet(applet)}
               >
                 Launch
               </button>
