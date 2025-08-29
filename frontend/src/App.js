@@ -6,6 +6,7 @@ import RegisterScreen from './components/RegisterScreen';
 import MessageList from './components/MessageList';
 import UnlockForm from './components/UnlockForm';
 import ProfileScreen from './components/ProfileScreen';
+import AppletView from './components/AppletView'; // NEW: Import the new AppletView component
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const SideBarButton = ({ onClick, children, className = '' }) => (
@@ -45,14 +46,12 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [view, setView] = useState('inbox');
   const [showCompose, setShowCompose] = useState(!!initialRecipient);
-  
   const [recipientIdentifier, setRecipientIdentifier] = useState(initialRecipient ? initialRecipient.displayName : '');
   const [recipientPubkey, setRecipientPubkey] = useState(initialRecipient ? initialRecipient.pubkey : null);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
   const fetchMessages = useCallback(() => {
     setError('');
     const endpoint = view === 'inbox' ? '/api/pm/list/' : '/api/pm/outbox/';
@@ -73,11 +72,9 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
         }
       });
   }, [setNeedsUnlock, view]);
-
   useEffect(() => {
     fetchMessages();
   }, [fetchMessages]);
-
   const handleSendMessage = async (e) => {
     e.preventDefault();
     setError(''); setSuccess('');
@@ -111,7 +108,6 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
     setRecipientIdentifier('');
     setRecipientPubkey(null);
   };
-
   if (selectedMessage) {
     const isInbox = view === 'inbox';
     const displayName = isInbox ? selectedMessage.author_display : selectedMessage.recipient_display;
@@ -143,7 +139,6 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
   const columns = view === 'inbox'
     ? { id: 'From', value: msg => msg.author_display, avatar: msg => msg.author_avatar_url }
     : { id: 'To', value: msg => msg.recipient_display, avatar: msg => msg.recipient_avatar_url };
-
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -266,6 +261,10 @@ function App() {
     if (currentView === 'pm') {
       return <PrivateMessageClient setNeedsUnlock={setNeedsUnlock} initialRecipient={pmRecipient} />;
     }
+    // NEW: Render the AppletView when the view is 'applets'
+    if (currentView === 'applets') {
+      return <AppletView />;
+    }
     
     if (selectedBoard) {
       return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} onStartPrivateMessage={handleStartPrivateMessage} />;
@@ -288,6 +287,8 @@ function App() {
               <h3 className="font-semibold text-gray-400 mb-2">Menu</h3>
               <SideBarButton onClick={() => handleViewChange('boards')}>Message Boards</SideBarButton>
               <SideBarButton onClick={() => handleViewChange('pm')}>Private Mail</SideBarButton>
+              {/* NEW: Added sidebar button for Applets */}
+              <SideBarButton onClick={() => handleViewChange('applets')}>Applets</SideBarButton>
             </div>
             <div className="p-2">
               <h3 className="font-semibold text-gray-400 mb-2">User</h3>
