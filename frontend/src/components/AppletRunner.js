@@ -17,7 +17,6 @@ const AppletRunner = ({ applet, onBack }) => {
 
   useEffect(() => {
     const handleMessage = async (event) => {
-      // Security: Ensure the message is from the iframe we created
       if (event.source !== iframeRef.current?.contentWindow) return;
 
       const { command, payload, requestId } = event.data;
@@ -75,7 +74,7 @@ const AppletRunner = ({ applet, onBack }) => {
     
     const checksum = applet?.code_manifest?.content_hash || 'N/A';
     
-    // This structure fixes the race condition for the checksum.
+    // UPDATED: This structure fixes the race condition for the checksum.
     // The applet's code is now wrapped in a DOMContentLoaded event listener.
     // This ensures the `window` object is fully available before the applet script runs.
     return `
