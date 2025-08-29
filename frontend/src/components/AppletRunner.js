@@ -1,11 +1,44 @@
 // Full path: axon_bbs/frontend/src/components/AppletRunner.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import apiClient from '../apiClient';
 
 const AppletRunner = ({ applet, onBack }) => {
   const [appletCode, setAppletCode] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [profile, setProfile] = useState(null); // NEW: State to hold user profile
+  const iframeRef = useRef(null); // NEW: Ref to access the iframe directly
+
+  // Fetch the current user's profile once
+  useEffect(() => {
+    apiClient.get('/api/user/profile/')
+      .then(response => setProfile(response.data))
+      .catch(err => console.error("Could not fetch profile for applet.", err));
+  }, []);
+
+  // Effect to handle messages from the applet
+  useEffect(() => {
+    const handleMessage = (event) => {
+      // Security: only accept messages from our own iframe
+      if (event.source !== iframeRef.current?.contentWindow) {
+        return;
+      }
+
+      const { command } = event.data;
+      
+      if (command === 'getUserInfo') {
+        // When applet requests user info, send the profile data back
+        iframeRef.current.contentWindow.postMessage({
+          command: 'userInfo',
+          payload: profile,
+        }, '*');
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    // Cleanup listener when the component unmounts
+    return () => window.removeEventListener('message', handleMessage);
+  }, [profile]); // Rerun if profile changes
 
   useEffect(() => {
     if (!applet || !applet.code_manifest || !applet.code_manifest.content_hash) {
@@ -37,7 +70,6 @@ const AppletRunner = ({ applet, onBack }) => {
 
   const getIframeContent = () => {
     if (!appletCode) return '';
-    // Basic HTML shell to execute the applet's JavaScript code
     return `
       <!DOCTYPE html>
       <html>
@@ -68,10 +100,11 @@ const AppletRunner = ({ applet, onBack }) => {
         {error && <div className="p-4 text-red-500">{error}</div>}
         {!isLoading && !error && (
           <iframe
+            ref={iframeRef} // NEW: Assign the ref
             title={applet.name}
             srcDoc={getIframeContent()}
             className="w-full h-full"
-            sandbox="allow-scripts allow-same-origin" // Security sandbox
+            sandbox="allow-scripts" // Security: allow-same-origin is removed for better security
           />
         )}
       </div>
