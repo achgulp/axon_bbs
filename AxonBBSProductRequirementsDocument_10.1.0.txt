@@ -1,0 +1,144 @@
+Axon BBS - Product Requirements Document
+Version: 10.1.0 (Applet Platform Implementation)
+Date: August 29, 2025
+
+1. Overview
+Axon BBS is a modern, anonymous bulletin board system (BBS) built on a private, federated network of trusted nodes. It prioritizes user privacy and architectural resilience through a custom P2P data synchronization protocol named BitSync. This version expands the platform's capabilities with a secure, sandboxed Applet system, allowing for the sharing and execution of modular games and applications whose data is also synchronized by BitSync.
+
+This document consolidates the project's evolution, replacing all previous versions. This version fully documents the implemented feature set, including end-to-end encrypted private messaging, user avatars, enhanced identity management, a comprehensive suite of diagnostic and administrative tools, and the new Applet Platform.
+
+2. User Roles & Stories
+As a User...
+I want to generate a new identity keypair or import an existing one so I can control my account.
+
+I want to securely back up my private key to a password-encrypted .pem file so I can restore my account later.
+
+I want to upload a 128x128 avatar image to my profile, which will appear next to my messages.
+
+I want to unlock my identity with my password once per session so I don't have to re-enter it for every cryptographic action.
+
+I want to send and receive true end-to-end (E2E) encrypted private messages with other users.
+
+I want to start a private message with the author of a public post.
+
+I want to post on public message boards and read posts from others.
+
+I want to choose a unique, case-insensitive nickname.
+
+I want a personal ignore list to hide content from specific users.
+
+New: I want to browse a list of available applets (games and applications).
+
+New: I want to run an applet in a secure environment within the BBS.
+
+New: I want to embed applets, like a video player or a chess game, directly into my message board posts.
+
+As an Applet Developer...
+New: I want to package my application (HTML/JS/CSS) into a single JavaScript file bundle that can be shared via a BitSync manifest.
+
+New: I want a simple, secure API (hooks) to allow my applet to request and save data to the BitSync network.
+
+New: I want my applet to run in a secure sandbox (<iframe>) so it cannot interfere with the main BBS application or compromise user security.
+
+New: I want my applet to fetch the current user's nickname and public key.
+
+New: I want my applet to be responsive and provide a good user experience on mobile, tablet, and desktop screens.
+
+As a Moderator...
+I want all the powers of a User.
+
+I want to be able to temporarily or permanently ban users from the local BBS instance by their public key.
+
+I want my moderation actions (like bans) to be broadcast to peer instances.
+
+As a SysOp (Admin)...
+I want all the powers of a Moderator.
+
+I want to configure and manage a whitelist of trusted federated BBS peers.
+
+I want to reset the synchronization timestamp for a peer to force a full re-sync.
+
+I want the ability to re-key existing content manifests to grant access to newly added trusted peers.
+
+New: I want to add new applets to the BBS by simply uploading their source code file.
+
+New: I want the system to automatically generate the BitSync manifest for an applet's code upon upload.
+
+New: I want to be able to mark an applet as "local-only" so that its code is not synchronized with peer instances, allowing for private testing.
+
+New: I want to be able to easily update an applet's code by uploading a new file, which automatically regenerates its manifest.
+
+New: I want a simple way to assign authorship of an applet to a local user by selecting their username from a list.
+
+3. The BitSync Protocol & E2E Encryption
+The BitSync protocol is the custom P2P layer for Axon BBS, designed to synchronize encrypted content between trusted peers over Tor. It handles the transport and storage of all shared content, including messages, files, and applet data.
+
+4. The Applet Platform
+The Applet Platform allows for the execution of modular games and applications within the Axon BBS. Applets and their data are treated as first-class content, synchronized via BitSync.
+
+Core Concept: An applet is a self-contained bundle of code (a single JavaScript file) that can be shared and run. Each applet has a distinct manifest for its code. Applet-specific data (e.g., game states, documents) can also be stored and shared with its own manifest.
+
+Secure Execution: Applets are executed in a sandboxed <iframe> to prevent them from accessing the main application's data (like session tokens) or performing malicious actions. Communication between the applet and the host application is handled securely via window.postMessage.
+
+Applet API (Hooks): The main BBS application provides a secure API to the sandboxed applet for interacting with the system. This API is provided via a helper file (api.js) that can be included in the applet's source. The API includes functions such as:
+
+bbs.getUserInfo(): To get the current user's profile information.
+
+bbs.getData(): To fetch and decrypt the applet's shared data.
+
+bbs.saveData(newData): To create a new BitSync manifest for updated applet data and broadcast it to the network.
+
+Responsive Design: Applets are required to be responsive and usable across all screen sizes (mobile, tablet, and desktop). This is achieved using standard CSS media queries within the applet's code.
+
+Embedding in Messages: The frontend will parse message bodies for a special tag (e.g., [APPLET](code_hash, data_hash)). When found, it will render the specified applet in-line with its data.
+
+5. Full Project File Structure
+axon_bbs/
+├── axon_project/
+│   ├── settings.py
+│   └── urls.py
+├── core/
+│   ├── management/
+│   │   └── commands/
+│   ├── migrations/
+│   ├── services/
+│   │   ├── bitsync_service.py
+│   │   ├── content_validator.py
+│   │   ├── encryption_utils.py
+│   │   ├── identity_service.py
+│   │   ├── service_manager.py
+│   │   ├── sync_service.py
+│   │   └── tor_service.py
+│   ├── admin.py
+│   ├── apps.py
+│   └── models.py
+├── api/
+│   ├── permissions.py
+│   ├── serializers.py
+│   ├── urls.py
+│   └── views.py
+├── frontend/
+│   ├── build/
+│   ├── public/
+│   ├── src/
+│   │   ├── applet_api/
+│   │   │   └── api.js              # New: API helper for applet developers
+│   │   ├── applets/
+│   │   │   └── FloatUpMaze.js      # New: Source code for our first game applet
+│   │   ├── components/
+│   │   │   ├── AppletRunner.js   # New: Component to host the sandboxed iframe
+│   │   │   └── AppletView.js     # New: A view to browse and launch applets
+│   │   ├── App.js
+│   │   ├── apiClient.js
+│   │   └── index.js
+│   └── package.json
+├── data/
+│   └── axon_bbs.sqlite3
+├── logs/
+│   └── bbs.log
+├── media/
+│   └── avatars/
+├── manage.py
+├── requirements.txt
+└── ... (diagnostic scripts)
+
