@@ -5,7 +5,7 @@ window.bbs = {
 
   _handleMessage: function(event) {
     const { command, payload, requestId, error } = event.data;
-    if (command.startsWith('response_') && this._callbacks[requestId]) {
+    if (command && command.startsWith('response_') && this._callbacks[requestId]) {
       const { resolve, reject } = this._callbacks[requestId];
       if (error) {
         reject(new Error(error));
@@ -20,6 +20,7 @@ window.bbs = {
     return new Promise((resolve, reject) => {
       const requestId = this._requestId++;
       this._callbacks[requestId] = { resolve, reject };
+      // Target window.parent to communicate out of the iframe
       window.parent.postMessage({ command, payload, requestId }, '*');
     });
   },
