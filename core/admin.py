@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django import forms
-from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment, Applet
+from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment, Applet, AppletData
 import base64
 import json
 import requests
@@ -24,7 +24,12 @@ def rekey_content_action(modeladmin, request, queryset):
         name = getattr(item, 'subject', getattr(item, 'filename', str(item.id)))
         try:
             # Determine the correct manifest field based on the model
-            manifest_field = 'code_manifest' if isinstance(item, Applet) else 'manifest'
+            if isinstance(item, Applet):
+                manifest_field = 'code_manifest'
+            elif isinstance(item, AppletData):
+                manifest_field = 'data_manifest'
+            else:
+                manifest_field = 'manifest'
             manifest = getattr(item, manifest_field)
 
             if not manifest:
@@ -64,6 +69,7 @@ class MessageBoardAdmin(admin.ModelAdmin):
 
 @admin.register(Message)
 class MessageAdmin(admin.ModelAdmin):
+  
     list_display = ('subject', 'author', 'board', 'created_at', 'expires_at', 'is_pinned')
     list_filter = ('board', 'author', 'is_pinned')
     date_hierarchy = 'created_at'
@@ -117,6 +123,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
         ('Timestamps', {
             'fields': ('added_at', 'last_synced_at')
         }),
+ 
     )
     actions = ['generate_keys', 'fetch_peer_key', 'reset_sync_timestamp']
 
@@ -130,6 +137,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
     def generate_keys(self, request, queryset):
         key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
         f = Fernet(key)
+        
         for instance in queryset:
             private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
             public_key_pem = private_key.public_key().public_bytes(
@@ -137,6 +145,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
             ).decode('utf-8')
             private_pem = private_key.private_bytes(
+          
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.PKCS8,
                 encryption_algorithm=serialization.NoEncryption()
@@ -144,6 +153,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             
             encrypted_private = f.encrypt(private_pem.encode()).decode()
             instance.pubkey = public_key_pem
+          
             instance.encrypted_private_key = encrypted_private
             instance.is_trusted_peer = False
             instance.save()
@@ -160,7 +170,8 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             peer_url = instance.web_ui_onion_url.strip('/')
             target_url = f"{peer_url}/api/identity/public_key/"
             proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-            
+        
+     
             try:
                 self.message_user(request, f"Fetching key from {peer_url}...", level='INFO')
                 response = requests.get(target_url, proxies=proxies, timeout=120)
@@ -175,6 +186,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                     else:
                         self.message_user(request, f"Peer {peer_url} did not provide a public key.", level='ERROR')
                 else:
+      
                     self.message_user(request, f"Error fetching key from {peer_url}. Status: {response.status_code}", level='ERROR')
 
             except requests.exceptions.RequestException as e:
@@ -203,6 +215,7 @@ class AliasAdmin(admin.ModelAdmin):
         return generate_checksum(obj.pubkey)
 
 class AppletAdminForm(forms.ModelForm):
+ 
     author = forms.ModelChoiceField(
         queryset=User.objects.filter(pubkey__isnull=False),
         required=False,
@@ -217,6 +230,7 @@ class AppletAdminForm(forms.ModelForm):
 @admin.register(Applet)
 class AppletAdmin(admin.ModelAdmin):
     form = AppletAdminForm
+    
     
     @admin.display(description='Code Checksum')
     def code_checksum(self, obj):
@@ -241,6 +255,7 @@ class AppletAdmin(admin.ModelAdmin):
         uploaded_file = form.cleaned_data.get('applet_code_file', None)
         selected_author = form.cleaned_data.get('author', None)
         
+        
         if selected_author:
             obj.author_pubkey = selected_author.pubkey
 
@@ -256,6 +271,7 @@ class AppletAdmin(admin.ModelAdmin):
             if obj.is_local:
                 try:
                     local_instance = TrustedInstance.objects.get(is_trusted_peer=False)
+                   
                     recipients = [local_instance.pubkey]
                 except TrustedInstance.DoesNotExist:
                     self.message_user(request, "Cannot create local applet: No local instance configured.", level='ERROR')
@@ -270,7 +286,21 @@ class AppletAdmin(admin.ModelAdmin):
                 recipients_pubkeys=recipients
             )
             obj.code_manifest = manifest
-        
+  
+       
         super().save_model(request, obj, form, change)
 
+# NEW: Register the AppletData model with the admin site.
+@admin.register(AppletData)
+class AppletDataAdmin(admin.ModelAdmin):
+    list_display = ('applet', 'owner', 'last_updated', 'data_checksum')
+    list_filter = ('applet', 'owner')
+    date_hierarchy = 'last_updated'
+    readonly_fields = ('id', 'last_updated', 'data_checksum')
+    actions = [rekey_content_action]
 
+    @admin.display(description='Data Checksum')
+    def data_checksum(self, obj):
+        if obj.data_manifest and 'content_hash' in obj.data_manifest:
+            return obj.data_manifest['content_hash'][:16] + '...'
+        return "N/A"

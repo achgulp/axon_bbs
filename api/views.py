@@ -32,7 +32,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (All views from RegisterView to FileDownloadView remain unchanged) ...
+# ... (All views from RegisterView to UnpinContentView remain unchanged) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -735,10 +735,12 @@ class SyncView(views.APIView):
 class BitSyncHasContentView(views.APIView):
     permission_classes = [TrustedPeerPermission]
     def get(self, request, content_hash, *args, **kwargs):
+        # UPDATED: Added AppletData to the check so peers can find and download the data.
         has_content = Message.objects.filter(manifest__content_hash=content_hash).exists() or \
                       FileAttachment.objects.filter(manifest__content_hash=content_hash).exists() or \
                       PrivateMessage.objects.filter(manifest__content_hash=content_hash).exists() or \
-                      Applet.objects.filter(code_manifest__content_hash=content_hash).exists()
+                      Applet.objects.filter(code_manifest__content_hash=content_hash).exists() or \
+                      AppletData.objects.filter(data_manifest__content_hash=content_hash).exists()
         return Response(status=status.HTTP_200_OK if has_content else status.HTTP_404_NOT_FOUND)
 
 @method_decorator(csrf_exempt, name='dispatch')
