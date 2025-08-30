@@ -2,18 +2,19 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../apiClient';
 import AppletRunner from './AppletRunner';
-import HighScoreBoard from './HighScoreBoard'; // NEW: Import HighScoreBoard
+import HighScoreBoard from './HighScoreBoard';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
-const AppletView = () => {
+// UPDATED: Added onLaunchGame prop
+const AppletView = ({ onLaunchGame }) => {
   const [applets, setApplets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [runningApplet, setRunningApplet] = useState(null);
-  const [viewingScoresFor, setViewingScoresFor] = useState(null); // NEW: State for high scores
+  const [viewingScoresFor, setViewingScoresFor] = useState(null);
 
   useEffect(() => {
-    if (!runningApplet && !viewingScoresFor) { // Refresh if not running an applet or viewing scores
+    if (!runningApplet && !viewingScoresFor) {
       setIsLoading(true);
       apiClient.get('/api/applets/')
         .then(response => {
@@ -30,11 +31,17 @@ const AppletView = () => {
     }
   }, [runningApplet, viewingScoresFor]);
 
+  const handleLaunch = (applet) => {
+    if (applet.category_name?.toLowerCase() === 'game') {
+      onLaunchGame(applet); // Notify App.js about the last played game
+    }
+    setRunningApplet(applet);
+  };
+
   if (runningApplet) {
     return <AppletRunner applet={runningApplet} onBack={() => setRunningApplet(null)} />;
   }
 
-  // NEW: Render HighScoreBoard component when viewing scores
   if (viewingScoresFor) {
     return <HighScoreBoard applet={viewingScoresFor} onBack={() => setViewingScoresFor(null)} />;
   }
@@ -59,13 +66,11 @@ const AppletView = () => {
               <div>
                 <div className="flex items-center gap-3">
                   <h3 className="font-bold text-lg text-gray-200">{applet.name}</h3>
-                  {/* NEW: Display category name */}
                   {applet.category_name && <span className="text-xs font-semibold bg-gray-700 text-gray-300 px-2 py-1 rounded-full">{applet.category_name}</span>}
                 </div>
                 <p className="text-sm text-gray-400 mt-1">{applet.description}</p>
               </div>
               <div className="flex gap-2">
-                {/* NEW: Conditionally show High Scores button */}
                 {applet.category_name?.toLowerCase() === 'game' && (
                   <button
                     className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
@@ -76,7 +81,7 @@ const AppletView = () => {
                 )}
                 <button
                   className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-                  onClick={() => setRunningApplet(applet)}
+                  onClick={() => handleLaunch(applet)}
                 >
                   Launch
                 </button>

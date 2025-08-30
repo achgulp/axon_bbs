@@ -6,14 +6,16 @@ import RegisterScreen from './components/RegisterScreen';
 import MessageList from './components/MessageList';
 import UnlockForm from './components/UnlockForm';
 import ProfileScreen from './components/ProfileScreen';
-import AppletView from './components/AppletView'; // NEW: Import the new AppletView component
+import AppletView from './components/AppletView';
+import HighScoreBoard from './components/HighScoreBoard'; // NEW: Import HighScoreBoard
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
-const SideBarButton = ({ onClick, children, className = '' }) => (
-  <button onClick={onClick} className={`w-full text-left py-2 px-4 rounded hover:bg-gray-700 text-gray-300 transition duration-150 ease-in-out ${className}`}>
+const SideBarButton = ({ onClick, children, disabled, className = '' }) => (
+  <button onClick={onClick} disabled={disabled} className={`w-full text-left py-2 px-4 rounded hover:bg-gray-700 text-gray-300 transition duration-150 ease-in-out disabled:text-gray-500 disabled:cursor-not-allowed ${className}`}>
     {children}
   </button>
 );
+
 const MessageBoardList = ({ onSelectBoard }) => {
   const [boards, setBoards] = useState([]);
   useEffect(() => {
@@ -21,6 +23,7 @@ const MessageBoardList = ({ onSelectBoard }) => {
       .then(response => setBoards(response.data))
       .catch(err => console.error(err));
   }, []);
+
   return (
     <div>
       <Header text="Message Boards" />
@@ -52,6 +55,7 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
   const fetchMessages = useCallback(() => {
     setError('');
     const endpoint = view === 'inbox' ? '/api/pm/list/' : '/api/pm/outbox/';
@@ -72,9 +76,11 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
         }
       });
   }, [setNeedsUnlock, view]);
+
   useEffect(() => {
     fetchMessages();
   }, [fetchMessages]);
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     setError(''); setSuccess('');
@@ -108,6 +114,7 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
     setRecipientIdentifier('');
     setRecipientPubkey(null);
   };
+
   if (selectedMessage) {
     const isInbox = view === 'inbox';
     const displayName = isInbox ? selectedMessage.author_display : selectedMessage.recipient_display;
@@ -139,6 +146,7 @@ const PrivateMessageClient = ({ setNeedsUnlock, initialRecipient = null }) => {
   const columns = view === 'inbox'
     ? { id: 'From', value: msg => msg.author_display, avatar: msg => msg.author_avatar_url }
     : { id: 'To', value: msg => msg.recipient_display, avatar: msg => msg.recipient_avatar_url };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -201,6 +209,9 @@ function App() {
   const [needsUnlock, setNeedsUnlock] = useState(false);
   const [currentView, setCurrentView] = useState('boards');
   const [pmRecipient, setPmRecipient] = useState(null);
+  // NEW: State to track the last played game for the high score board
+  const [lastPlayedGame, setLastPlayedGame] = useState(null);
+
   const setAuthToken = (newToken) => {
     if (newToken) {
       localStorage.setItem('token', newToken);
@@ -210,12 +221,14 @@ function App() {
     }
     setToken(newToken);
   };
+
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
     if (storedToken) {
       setToken(storedToken);
     }
   }, []);
+
   const handleLogout = async () => {
     try {
       await apiClient.post('/api/logout/');
@@ -225,23 +238,28 @@ function App() {
       setAuthToken(null);
     }
   };
+
   const handleSelectBoard = (boardId, boardName) => {
     setSelectedBoard({ id: boardId, name: boardName });
     setCurrentView('boards');
   };
+
   const handleViewChange = (view) => {
     setSelectedBoard(null);
     setPmRecipient(null);
     setCurrentView(view);
   };
+
   const handleStartPrivateMessage = (pubkey, displayName) => {
     setPmRecipient({ pubkey: pubkey, displayName: displayName });
     setCurrentView('pm');
   };
+
   const handleUnlockSuccess = () => {
     setIdentityUnlocked(true);
     setNeedsUnlock(false);
   };
+
   if (!token) {
     return (
       <div className="bg-gray-800 min-h-screen">
@@ -261,11 +279,13 @@ function App() {
     if (currentView === 'pm') {
       return <PrivateMessageClient setNeedsUnlock={setNeedsUnlock} initialRecipient={pmRecipient} />;
     }
-    // NEW: Render the AppletView when the view is 'applets'
+    // UPDATED: Handle high score view and pass onLaunchGame callback to AppletView
     if (currentView === 'applets') {
-      return <AppletView />;
+      return <AppletView onLaunchGame={setLastPlayedGame} />;
     }
-    
+    if (currentView === 'high_scores' && lastPlayedGame) {
+      return <HighScoreBoard applet={lastPlayedGame} onBack={() => handleViewChange('applets')} />;
+    }
     if (selectedBoard) {
       return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} onStartPrivateMessage={handleStartPrivateMessage} />;
     }
@@ -280,6 +300,7 @@ function App() {
         <div className="w-full md:w-60 bg-gray-800 p-4 border-r border-gray-700 flex-shrink-0">
           <div className="flex items-center text-2xl font-bold text-white mb-6">
             <img src="/axon.png" alt="Axon logo" className="h-12 w-12 mr-3"/>
+           
             <h2>Axon BBS</h2>
           </div>
           <nav className="space-y-2">
@@ -287,8 +308,15 @@ function App() {
               <h3 className="font-semibold text-gray-400 mb-2">Menu</h3>
               <SideBarButton onClick={() => handleViewChange('boards')}>Message Boards</SideBarButton>
               <SideBarButton onClick={() => handleViewChange('pm')}>Private Mail</SideBarButton>
-              {/* NEW: Added sidebar button for Applets */}
               <SideBarButton onClick={() => handleViewChange('applets')}>Applets</SideBarButton>
+              {/* NEW: High Scores button in the sidebar */}
+              <SideBarButton 
+                onClick={() => handleViewChange('high_scores')}
+                disabled={!lastPlayedGame}
+                title={!lastPlayedGame ? "Play a game first to see high scores" : "View high scores for the last game you played"}
+              >
+                High Scores
+              </SideBarButton>
             </div>
             <div className="p-2">
               <h3 className="font-semibold text-gray-400 mb-2">User</h3>
