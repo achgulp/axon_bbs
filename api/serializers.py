@@ -162,5 +162,5 @@ class AppletSerializer(serializers.ModelSerializer):
 class HighScoreSerializer(serializers.ModelSerializer):
     class Meta:
         model = HighScore
-        # UPDATED: Add wins to the serializer fields
-        fields = ('owner_nickname', 'score', 'wins', 'last_updated')
+        # UPDATED: Add all new stat fields to the serializer
+        fields = ('owner_nickname', 'score', 'wins', 'losses', 'kills', 'deaths', 'assists', 'last_updated')

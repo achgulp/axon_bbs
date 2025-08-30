@@ -105,8 +105,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const leftButton = document.getElementById('leftButton');
         const rightButton = document.getElementById('rightButton');
         const charButtons = document.querySelectorAll('.char-select button');
-        // UPDATED: Initialize score in the stats object
-        let stats = { wins: 0, mineHits: 0, abductions: 0, spaceLosses: 0, score: 0 };
+        // UPDATED: Standardized stat names
+        let stats = { wins: 0, losses: 0, deaths: 0, score: 0 };
         let player, trophy, mines = [], explosionParticles = [], safePathSegments = [];
         let isGameRunning = false, isGameOver = false, isExploding = false, explosionTimer = 0;
         let selectedCharacter = null;
@@ -137,14 +137,13 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             }
         }
         
-        // UPDATED: Display score in the stats area
-        function updateStatsDisplay() { statsArea.innerHTML = `🏆: ${stats.wins} | 💥: ${stats.mineHits} | 👽: ${stats.abductions} | 🌌: ${stats.spaceLosses} | <b>Score: ${stats.score || 0}</b>`; }
+        // UPDATED: Display all relevant stats
+        function updateStatsDisplay() { statsArea.innerHTML = `🏆: ${stats.wins} | ☠️: ${stats.deaths} | 📉: ${stats.losses} | <b>Score: ${stats.score || 0}</b>`; }
         
         async function handleWin() { 
             if (isGameOver || isExploding) return;
             isGameOver = true; isGameRunning = false; playSound('win'); 
-            stats.wins++; 
-            // UPDATED: Add points for a win
+            stats.wins = (stats.wins || 0) + 1; 
             stats.score = (stats.score || 0) + 1000;
             messageArea.textContent = "You Win! +1000 points!"; 
             await bbs.saveData(stats); 
@@ -155,14 +154,11 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         async function handleLose(reason = "Try Again!") { 
             if (isGameOver) return;
             isGameOver = true; isGameRunning = false; 
+            stats.losses = (stats.losses || 0) + 1;
+
             if (reason === "Hit a mine!") {
-                stats.mineHits++;
-                // UPDATED: Subtract points for hitting a mine
+                stats.deaths = (stats.deaths || 0) + 1;
                 stats.score = (stats.score || 0) - 50;
-            } else if (reason === "Abducted!") {
-                stats.abductions++;
-            } else if (reason === "Floated into space!") {
-                stats.spaceLosses++;
             }
             playSound('lose'); 
             messageArea.textContent = `Game Over! ${reason}`; 

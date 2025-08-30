@@ -31,7 +31,6 @@ class HighScoreService:
         from .service_manager import service_manager
         logger.info("Starting high score processing run...")
 
-        # Find applet data for applets categorized as 'Game'
         game_applet_data = AppletData.objects.filter(applet__category__name__iexact='Game')
         
         if not game_applet_data.exists():
@@ -42,7 +41,6 @@ class HighScoreService:
         with transaction.atomic():
             for data_instance in game_applet_data:
                 try:
-                    # Decrypt the manifest content
                     manifest = data_instance.data_manifest
                     decrypted_bytes = service_manager.sync_service.get_decrypted_content(manifest)
                     
@@ -52,26 +50,29 @@ class HighScoreService:
                     content = json.loads(decrypted_bytes.decode('utf-8'))
                     applet_saved_data = content.get('data', {})
 
-                    # Check for the standardized 'score' key
                     if isinstance(applet_saved_data, dict) and 'score' in applet_saved_data:
-                        score_value = int(applet_saved_data['score'])
-                        # UPDATED: Get the win count, defaulting to 0 if not present
-                        win_count = int(applet_saved_data.get('wins', 0))
                         owner_pubkey = content.get('owner_pubkey')
-                        
-                        # Use the owner's nickname, or a default if not found
                         owner_nickname = data_instance.owner.nickname if data_instance.owner and data_instance.owner.nickname else f"user-{owner_pubkey[:8]}"
 
-                        # Update or create the high score entry
+                        # UPDATED: Extract all stats, allowing for missing (None) values
+                        stats_to_save = {
+                            'score': int(applet_saved_data['score']),
+                            'wins': applet_saved_data.get('wins'),
+                            'losses': applet_saved_data.get('losses'),
+                            'kills': applet_saved_data.get('kills'),
+                            'deaths': applet_saved_data.get('deaths'),
+                            'assists': applet_saved_data.get('assists'),
+                            'owner_nickname': owner_nickname,
+                            'last_updated': data_instance.last_updated
+                        }
+                        
+                        # Filter out None values so they are stored as NULL in the db
+                        defaults = {k: v for k, v in stats_to_save.items() if v is not None}
+
                         HighScore.objects.update_or_create(
                             applet=data_instance.applet,
                             owner_pubkey=owner_pubkey,
-                            defaults={
-                                'score': score_value,
-                                'wins': win_count, # UPDATED: Save the win count
-                                'owner_nickname': owner_nickname,
-                                'last_updated': data_instance.last_updated
-                            }
+                            defaults=defaults
                         )
                         processed_count += 1
 

@@ -269,8 +269,12 @@ class HighScore(models.Model):
     owner_pubkey = models.TextField(db_index=True)
     owner_nickname = models.CharField(max_length=50)
     score = models.IntegerField(db_index=True)
-    # UPDATED: Added a field to store wins
-    wins = models.IntegerField(default=0)
+    # UPDATED: Added new optional stat tracking fields
+    wins = models.IntegerField(null=True, blank=True)
+    losses = models.IntegerField(null=True, blank=True)
+    kills = models.IntegerField(null=True, blank=True)
+    deaths = models.IntegerField(null=True, blank=True)
+    assists = models.IntegerField(null=True, blank=True)
     last_updated = models.DateTimeField()
 
     class Meta:
