@@ -79,7 +79,11 @@ const AppletRunner = ({ applet, onBack }) => {
     const contentHash = applet.code_manifest.content_hash;
     setIsLoading(true);
     setError('');
-    apiClient.get(`/api/content/download/${contentHash}/`)
+
+    // UPDATED: Added a cache-busting timestamp to the URL
+    const url = `/api/content/download/${contentHash}/?t=${new Date().getTime()}`;
+
+    apiClient.get(url)
       .then(response => {
         setAppletCode(response.data);
       })
@@ -126,7 +130,6 @@ const AppletRunner = ({ applet, onBack }) => {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        {/* UPDATED: Corrected the JSX syntax for displaying the applet name */}
         <h2 className="text-xl font-bold text-gray-200">{applet.name}</h2>
         <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
           ← Back to Applets
