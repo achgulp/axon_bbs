@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django import forms
-from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment, Applet, AppletData
+from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment, Applet, AppletData, AppletCategory, HighScore
 import base64
 import json
 import requests
@@ -227,10 +227,15 @@ class AppletAdminForm(forms.ModelForm):
         model = Applet
         fields = '__all__'
 
+# NEW: Register the AppletCategory model
+@admin.register(AppletCategory)
+class AppletCategoryAdmin(admin.ModelAdmin):
+    list_display = ('name', 'description')
+    search_fields = ('name',)
+
 @admin.register(Applet)
 class AppletAdmin(admin.ModelAdmin):
     form = AppletAdminForm
-    
     
     @admin.display(description='Code Checksum')
     def code_checksum(self, obj):
@@ -238,12 +243,13 @@ class AppletAdmin(admin.ModelAdmin):
             return obj.code_manifest['content_hash'][:16] + '...'
         return "Not Generated"
 
-    list_display = ('name', 'author_pubkey', 'is_local', 'created_at', 'code_checksum')
+    list_display = ('name', 'category', 'author_pubkey', 'is_local', 'created_at', 'code_checksum')
+    list_filter = ('category', 'is_local')
     search_fields = ('name', 'description')
     readonly_fields = ('id', 'created_at', 'code_manifest', 'code_checksum')
     fieldsets = (
         (None, {
-            'fields': ('name', 'description', 'author', 'author_pubkey', 'is_local')
+            'fields': ('name', 'description', 'category', 'author', 'author_pubkey', 'is_local')
         }),
         ('Code', {
             'fields': ('applet_code_file', 'code_manifest', 'code_checksum')
@@ -290,7 +296,6 @@ class AppletAdmin(admin.ModelAdmin):
        
         super().save_model(request, obj, form, change)
 
-# NEW: Register the AppletData model with the admin site.
 @admin.register(AppletData)
 class AppletDataAdmin(admin.ModelAdmin):
     list_display = ('applet', 'owner', 'last_updated', 'data_checksum')
@@ -304,3 +309,17 @@ class AppletDataAdmin(admin.ModelAdmin):
         if obj.data_manifest and 'content_hash' in obj.data_manifest:
             return obj.data_manifest['content_hash'][:16] + '...'
         return "N/A"
+
+# NEW: Register the HighScore model
+@admin.register(HighScore)
+class HighScoreAdmin(admin.ModelAdmin):
+    list_display = ('applet', 'owner_nickname', 'score', 'last_updated')
+    list_filter = ('applet',)
+    search_fields = ('owner_nickname', 'owner_pubkey')
+    readonly_fields = ('applet', 'owner_pubkey', 'owner_nickname', 'score', 'last_updated')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

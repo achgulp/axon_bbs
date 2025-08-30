@@ -11,7 +11,6 @@ from .views import (
     ImportIdentityView,
     UpdateNicknameView,
     UserProfileView,
-  
     ExportIdentityView,
     UploadAvatarView,
     LogoutView,
@@ -30,7 +29,8 @@ from .views import (
     PrivateMessageListView,
     PrivateMessageOutboxView,
     AppletListView,
-    GetSaveAppletDataView, # NEW
+    GetSaveAppletDataView,
+    HighScoreListView, # NEW
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -40,8 +40,7 @@ from rest_framework_simplejwt.views import (
 urlpatterns = [
     # Auth
     path('register/', RegisterView.as_view(), name='register'),
-    
-path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
     
@@ -60,7 +59,6 @@ path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('pm/outbox/', PrivateMessageOutboxView.as_view(), name='pm-outbox'),
 
     # Content & Moderation
- 
     path('boards/', MessageBoardListView.as_view(), name='board-list'),
     path('boards/<int:pk>/messages/', MessageListView.as_view(), name='message-list'),
     path('messages/post/', PostMessageView.as_view(), name='post-message'),
@@ -79,10 +77,11 @@ path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('content/download/<str:content_hash>/', DownloadContentView.as_view(), name='content-download'),
 
     # Applet Framework
- 
     path('applets/', AppletListView.as_view(), name='applet-list'),
-    # NEW: Endpoint for applets to get/save their data
     path('applets/<uuid:applet_id>/data/', GetSaveAppletDataView.as_view(), name='applet-data'),
+    
+    # NEW: High Score endpoint
+    path('high_scores/<uuid:applet_id>/', HighScoreListView.as_view(), name='high-scores'),
 
     # BitSync P2P Protocol
     path('sync/', SyncView.as_view(), name='sync'),

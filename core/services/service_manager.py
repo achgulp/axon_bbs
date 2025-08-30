@@ -2,7 +2,8 @@
 import logging
 from .bitsync_service import BitSyncService
 from .tor_service import TorService
-from .sync_service import SyncService # NEW: Import SyncService
+from .sync_service import SyncService
+from .high_score_service import HighScoreService # NEW: Import HighScoreService
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,8 @@ class ServiceManager:
         """
         self.tor_service = TorService(host='127.0.0.1', port=9050)
         self.bitsync_service = None
-        self.sync_service = None # NEW: Add placeholder for SyncService
+        self.sync_service = None
+        self.high_score_service = None # NEW: Add placeholder for HighScoreService
 
     def initialize_services(self):
         """
@@ -25,10 +27,14 @@ class ServiceManager:
         logger.info("Initializing BitSync service...")
         self.bitsync_service = BitSyncService()
         
-        # NEW: Instantiate and start the SyncService from here
         logger.info("Initializing and starting SyncService thread...")
         self.sync_service = SyncService()
         self.sync_service.start()
+        
+        # NEW: Instantiate and start the HighScoreService from here
+        logger.info("Initializing and starting HighScoreService thread...")
+        self.high_score_service = HighScoreService()
+        self.high_score_service.start()
         
         logger.info("All services initialized.")
 
@@ -42,4 +48,3 @@ class ServiceManager:
 
 # Create a single, globally accessible instance of the ServiceManager.
 service_manager = ServiceManager()
-

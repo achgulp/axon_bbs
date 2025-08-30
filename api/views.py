@@ -21,9 +21,9 @@ from PIL import Image
 from django.core.files.base import ContentFile
 import io
 
-from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer, AppletSerializer
+from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer, AppletSerializer, HighScoreSerializer
 from .permissions import TrustedPeerPermission
-from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction, Applet, AppletData
+from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction, Applet, AppletData, HighScore
 from core.services.identity_service import IdentityService, DecryptionError
 from core.services.encryption_utils import derive_key_from_password, generate_checksum, generate_short_id, encrypt_with_public_key, decrypt_with_private_key
 from core.services.service_manager import service_manager
@@ -32,7 +32,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (All views from RegisterView to UnpinContentView remain unchanged) ...
+# ... (All views from RegisterView to AppletListView remain unchanged) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -735,7 +735,6 @@ class SyncView(views.APIView):
 class BitSyncHasContentView(views.APIView):
     permission_classes = [TrustedPeerPermission]
     def get(self, request, content_hash, *args, **kwargs):
-        # UPDATED: Added AppletData to the check so peers can find and download the data.
         has_content = Message.objects.filter(manifest__content_hash=content_hash).exists() or \
                       FileAttachment.objects.filter(manifest__content_hash=content_hash).exists() or \
                       PrivateMessage.objects.filter(manifest__content_hash=content_hash).exists() or \
@@ -841,3 +840,12 @@ class GetSaveAppletDataView(views.APIView):
         except Exception as e:
             logger.error(f"Error saving applet data for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred while saving data."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# NEW: View to get high scores for a specific applet
+class HighScoreListView(generics.ListAPIView):
+    serializer_class = HighScoreSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        applet_id = self.kwargs.get('applet_id')
+        return HighScore.objects.filter(applet_id=applet_id).order_by('-score')[:25] # Top 25

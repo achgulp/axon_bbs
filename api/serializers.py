@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest, FileAttachment, PrivateMessage, Applet
+from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest, FileAttachment, PrivateMessage, Applet, HighScore
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
 import os
@@ -153,7 +153,13 @@ class ContentExtensionRequestSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'user', 'request_date', 'status', 'reviewed_by', 'reviewed_at')
 
 class AppletSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source='category.name', read_only=True, default=None)
     class Meta:
         model = Applet
-        fields = ('id', 'name', 'description', 'author_pubkey', 'code_manifest', 'created_at')
+        fields = ('id', 'name', 'description', 'author_pubkey', 'code_manifest', 'created_at', 'category_name')
         read_only_fields = fields
+
+class HighScoreSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HighScore
+        fields = ('owner_nickname', 'score', 'last_updated')

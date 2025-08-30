@@ -228,6 +228,17 @@ class FederatedAction(models.Model):
         target = self.pubkey_target[:12] if self.pubkey_target else self.content_hash_target[:12]
         return f"'{self.action_type}' on target '{target}...'"
 
+# NEW: Model for categorizing applets
+class AppletCategory(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name_plural = "Applet Categories"
+
+    def __str__(self):
+        return self.name
+
 class Applet(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True, help_text="The unique name of the applet.")
@@ -236,6 +247,8 @@ class Applet(models.Model):
     code_manifest = models.JSONField(help_text="BitSync manifest for the applet's code bundle.")
     is_local = models.BooleanField(default=False, help_text="If checked, this applet's code will not be swarmed to peers.")
     created_at = models.DateTimeField(auto_now_add=True)
+    # UPDATED: Added category relationship
+    category = models.ForeignKey(AppletCategory, on_delete=models.SET_NULL, null=True, blank=True)
 
     def __str__(self):
         return self.name
@@ -252,3 +265,18 @@ class AppletData(models.Model):
 
     def __str__(self):
         return f"Data for '{self.applet.name}' owned by {self.owner.username}"
+
+# NEW: Model for storing aggregated high scores
+class HighScore(models.Model):
+    applet = models.ForeignKey(Applet, on_delete=models.CASCADE, related_name='high_scores')
+    owner_pubkey = models.TextField(db_index=True)
+    owner_nickname = models.CharField(max_length=50)
+    score = models.IntegerField(db_index=True)
+    last_updated = models.DateTimeField()
+
+    class Meta:
+        unique_together = ('applet', 'owner_pubkey')
+        ordering = ['-score']
+
+    def __str__(self):
+        return f"{self.owner_nickname}: {self.score} on {self.applet.name}"
