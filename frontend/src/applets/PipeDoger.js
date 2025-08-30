@@ -4,103 +4,128 @@
 // Game mechanics: Tap/click to float up, avoid pipes, score points for passing gaps.
 // On game over, save high score if higher.
 
-// Setup BBS API wrappers using postMessage
-const bbs = {
-  getUserInfo: () => new Promise((resolve) => {
-    const id = Math.random().toString(36).slice(2);
-    const handler = (e) => {
-      if (e.data.id === id && e.data.type === 'userInfo') {
-        resolve(e.data.data);
-        window.removeEventListener('message', handler);
-      }
-    };
-    window.addEventListener('message', handler);
-    window.parent.postMessage({ type: 'getUserInfo', id }, '*');
-  }),// PipeDodger.js - A simple Flappy Bird-style game for Axon BBS applet
-// This is a single-file JS applet that runs in a sandboxed iframe.
-// It uses the BBS API via postMessage to get user info, load/save data (high score).
-// Game mechanics: Tap/click to float up, avoid pipes, score points for passing gaps.
-// On game over, save high score if higher.
+// Setup BBS API wrappers using postMessage with timeouts (no origin checks to avoid sandbox errors)
+const API_TIMEOUT = 5000; // 5 seconds
 
-// Setup BBS API wrappers using postMessage
 const bbs = {
-  getUserInfo: () => new Promise((resolve) => {
+  getUserInfo: () => new Promise((resolve, reject) => {
     const id = Math.random().toString(36).slice(2);
     const handler = (e) => {
+      // No origin check to prevent "permission denied" in strict sandbox
       if (e.data.id === id && e.data.type === 'userInfo') {
+        console.log('Received userInfo:', e.data.data);
+        logDebug('getUserInfo success');
         resolve(e.data.data);
         window.removeEventListener('message', handler);
       }
     };
     window.addEventListener('message', handler);
     window.parent.postMessage({ type: 'getUserInfo', id }, '*');
+    logDebug('Sent getUserInfo request');
+    setTimeout(() => {
+      window.removeEventListener('message', handler);
+      logDebug('getUserInfo timeout');
+      reject(new Error('getUserInfo timeout'));
+    }, API_TIMEOUT);
   }),
-  getData: () => new Promise((resolve) => {
+  getData: () => new Promise((resolve, reject) => {
     const id = Math.random().toString(36).slice(2);
     const handler = (e) => {
       if (e.data.id === id && e.data.type === 'data') {
+        console.log('Received data:', e.data.data);
+        logDebug('getData success');
         resolve(e.data.data);
         window.removeEventListener('message', handler);
       }
     };
     window.addEventListener('message', handler);
     window.parent.postMessage({ type: 'getData', id }, '*');
+    logDebug('Sent getData request');
+    setTimeout(() => {
+      window.removeEventListener('message', handler);
+      logDebug('getData timeout');
+      reject(new Error('getData timeout'));
+    }, API_TIMEOUT);
   }),
-  saveData: (newData) => new Promise((resolve) => {
+  saveData: (newData) => {
     const id = Math.random().toString(36).slice(2);
     const handler = (e) => {
       if (e.data.id === id && e.data.type === 'saveConfirmation') {
-        resolve(e.data.success);
+        console.log('Save confirmation:', e.data.success);
+        logDebug(`saveData ${e.data.success ? 'success' : 'failed'}`);
         window.removeEventListener('message', handler);
       }
     };
     window.addEventListener('message', handler);
     window.parent.postMessage({ type: 'saveData', data: newData, id }, '*');
-  }),
+    logDebug('Sent saveData request: ' + JSON.stringify(newData));
+    // Fire-and-forget; no timeout reject
+  },
 };
+
+// Debug log array and function (like a console overlay)
+let debugLogs = [];
+function logDebug(msg) {
+  debugLogs.push(msg);
+  if (debugLogs.length > 10) debugLogs.shift(); // Keep last 10
+}
 
 // Game variables
 let canvas, ctx;
-let birdY, birdVelocity, gravity = 0.5, jump = -10;
+let birdX = 50, birdY, birdVelocity, gravity = 0.5, jump = -10; // Added birdX for clarity
 let pipes = [];
-let pipeWidth = 50, pipeGap = 150, pipeSpeed = 2;
-let score = 0, highScore = 0;
+let pipeWidth = 50, pipeGap = 150, pipeSpeed = 3; // Increased speed for more action
+let score = 0, highScore = 0, deaths = 0, wins = 0, losses = 0;
 let gameOver = true;
 let userNickname = 'Player';
 
-// Initialize game
-async function init() {
+// Initialize game (non-blocking API calls)
+function init() {
   // Create canvas
   canvas = document.createElement('canvas');
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+  canvas.style.backgroundColor = '#000'; // Dark background to match BBS UI
   document.body.appendChild(canvas);
   ctx = canvas.getContext('2d');
 
-  // Load user info and data
-  try {
-    const userInfo = await bbs.getUserInfo();
-    userNickname = userInfo.nickname || 'Player';
-
-    const savedData = await bbs.getData();
-    highScore = savedData?.score || 0;
-  } catch (err) {
-    console.error('BBS API error:', err);
-  }
+  // General message listener for debug
+  window.addEventListener('message', (e) => {
+    logDebug('Incoming msg: ' + JSON.stringify(e.data));
+  });
 
   // Event listeners for jump (click/tap or space)
   canvas.addEventListener('click', jumpBird);
   window.addEventListener('keydown', (e) => { if (e.key === ' ') jumpBird(); });
 
+  // Resize handler for responsiveness
+  window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  });
+
+  // Start game immediately
   resetGame();
   requestAnimationFrame(gameLoop);
+
+  // Fetch data in background with fallbacks
+  bbs.getUserInfo().then(userInfo => {
+    userNickname = userInfo.nickname || 'Player';
+  }).catch(err => console.error('getUserInfo failed:', err));
+
+  bbs.getData().then(savedData => {
+    highScore = savedData?.score || 0;
+    deaths = savedData?.deaths || 0;
+    wins = savedData?.wins || 0;
+    losses = savedData?.losses || 0;
+  }).catch(err => console.error('getData failed:', err));
 }
 
 // Reset game state
 function resetGame() {
   birdY = canvas.height / 2;
-  birdVelocity = 0;
-  pipes = [{ x: canvas.width, y: Math.random() * (canvas.height - pipeGap - 200) + 100 }];
+  birdVelocity = -5; // Initial upward boost for brief hover
+  pipes = [{ x: canvas.width, y: Math.random() * (canvas.height - pipeGap - 200) + 100, scored: false }];
   score = 0;
   gameOver = false;
 }
@@ -117,7 +142,7 @@ function jumpBird() {
 // Generate new pipe
 function generatePipe() {
   const y = Math.random() * (canvas.height - pipeGap - 200) + 100;
-  pipes.push({ x: canvas.width, y });
+  pipes.push({ x: canvas.width, y, scored: false });
 }
 
 // Game loop
@@ -138,14 +163,15 @@ function gameLoop() {
         pipes.splice(index, 1);
       }
 
-      // Score when passing pipe
-      if (pipe.x + pipeWidth < 50 && pipe.x > 0) { // Assuming bird at x=50
-        score++;
+      // Score when passing pipe (10 points per pipe)
+      if (pipe.x + pipeWidth < birdX && !pipe.scored) {
+        score += 10;
+        pipe.scored = true;
       }
     });
 
-    // Generate new pipe every 150 frames or so
-    if (pipes[pipes.length - 1].x < canvas.width - 200) {
+    // Generate new pipe more frequently (adjusted threshold)
+    if (pipes[pipes.length - 1].x < canvas.width - 150) {
       generatePipe();
     }
 
@@ -155,7 +181,7 @@ function gameLoop() {
     }
     pipes.forEach(pipe => {
       if (
-        (50 + 20 > pipe.x && 50 < pipe.x + pipeWidth) && // Bird x=50, width=20
+        (birdX + 20 > pipe.x && birdX < pipe.x + pipeWidth) && // Bird width=20
         (birdY < pipe.y || birdY + 20 > pipe.y + pipeGap) // Bird height=20
       ) {
         endGame();
@@ -166,7 +192,7 @@ function gameLoop() {
   // Draw bird (simple circle)
   ctx.fillStyle = 'yellow';
   ctx.beginPath();
-  ctx.arc(50, birdY, 10, 0, Math.PI * 2);
+  ctx.arc(birdX, birdY, 10, 0, Math.PI * 2);
   ctx.fill();
 
   // Draw pipes
@@ -176,15 +202,26 @@ function gameLoop() {
     ctx.fillRect(pipe.x, pipe.y + pipeGap, pipeWidth, canvas.height - (pipe.y + pipeGap)); // Bottom pipe
   });
 
-  // Draw scores
-  ctx.fillStyle = 'black';
-  ctx.font = '20px Arial';
+  // Draw scores (larger, white for visibility)
+  ctx.fillStyle = 'white';
+  ctx.font = '24px Arial';
   ctx.fillText(`Score: ${score}`, 10, 30);
   ctx.fillText(`High: ${highScore} (${userNickname})`, 10, 60);
 
   if (gameOver) {
-    ctx.fillText('Game Over - Tap to Restart', canvas.width / 2 - 150, canvas.height / 2);
+    ctx.fillText('Game Over - Tap to Restart', canvas.width / 2 - 180, canvas.height / 2);
+  } else if (score === 0) {
+    ctx.fillText('Tap to Jump!', canvas.width / 2 - 100, canvas.height / 2 - 50); // Startup prompt
   }
+
+  // Draw debug console (bottom-left overlay)
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillRect(10, canvas.height - 120, 300, 110);
+  ctx.fillStyle = 'white';
+  ctx.font = '12px Arial';
+  debugLogs.forEach((log, i) => {
+    ctx.fillText(log, 15, canvas.height - 100 + i * 12);
+  });
 
   requestAnimationFrame(gameLoop);
 }
@@ -192,182 +229,22 @@ function gameLoop() {
 // End game and save score
 async function endGame() {
   gameOver = true;
-  if (score > highScore) {
-    highScore = score;
-    try {
-      await bbs.saveData({ score: highScore });
-    } catch (err) {
-      console.error('Save error:', err);
-    }
-  }
-}
-
-// Start the game
-init();
-  getData: () => new Promise((resolve) => {
-    const id = Math.random().toString(36).slice(2);
-    const handler = (e) => {
-      if (e.data.id === id && e.data.type === 'data') {
-        resolve(e.data.data);
-        window.removeEventListener('message', handler);
-      }
-    };
-    window.addEventListener('message', handler);
-    window.parent.postMessage({ type: 'getData', id }, '*');
-  }),
-  saveData: (newData) => new Promise((resolve) => {
-    const id = Math.random().toString(36).slice(2);
-    const handler = (e) => {
-      if (e.data.id === id && e.data.type === 'saveConfirmation') {
-        resolve(e.data.success);
-        window.removeEventListener('message', handler);
-      }
-    };
-    window.addEventListener('message', handler);
-    window.parent.postMessage({ type: 'saveData', data: newData, id }, '*');
-  }),
-};
-
-// Game variables
-let canvas, ctx;
-let birdY, birdVelocity, gravity = 0.5, jump = -10;
-let pipes = [];
-let pipeWidth = 50, pipeGap = 150, pipeSpeed = 2;
-let score = 0, highScore = 0;
-let gameOver = true;
-let userNickname = 'Player';
-
-// Initialize game
-async function init() {
-  // Create canvas
-  canvas = document.createElement('canvas');
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  document.body.appendChild(canvas);
-  ctx = canvas.getContext('2d');
-
-  // Load user info and data
-  try {
-    const userInfo = await bbs.getUserInfo();
-    userNickname = userInfo.nickname || 'Player';
-
-    const savedData = await bbs.getData();
-    highScore = savedData?.score || 0;
-  } catch (err) {
-    console.error('BBS API error:', err);
-  }
-
-  // Event listeners for jump (click/tap or space)
-  canvas.addEventListener('click', jumpBird);
-  window.addEventListener('keydown', (e) => { if (e.key === ' ') jumpBird(); });
-
-  resetGame();
-  requestAnimationFrame(gameLoop);
-}
-
-// Reset game state
-function resetGame() {
-  birdY = canvas.height / 2;
-  birdVelocity = 0;
-  pipes = [{ x: canvas.width, y: Math.random() * (canvas.height - pipeGap - 200) + 100 }];
-  score = 0;
-  gameOver = false;
-}
-
-// Jump function
-function jumpBird() {
-  if (gameOver) {
-    resetGame();
+  if (score === 0) { // Increment losses/deaths only if didn't pass first pipe
+    losses++;
+    deaths++;
   } else {
-    birdVelocity = jump;
+    wins++; // Increment wins for successful runs
   }
-}
-
-// Generate new pipe
-function generatePipe() {
-  const y = Math.random() * (canvas.height - pipeGap - 200) + 100;
-  pipes.push({ x: canvas.width, y });
-}
-
-// Game loop
-function gameLoop() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (!gameOver) {
-    // Update bird
-    birdVelocity += gravity;
-    birdY += birdVelocity;
-
-    // Update pipes
-    pipes.forEach((pipe, index) => {
-      pipe.x -= pipeSpeed;
-
-      // Remove off-screen pipes
-      if (pipe.x + pipeWidth < 0) {
-        pipes.splice(index, 1);
-      }
-
-      // Score when passing pipe
-      if (pipe.x + pipeWidth < 50 && pipe.x > 0) { // Assuming bird at x=50
-        score++;
-      }
-    });
-
-    // Generate new pipe every 150 frames or so
-    if (pipes[pipes.length - 1].x < canvas.width - 200) {
-      generatePipe();
-    }
-
-    // Collision checks
-    if (birdY > canvas.height || birdY < 0) {
-      endGame();
-    }
-    pipes.forEach(pipe => {
-      if (
-        (50 + 20 > pipe.x && 50 < pipe.x + pipeWidth) && // Bird x=50, width=20
-        (birdY < pipe.y || birdY + 20 > pipe.y + pipeGap) // Bird height=20
-      ) {
-        endGame();
-      }
-    });
-  }
-
-  // Draw bird (simple circle)
-  ctx.fillStyle = 'yellow';
-  ctx.beginPath();
-  ctx.arc(50, birdY, 10, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Draw pipes
-  ctx.fillStyle = 'green';
-  pipes.forEach(pipe => {
-    ctx.fillRect(pipe.x, 0, pipeWidth, pipe.y); // Top pipe
-    ctx.fillRect(pipe.x, pipe.y + pipeGap, pipeWidth, canvas.height - (pipe.y + pipeGap)); // Bottom pipe
-  });
-
-  // Draw scores
-  ctx.fillStyle = 'black';
-  ctx.font = '20px Arial';
-  ctx.fillText(`Score: ${score}`, 10, 30);
-  ctx.fillText(`High: ${highScore} (${userNickname})`, 10, 60);
-
-  if (gameOver) {
-    ctx.fillText('Game Over - Tap to Restart', canvas.width / 2 - 150, canvas.height / 2);
-  }
-
-  requestAnimationFrame(gameLoop);
-}
-
-// End game and save score
-async function endGame() {
-  gameOver = true;
   if (score > highScore) {
     highScore = score;
-    try {
-      await bbs.saveData({ score: highScore });
-    } catch (err) {
-      console.error('Save error:', err);
-    }
+    bbs.saveData({
+      score: highScore,
+      wins: wins,
+      losses: losses,
+      kills: 0,
+      deaths: deaths,
+      assists: 0
+    });
   }
 }
 

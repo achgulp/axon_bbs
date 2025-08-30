@@ -2,7 +2,9 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django import forms
-from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment, Applet, AppletData, AppletCategory, HighScore
+from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment, Applet, AppletData, AppletCategory, HighScore, SystemSettings
+from django.http import HttpResponseRedirect
+from django.urls import path, reverse
 import base64
 import json
 import requests
@@ -227,7 +229,6 @@ class AppletAdminForm(forms.ModelForm):
         model = Applet
         fields = '__all__'
 
-# NEW: Register the AppletCategory model
 @admin.register(AppletCategory)
 class AppletCategoryAdmin(admin.ModelAdmin):
     list_display = ('name', 'description')
@@ -310,7 +311,6 @@ class AppletDataAdmin(admin.ModelAdmin):
             return obj.data_manifest['content_hash'][:16] + '...'
         return "N/A"
 
-# NEW: Register the HighScore model
 @admin.register(HighScore)
 class HighScoreAdmin(admin.ModelAdmin):
     list_display = ('applet', 'owner_nickname', 'score', 'last_updated')
@@ -323,3 +323,21 @@ class HighScoreAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+# NEW: Admin interface for the singleton SystemSettings model
+@admin.register(SystemSettings)
+class SystemSettingsAdmin(admin.ModelAdmin):
+    def get_urls(self):
+        urls = super().get_urls()
+        model_name = self.model._meta.model_name
+        
+        # Override the list view to redirect to the single settings object
+        custom_urls = [
+            path('', self.admin_site.admin_view(self.changelist_view), name=f'core_{model_name}_changelist'),
+            path('1/', self.admin_site.admin_view(self.change_view), {'object_id': '1'}, name=f'core_{model_name}_change'),
+        ]
+        return custom_urls + urls
+
+    def changelist_view(self, request, extra_context=None):
+        # Redirect the main settings view to the only editable object
+        return HttpResponseRedirect(reverse('admin:core_systemsettings_change', args=(1,)))

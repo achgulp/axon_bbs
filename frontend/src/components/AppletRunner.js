@@ -80,7 +80,6 @@ const AppletRunner = ({ applet, onBack }) => {
     setIsLoading(true);
     setError('');
 
-    // UPDATED: Added a cache-busting timestamp to the URL
     const url = `/api/content/download/${contentHash}/?t=${new Date().getTime()}`;
 
     apiClient.get(url)
@@ -99,6 +98,9 @@ const AppletRunner = ({ applet, onBack }) => {
     if (!appletCode) return '';
     
     const checksum = applet?.code_manifest?.content_hash || 'N/A';
+    // UPDATED: Pass the debug mode setting from the profile into the iframe
+    const debugMode = profile?.applet_debug_mode || false;
+
     return `
       <!DOCTYPE html>
       <html>
@@ -109,6 +111,7 @@ const AppletRunner = ({ applet, onBack }) => {
           <div id="applet-root"></div>
           <script>
             window.BBS_APPLET_CHECKSUM = '${checksum}';
+            window.BBS_DEBUG_MODE = ${debugMode};
             document.addEventListener("DOMContentLoaded", function() {
               try {
                 ${appletCode}

@@ -269,7 +269,6 @@ class HighScore(models.Model):
     owner_pubkey = models.TextField(db_index=True)
     owner_nickname = models.CharField(max_length=50)
     score = models.IntegerField(db_index=True)
-    # UPDATED: Added new optional stat tracking fields
     wins = models.IntegerField(null=True, blank=True)
     losses = models.IntegerField(null=True, blank=True)
     kills = models.IntegerField(null=True, blank=True)
@@ -283,3 +282,22 @@ class HighScore(models.Model):
 
     def __str__(self):
         return f"{self.owner_nickname}: {self.score} on {self.applet.name}"
+
+# NEW: Singleton model for global site settings
+class SystemSettings(models.Model):
+    applet_debug_mode = models.BooleanField(default=False, help_text="Enable to show debug consoles in all applets.")
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super(SystemSettings, self).save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        pass # Deleting the settings object is not allowed
+
+    @classmethod
+    def load(cls):
+        obj, created = cls.objects.get_or_create(pk=1)
+        return obj
+
+    class Meta:
+        verbose_name_plural = "System Settings"

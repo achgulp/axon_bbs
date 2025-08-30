@@ -96,7 +96,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     document.addEventListener('mousemove', (e) => { if (isDragging) { debugDialog.style.left = `${e.clientX - offsetX}px`; debugDialog.style.top = `${e.clientY - offsetY}px`; } });
     document.addEventListener('mouseup', () => { isDragging = false; });
 
+    // UPDATED: The debugLog function now respects the global debug flag
     function debugLog(message) {
+        if (window.BBS_DEBUG_MODE !== true) return;
         const logEntry = document.createElement('div');
         const text = `> ${message}`;
         console.log(text);
@@ -106,6 +108,11 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     }
 
     try {
+        // UPDATED: Hide the debug console if debug mode is off
+        if (window.BBS_DEBUG_MODE !== true) {
+            debugDialog.style.display = 'none';
+        }
+
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = false;
@@ -200,9 +207,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 const scale = 2;
                 const bitmapWidth = bitmap[0].length * scale;
                 const bitmapHeight = bitmap.length * scale;
-                // UPDATED: Final y-offset correction for perfect centering
                 const x = (btnCanvas.width - bitmapWidth) / 2;
-                const y = (btnCanvas.height - bitmapHeight) / 2;
+                const y = (btnCanvas.height - bitmapHeight) / 2 + 12;
                 drawBitmap(btnCtx, bitmap, x, y, scale);
             }
             

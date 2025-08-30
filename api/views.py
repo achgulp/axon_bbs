@@ -23,7 +23,7 @@ import io
 
 from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer, AppletSerializer, HighScoreSerializer
 from .permissions import TrustedPeerPermission
-from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction, Applet, AppletData, HighScore
+from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction, Applet, AppletData, HighScore, SystemSettings
 from core.services.identity_service import IdentityService, DecryptionError
 from core.services.encryption_utils import derive_key_from_password, generate_checksum, generate_short_id, encrypt_with_public_key, decrypt_with_private_key
 from core.services.service_manager import service_manager
@@ -32,7 +32,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (All views from RegisterView to AppletListView remain unchanged) ...
+# ... (Views from RegisterView to UpdateNicknameView are unchanged) ...
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
@@ -207,13 +207,17 @@ class UserProfileView(views.APIView):
 
     def get(self, request, *args, **kwargs):
         user = request.user
+        # UPDATED: Load the system settings and include the debug flag
+        settings = SystemSettings.load()
         return Response({
             "username": user.username,
             "nickname": user.nickname,
             "pubkey": user.pubkey,
-            "avatar_url": user.avatar.url if user.avatar else None
+            "avatar_url": user.avatar.url if user.avatar else None,
+            "applet_debug_mode": settings.applet_debug_mode
         })
 
+# ... (All other views from UploadAvatarView to HighScoreListView are unchanged) ...
 class UploadAvatarView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -841,7 +845,6 @@ class GetSaveAppletDataView(views.APIView):
             logger.error(f"Error saving applet data for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred while saving data."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# NEW: View to get high scores for a specific applet
 class HighScoreListView(generics.ListAPIView):
     serializer_class = HighScoreSerializer
     permission_classes = [permissions.IsAuthenticated]
