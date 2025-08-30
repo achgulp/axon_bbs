@@ -162,4 +162,5 @@ class AppletSerializer(serializers.ModelSerializer):
 class HighScoreSerializer(serializers.ModelSerializer):
     class Meta:
         model = HighScore
-        fields = ('owner_nickname', 'score', 'last_updated')
+        # UPDATED: Add wins to the serializer fields
+        fields = ('owner_nickname', 'score', 'wins', 'last_updated')

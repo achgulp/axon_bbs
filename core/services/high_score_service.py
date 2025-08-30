@@ -55,6 +55,8 @@ class HighScoreService:
                     # Check for the standardized 'score' key
                     if isinstance(applet_saved_data, dict) and 'score' in applet_saved_data:
                         score_value = int(applet_saved_data['score'])
+                        # UPDATED: Get the win count, defaulting to 0 if not present
+                        win_count = int(applet_saved_data.get('wins', 0))
                         owner_pubkey = content.get('owner_pubkey')
                         
                         # Use the owner's nickname, or a default if not found
@@ -66,6 +68,7 @@ class HighScoreService:
                             owner_pubkey=owner_pubkey,
                             defaults={
                                 'score': score_value,
+                                'wins': win_count, # UPDATED: Save the win count
                                 'owner_nickname': owner_nickname,
                                 'last_updated': data_instance.last_updated
                             }

@@ -38,10 +38,12 @@ const HighScoreBoard = ({ applet, onBack }) => {
           <table className="w-full text-left table-auto">
             <thead className="border-b border-gray-600">
               <tr>
-                <th className="p-3 text-sm font-semibold text-gray-400 w-1/12">Rank</th>
+                <th className="p-3 text-sm font-semibold text-gray-400 w-1/12 text-center">Rank</th>
                 <th className="p-3 text-sm font-semibold text-gray-400 w-5/12">Player</th>
-                <th className="p-3 text-sm font-semibold text-gray-400 w-3/12">Score</th>
-                <th className="p-3 text-sm font-semibold text-gray-400 w-3/12">Date Set</th>
+                {/* UPDATED: Added Wins column */}
+                <th className="p-3 text-sm font-semibold text-gray-400 w-2/12 text-center">Wins</th>
+                <th className="p-3 text-sm font-semibold text-gray-400 w-2/12">Score</th>
+                <th className="p-3 text-sm font-semibold text-gray-400 w-2/12">Date Set</th>
               </tr>
             </thead>
             <tbody>
@@ -49,6 +51,8 @@ const HighScoreBoard = ({ applet, onBack }) => {
                 <tr key={index} className="border-b border-gray-700 last:border-b-0">
                   <td className="p-3 text-gray-200 font-bold text-center">{index + 1}</td>
                   <td className="p-3 text-gray-300">{score.owner_nickname}</td>
+                  {/* UPDATED: Display wins data */}
+                  <td className="p-3 text-yellow-400 text-center">{score.wins}</td>
                   <td className="p-3 text-green-400 font-semibold">{score.score.toLocaleString()}</td>
                   <td className="p-3 text-gray-400">{new Date(score.last_updated).toLocaleDateString()}</td>
                 </tr>
