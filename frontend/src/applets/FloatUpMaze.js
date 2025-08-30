@@ -34,8 +34,19 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     const styles = `
         body { font-family: 'Arial', sans-serif; display: flex; justify-content: center; align-items: center; background-color: #1a202c; color: #e2e8f0; padding-top: 20px; overflow: hidden; }
         .game-container { background-color: #2d3748; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; width: 300px; }
-        canvas { 
-        display: block; margin: 0 auto 15px auto; background-color: #e0f2fe; border: 1px solid #4a5568; max-width: 100%; height: auto; image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;}
+        
+        #gameCanvas { 
+            display: block; 
+            margin: 0 auto 15px auto; 
+            background-color: #e0f2fe; 
+            border: 1px solid #4a5568; 
+            max-width: 100%; 
+            height: auto; 
+            image-rendering: pixelated; 
+            image-rendering: -moz-crisp-edges; 
+            image-rendering: crisp-edges;
+        }
+
         .controls button, .start-button { background-color: #3b82f6; color: white; border: none; padding: 10px 15px; margin: 5px; border-radius: 8px; font-size: 16px; cursor: pointer; }
         .char-select button { background-color: #4a5568;
         width: 48px; height: 48px; padding: 0; display: inline-flex; justify-content: center; align-items: center; border-radius: 8px; border: none;
@@ -115,10 +126,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         let saucer = { active: false, x: 0, y: -30, width: 40, height: 20, speed: 2, state: 'idle', beamActive: false, pullSpeed: 1.5 };
         const T = null, K = '#000000', W = '#FFFFFF', G = '#808080', LG = '#D3D3D3', Y = '#FFD700', BR = '#A0522D', DG = '#333333', OR = '#FFA500', FY = '#FFFF00', SC = '#C0C0C0', BC = 'rgba(173, 216, 230, 0.5)', GC = '#228B22', LGC = '#90EE90', TRUNK_C = '#8B4513';
         const giraffeBitmap = [ [T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, Y, Y, Y, Y, T, T, T, T, T, T, T, T],[T, T, T, T, Y, BR, Y, Y, T, T, T, T, T, T, T, T],[T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, Y, Y, Y, Y, T, T, T, T, T, T, T, T],[T, T, T, Y, Y, BR, Y, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, Y, Y, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, BR, BR, T, T, BR, BR, T, T, T, T, T, T, T],[T, T, T, BR, BR, T, T, BR, BR, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
-        // UPDATED: Elephant bitmap with fully transparent background
-        const elephantBitmap = [ [T, T, T, T, G, G, G, G, G, G, T, T, T, T, T, T],[T, T, T, G, G, G, G, G, G, G, G, T, T, T, T, T],[T, T, G, G, T, G, G, G, T, G, G, G, T, T, T, T],[T, T, G, G, G, G, G, G, G, G, G, G, T, T, T, T],[T, G, G, G, G, G, G, G, G, G, G, G, G, T, T, T],[T, G, G, G, G, G, G, G, G, G, G, G, G, T, T, T],[T, G, G, G, G, T, T, T, T, G, G, G, G, T, T, T],[T, T, G, G, T, T, T, T, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, G, G, G, G, T, G, G, T, T, T, T],[T, T, G, G, T, G, G, G, G, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, T, LG, LG, T, T, LG, LG, T, T, LG, LG, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
-        // UPDATED: Zebra bitmap with fully transparent background
-        const zebraBitmap = [ [T, T, T, T, T, T, K, T, K, T, T, T, T, T, T, T],[T, T, T, T, T, K, T, K, T, K, T, T, T, T, T, T],[T, T, T, T, K, T, K, T, K, T, T, T, T, T, T, T],[T, T, T, T, T, K, T, K, T, K, T, T, T, T, T, T],[T, T, T, K, K, T, K, T, K, T, K, T, T, T, T, T],[T, T, T, T, T, K, T, K, T, K, T, T, T, T, T, T],[T, T, T, K, K, T, K, T, K, T, K, T, T, T, T, T],[T, T, T, T, T, K, T, K, T, K, T, T, T, T, T, T],[T, T, T, K, K, T, K, T, K, T, K, T, T, T, T, T],[T, T, T, T, T, K, T, K, T, K, T, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
+        const elephantBitmap = [ [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, G, G, G, G, G, G, G, T, T, T, T, T],[T, T, T, G, G, G, G, G, G, G, G, G, T, T, T, T],[T, T, G, G, LG, G, G, G, LG, G, G, G, G, T, T, T],[T, T, G, G, G, G, G, G, G, G, G, G, G, T, T, T],[T, G, G, G, G, G, G, G, G, G, G, G, G, G, T, T],[T, G, G, G, G, G, G, G, G, G, G, G, G, G, T, T],[T, G, G, G, G, T, T, T, T, T, G, G, G, G, T, T],[T, T, G, G, T, T, T, T, T, T, T, G, G, T, T, T],[T, T, G, G, T, T, G, G, T, T, T, G, G, T, T, T],[T, T, G, G, T, G, G, G, G, T, G, G, T, T, T, T],[T, T, G, G, T, G, G, G, G, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, T, LG, LG, T, T, LG, LG, T, T, LG, LG, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
+        const zebraBitmap = [ [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, W, K, W, K, T, T, T, T, T, T, T],[T, T, T, T, W, K, W, K, W, K, T, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, T, T, K, W, T, T, T, T, T, T],[T, T, T, K, K, T, T, T, T, K, T, T, T, T, T, T],[T, T, T, W, W, T, T, T, T, W, T, T, T, T, T, T],[T, T, T, K, K, T, T, T, T, K, T, T, T, T, T, T],[T, T, T, W, W, T, T, T, T, W, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
         const simpleBombBitmap = [ [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, BR, BR, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, BR, OR, FY, BR, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, BR, FY, OR, BR, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T, T],[T, T, T, T, T, T, DG, DG, K, K, W, K, K, W, K, K, DG, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T],[T, T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
         const characterBitmaps = { giraffe: giraffeBitmap, elephant: elephantBitmap, zebra: zebraBitmap };
         let sounds = {}, audioInitialized = false;
@@ -191,9 +200,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 const scale = 2;
                 const bitmapWidth = bitmap[0].length * scale;
                 const bitmapHeight = bitmap.length * scale;
-                // UPDATED: Increased the Y-offset further to lower the animals
+                // UPDATED: Final y-offset correction for perfect centering
                 const x = (btnCanvas.width - bitmapWidth) / 2;
-                const y = (btnCanvas.height - bitmapHeight) / 2 + 12;
+                const y = (btnCanvas.height - bitmapHeight) / 2;
                 drawBitmap(btnCtx, bitmap, x, y, scale);
             }
             
