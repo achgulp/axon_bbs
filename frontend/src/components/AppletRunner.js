@@ -36,18 +36,15 @@ const AppletRunner = ({ applet, onBack }) => {
             }
           
             break;
-          // UPDATED: Handle new commands for data persistence
           case 'getData':
             try {
               const dataResponse = await apiClient.get(`/api/applets/${applet.id}/data/`);
-              // If status is 204, there's no content, which is a valid success case (no data yet)
               response.payload = dataResponse.status === 204 ? null : dataResponse.data;
             } catch (err) {
               if (err.response && err.response.status === 404) {
-                // Treat 404 as "no data found" instead of an error for the applet
                 response.payload = null; 
               } else {
-                throw err; // Re-throw other errors
+                throw err;
               }
             }
             break;
@@ -56,7 +53,6 @@ const AppletRunner = ({ applet, onBack }) => {
             response.payload = saveResponse.data;
             break;
           default:
-            // For unknown commands, do nothing, allowing other message handlers to potentially act
             return; 
         }
       } catch (e) {
@@ -130,7 +126,8 @@ const AppletRunner = ({ applet, onBack }) => {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold text-gray-200">${applet.name}</h2>
+        {/* UPDATED: Corrected the JSX syntax for displaying the applet name */}
+        <h2 className="text-xl font-bold text-gray-200">{applet.name}</h2>
         <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
           ← Back to Applets
         </button>

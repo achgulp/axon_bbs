@@ -105,8 +105,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const leftButton = document.getElementById('leftButton');
         const rightButton = document.getElementById('rightButton');
         const charButtons = document.querySelectorAll('.char-select button');
-        // UPDATED: Standardized stat names
-        let stats = { wins: 0, losses: 0, deaths: 0, score: 0 };
+        let stats = { wins: 0, losses: 0, deaths: 0, abductions: 0, spaceLosses: 0, score: 0 };
         let player, trophy, mines = [], explosionParticles = [], safePathSegments = [];
         let isGameRunning = false, isGameOver = false, isExploding = false, explosionTimer = 0;
         let selectedCharacter = null;
@@ -116,8 +115,10 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         let saucer = { active: false, x: 0, y: -30, width: 40, height: 20, speed: 2, state: 'idle', beamActive: false, pullSpeed: 1.5 };
         const T = null, K = '#000000', W = '#FFFFFF', G = '#808080', LG = '#D3D3D3', Y = '#FFD700', BR = '#A0522D', DG = '#333333', OR = '#FFA500', FY = '#FFFF00', SC = '#C0C0C0', BC = 'rgba(173, 216, 230, 0.5)', GC = '#228B22', LGC = '#90EE90', TRUNK_C = '#8B4513';
         const giraffeBitmap = [ [T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, Y, Y, Y, Y, T, T, T, T, T, T, T, T],[T, T, T, T, Y, BR, Y, Y, T, T, T, T, T, T, T, T],[T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, Y, Y, Y, Y, T, T, T, T, T, T, T, T],[T, T, T, Y, Y, BR, Y, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, Y, Y, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, BR, BR, T, T, BR, BR, T, T, T, T, T, T, T],[T, T, T, BR, BR, T, T, BR, BR, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
-        const elephantBitmap = [ [T, T, T, T, G, G, G, G, G, G, T, T, T, T, T, T],[T, T, T, G, G, G, G, G, G, G, G, T, T, T, T, T],[T, T, G, G, LG, G, G, G, LG, G, G, G, T, T, T, T],[T, T, G, G, G, G, G, G, G, G, G, G, T, T, T, T],[T, G, G, G, G, G, G, G, G, G, G, G, G, T, T, T],[T, G, G, G, G, G, G, G, G, G, G, G, G, T, T, T],[T, G, G, G, G, T, T, T, T, G, G, G, G, T, T, T],[T, T, G, G, T, T, T, T, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, G, G, G, G, T, G, G, T, T, T, T],[T, T, G, G, T, G, G, G, G, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, T, LG, LG, T, T, LG, LG, T, T, LG, LG, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
-        const zebraBitmap = [ [T, T, T, T, T, W, K, W, K, T, T, T, T, T, T, T],[T, T, T, T, W, K, W, K, W, K, T, T, T, T, T, T],[T, T, T, T, K, W, K, W, K, W, T, T, T, T, T, T],[T, T, T, W, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, K, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, W, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, K, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, W, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, K, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, W, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, W, W, T, T, W, W, T, T, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, W, W, T, T, W, W, T, T, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
+        // UPDATED: Elephant bitmap with transparent background (non-tusk LG replaced with T)
+        const elephantBitmap = [ [T, T, T, T, G, G, G, G, G, G, T, T, T, T, T, T],[T, T, T, G, G, G, G, G, G, G, G, T, T, T, T, T],[T, T, G, G, T, G, G, G, T, G, G, G, T, T, T, T],[T, T, G, G, G, G, G, G, G, G, G, G, T, T, T, T],[T, G, G, G, G, G, G, G, G, G, G, G, G, T, T, T],[T, G, G, G, G, G, G, G, G, G, G, G, G, T, T, T],[T, G, G, G, G, T, T, T, T, G, G, G, G, T, T, T],[T, T, G, G, T, T, T, T, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, G, G, G, G, T, G, G, T, T, T, T],[T, T, G, G, T, G, G, G, G, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, T, LG, LG, T, T, LG, LG, T, T, LG, LG, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
+        // UPDATED: Zebra bitmap with transparent background (W replaced with T)
+        const zebraBitmap = [ [T, T, T, T, T, T, K, T, K, T, T, T, T, T, T, T],[T, T, T, T, T, K, T, K, T, K, T, T, T, T, T, T],[T, T, T, T, K, T, K, T, K, T, T, T, T, T, T, T],[T, T, T, T, T, K, T, K, T, K, T, T, T, T, T, T],[T, T, T, K, K, T, K, T, K, T, K, T, T, T, T, T],[T, T, T, T, T, K, T, K, T, K, T, T, T, T, T, T],[T, T, T, K, K, T, K, T, K, T, K, T, T, T, T, T],[T, T, T, T, T, K, T, K, T, K, T, T, T, T, T, T],[T, T, T, K, K, T, K, T, K, T, K, T, T, T, T, T],[T, T, T, T, T, K, T, K, T, K, T, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, K, K, T, T, K, K, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
         const simpleBombBitmap = [ [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, BR, BR, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, BR, OR, FY, BR, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, BR, FY, OR, BR, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T, T],[T, T, T, T, T, T, DG, DG, K, K, W, K, K, W, K, K, DG, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T],[T, T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
         const characterBitmaps = { giraffe: giraffeBitmap, elephant: elephantBitmap, zebra: zebraBitmap };
         let sounds = {}, audioInitialized = false;
@@ -137,8 +138,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             }
         }
         
-        // UPDATED: Display all relevant stats
-        function updateStatsDisplay() { statsArea.innerHTML = `🏆: ${stats.wins} | ☠️: ${stats.deaths} | 📉: ${stats.losses} | <b>Score: ${stats.score || 0}</b>`; }
+        function updateStatsDisplay() { 
+            statsArea.innerHTML = `🏆: ${stats.wins} | ☠️: ${stats.deaths} | 👽: ${stats.abductions} | 🌌: ${stats.spaceLosses} | 📉: ${stats.losses} | <b>Score: ${stats.score || 0}</b>`; 
+        }
         
         async function handleWin() { 
             if (isGameOver || isExploding) return;
@@ -154,12 +156,18 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         async function handleLose(reason = "Try Again!") { 
             if (isGameOver) return;
             isGameOver = true; isGameRunning = false; 
+            
             stats.losses = (stats.losses || 0) + 1;
 
             if (reason === "Hit a mine!") {
                 stats.deaths = (stats.deaths || 0) + 1;
                 stats.score = (stats.score || 0) - 50;
+            } else if (reason === "Abducted!") {
+                stats.abductions = (stats.abductions || 0) + 1;
+            } else if (reason === "Floated into space!") {
+                stats.spaceLosses = (stats.spaceLosses || 0) + 1;
             }
+
             playSound('lose'); 
             messageArea.textContent = `Game Over! ${reason}`; 
             await bbs.saveData(stats); 
@@ -178,10 +186,14 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 const btnCanvas = charCanvases[charName];
                 const btnCtx = btnCanvas.getContext('2d');
                 btnCtx.imageSmoothingEnabled = false;
+                btnCtx.clearRect(0, 0, btnCanvas.width, btnCanvas.height); 
                 const bitmap = characterBitmaps[charName];
                 const scale = 2;
-                const x = (btnCanvas.width - (bitmap[0].length * scale)) / 2;
-                const y = (btnCanvas.height - (bitmap.length * scale)) / 2;
+                const bitmapWidth = bitmap[0].length * scale;
+                const bitmapHeight = bitmap.length * scale;
+                // UPDATED: Increased the Y-offset to lower the animals more
+                const x = (btnCanvas.width - bitmapWidth) / 2;
+                const y = (btnCanvas.height - bitmapHeight) / 2 + 8;
                 drawBitmap(btnCtx, bitmap, x, y, scale);
             }
             
@@ -382,7 +394,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         container.appendChild(welcomeArea);
         
         if (savedData && typeof savedData === 'object' && !Array.isArray(savedData) && savedData !== null) {
-            stats = { ...stats, ...savedData };
+            const newStats = { ...stats, ...savedData };
+            stats = newStats;
             debugLog("Loaded saved stats from BitSync.");
         } else {
             debugLog("No saved stats found or data was in an invalid format.");
