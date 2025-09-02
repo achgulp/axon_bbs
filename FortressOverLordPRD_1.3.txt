@@ -1,0 +1,144 @@
+In the year 2342, Earth is a graveyard of a once-vibrant civilization. Centuries of unchecked war, famine, and environmental collapse have left the planet barren and toxic, its population dwindling below a billion and declining daily. While humanity's final days loom, a few nations scramble for a desperate exodus to other worlds. Your luckier friends and colleagues were chosen for the "golden ticket" missions to Mars and the Moon, where they must contend with the low vacuum and high radiation of the inner solar system. You, however, have been selected for a different path. Your mission is to travel to the hellish, high-pressure, but lower-radiation world of Venus.
+
+The Venusian Colony
+Your new home is a fortress of domes designed to withstand the crushing pressure and searing heat of Venus's atmosphere. Your living quarters are small, reinforced habitats that resemble the half of a soccer ball. These domes are constructed from high-strength metals and have small, thick-glass portholes for windows. Larger domes serve as greenhouses, a new building type vital for growing food, and a key strategic target for rivals. You will need to build more greenhouses to sustain a growing population. Your sole purpose is to build a self-sustaining community and extract the resources that Earth so desperately needs. For now, it is just you, a pioneer tasked with a monumental mission, and your fleet of autonomous robots.
+
+Energy and Resources
+Your initial energy is a precious commodity. You begin with a single fission generator, a highly reliable but limited power source. To supplement this, you will need to manufacture small solar domes, which are easy to produce and can be deployed in a "solar farm." While these are vital for initial energy, they are also highly vulnerable and can be easily disabled by enemy drones. Further down the tech tree, you can unlock the ability to build more advanced fission generators and, ultimately, fusion generators. For resources, instead of gas geysers, you will need to extract gaseous elements from the atmosphere. However, you have been fortunate to discover that rare hydrogen geysers exist at specific locations under the planet's surface, making these geysers a primary strategic objective for your mission and a point of conflict with other players.
+
+Technology and Command
+Your robots, or Drones, are the keys to your survival. Each one is a versatile chassis that can be equipped with various modules. Every Drone and building, from your Command Center to your greenhouses, has a vital double-loop cooling system to protect it from the extreme Venusian heat. This cooling system is a critical vulnerability. A successful attack on a building's cooling system would halt its production or render it inoperable, while a compromised Drone would overheat and cease to function until it can be repaired.
+
+Because of the vastness of the planet, communication with your Drones is not constant. You will have to build a network of radio towers to increase your communication range. For more reliable communication, you can invest in satellite technology later in the game. Launching a single satellite will provide periodic communication, but a constellation of satellites is needed for near-constant data transfer. All of your interactions with the world are asynchronous. You issue commands from a console within your Command Center, using a block-based visual programming language to create and edit AI scripts for your Drones. You then wait for the Overlord Agent to resolve your actions and send back the results in a telemetry data packet.
+
+Your mission is a test of survival, strategy, and engineering. You are not just a commander; you are a pioneer of a new world, a self-reliant Overlord in a fortress built against all odds.
+
+
+
+
+
+
+
+
+
+
+Fortress Overlord - Product Requirements Document (PRD)
+Version: 1.3
+Game Type: Asynchronous, Persistent Real-Time Strategy (RTS) Applet
+
+1. Overview & Core Concept
+Fortress Overlord is a strategic programming game designed as an applet for the Axon BBS platform. Players build and manage an autonomous fortress, command a fleet of robotic Drones, and compete for resources and territory on a persistent, federated map. The gameplay is pseudo-real-time. Players issue high-level commands, design AI scripts for their Drones, and then log off. A trusted, server-side Overlord Agent resolves actions (like battles and harvesting) that occur while the player is offline. Players log back in to review after-action reports and telemetry data to make their next strategic decisions.
+
+
+
+
+
+2. The Core Gameplay Loop
+
+Assess: Review event logs and sensor telemetry from the Command Center to understand what happened while offline.
+
+Acknowledge Results: Explicitly acknowledge after-action reports and telemetry to clear the event queue.
+
+
+Manage: Queue upgrades for buildings, research new technologies in the Barracks, and construct new Drone chassis and modules in the Factory.
+
+Program: Create and edit AI scripts for Drone squads using a simple, block-based, trigger-based language.
+
+
+Deploy: Assign scripts and high-level commands (e.g., ATTACK, HARVEST, PATROL) to Drone squads.
+
+
+Await Results: Actions are posted to a public, encrypted game board and resolved by the Overlord Agent. The outcomes are discovered upon the player's next login.
+
+
+3. Resources & Buildings
+Atmospheric Gas: Harvested from the atmosphere.
+
+Hydrogen: A rare resource extracted from geological geysers.
+
+
+Raw Ore: Mined from Ore Deposits.
+
+
+Refined Metal: Produced by the Forge/Smelter from Raw Ore. Used for all construction and upgrades.
+
+Data Fragments: Rare resource recovered from points of interest or combat wreckage. Used for advanced research.
+
+Rocket Fuel: Refined from Hydrogen and Atmospheric Gas in the Factory. Required for missile propulsion.
+
+Explosive Warheads: Manufactured from Refined Metal in the Factory. Required for missile payloads.
+
+
+Buildings: Command Center, Gas-Powered Plant, Forge/Smelter, Robot Factory, Barracks/R&D Lab, Greenhouse, and four defensive Turrets. Each building has a distinct purpose and upgrade path.
+
+4. The Drone & Player Interface
+
+Single Chassis: All players start with the versatile Drone Chassis.
+
+
+Modular Design: Drones are customized by equipping modules in a limited number of slots. Modules include weapons (Lasers, Missiles), defenses (Armor, Shields), harvesting tools (Drills, Extractors), and utility items (Scanners, Repair Arms).
+
+
+Sensor Suite: Drones perceive the world through a multi-layered sensor system. Each sensor can be damaged and upgraded. The suite includes:
+
+
+Gyro: Detects ground vibrations.
+
+
+Camera: Short-range visual identification.
+
+
+LIDAR: Active scanner for mapping and laser targeting.
+
+
+Radar: Long-range detection of moving objects.
+
+The Command Center Interface: The player's primary view into the world is from a first-person perspective within the Command Center. The main HUD shows key metrics, including resource levels and energy status.
+
+
+Telemetry Interface: This is the player's primary view into the world. It is not a live feed but a replay of the last data packet received from a selected Drone. A visible timer will show the age of the data (e.g., "Data received: 2 minutes ago"). The player can switch between a selected Drone's sensor views.
+
+
+
+
+Scripting Interface: AI scripts are built using a block-based puzzle layout, making the game accessible to non-programmers.
+
+5. The Tech Tree & Drone Specialization
+All research is conducted in the Barracks/R&D Lab. Players spend Refined Metal and Data Fragments to unlock nodes.
+
+
+Tier 1: Foundational Systems (Default Unlocks)
+
+
+Chassis: Basic Drone Chassis 
+
+
+Modules: Basic Mining Drill, Gas Extractor, Repair Arm, Light Laser Turret 
+
+
+Scripting: MOVE_TO, MINE, REPAIR, RETURN_TO_BASE 
+
+New Unlock: Basic Radio Towers for ground-based communication.
+
+
+Tier 2: Branching Paths 
+
+
+Tier 3: Specialization 
+
+
+Tier 4: Endgame Technology 
+
+New Unlock: Satellite Communications, which allows for launching satellites to extend communication range and lower latency.
+
+Energy Tree: The tech tree includes a progression for energy sources, starting with a single fission generator and small solar domes, and progressing to more fission generators and, eventually, fusion power.
+
+6. Core Systems & Vulnerabilities
+Electron Beam Smelting: Refined Metal is produced using an electron beam smelter. This process requires a closed-loop cooling system to operate.
+
+Double-Loop Cooling: All Drones and buildings, including the Command Center and Greenhouses, rely on a double-loop cooling system to function in the extreme heat. This is a critical vulnerability and can be a target for enemy attacks. A damaged cooling system will cause a building or Drone to cease function until repaired.
+
+Communication Network: The Drones' communication is limited by line-of-sight. Players must build a network of radio towers to extend their communication range. Later in the game, they can launch a satellite, or a constellation of satellites, to provide broader, though not instantaneous, coverage.
+
+
+Overlord Agent & Federated Gameplay: The connection between an applet and its agent is defined in the admin panel. A SysOp will link an Applet to a specific Message Board, which will serve as that applet's "Event Bus". This allows the system to be flexible and support multiple, different agent-based games simultaneously without hard-coding board names. Home Server Authority: To prevent race conditions, only the Overlord Agent on the defender's home server has the authority to process an attack. Asynchronous PvP: All player-vs-player interaction is asynchronous. The delay between issuing a command and receiving the result is a core feature, dictated by travel times and synchronization latency.

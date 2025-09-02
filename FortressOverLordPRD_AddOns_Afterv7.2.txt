@@ -1,0 +1,43 @@
+Of course. It's a good idea to recap the features we were working on. Here is a summary of the new gameplay mechanics we planned and implemented between the stable version v7.2 and our most recent attempts.
+
+Essentially, we moved from a basic command system to a much deeper and more realistic logistics simulation.
+
+Drone Travel Time & Logistics:
+
+Instead of instantly arriving at their destination, drones were upgraded to have a speed attribute.
+
+The agent now calculates the distance to a target and simulates the drone traveling across the map over several "world ticks."
+
+You can see the drones physically moving on the strategic map each time your applet gets an update from the server.
+
+Dedicated Drone Tasks:
+
+We changed the logic so that a drone is now dedicated to a single task (like Constructing or Harvesting) until it is complete or is given a new order.
+
+Construction progress only advances if a drone remains assigned to the site, making drone allocation a key strategic decision.
+
+Task Interruption and Cancellation:
+
+To manage the new dedicated tasks, we added a confirmation system. If you try to give a new order to a busy drone, a modal window now asks if you want to cancel its current task.
+
+Canceling a construction task correctly refunds a portion of the resources and removes the construction site.
+
+The "STOP" Command:
+
+We added a "STOP" button to the UNITS panel. This command halts a drone's current action (traveling, building, etc.) and sets its status back to "Idle" at its current location on the map.
+
+Communication Range & Autonomous Operation:
+
+We introduced the concept of a Command Center's comm_range.
+
+When a drone travels outside this range, it continues to execute its last given command but can no longer receive new orders (like "STOP" or a new build task).
+
+The applet was updated to draw a visual circle for the comms range on the map and change the icon for any drones that are out of contact.
+
+Procedural 3D Replays:
+
+We designed and implemented a system for the agent to generate "replay data" for key events like a construction completion.
+
+The applet was upgraded to include a three.js-based "replay player" that uses this data to generate a real-time, 3D animated "video" of the event in the Video Playback Screen.
+
+These features represent a significant leap in gameplay depth. Now that we have a reliable way to reset the game state with the FORCE RESET button, we can safely move forward with re-implementing and testing these mechanics.

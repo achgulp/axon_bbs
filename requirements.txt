@@ -1,0 +1,26 @@
+# Full path: axon_bbs/requirements.txt
+asgiref==3.8.1
+cffi==1.16.0
+channels==4.0.0
+django-cors-headers==4.4.0
+cryptography==42.0.8
+daphne==4.1.2
+defusedxml==0.7.1
+Django==5.0.6
+django-rest-framework==0.1.0
+djangorestframework==3.15.1
+djangorestframework-simplejwt==5.3.1
+dotenv-python==0.0.1
+PyJWT==2.8.0
+pyOpenSSL==24.1.0
+pyserial==3.5
+PySocks>=1.7.1
+python-dotenv==1.0.1
+python-magic==0.4.27 # ✅ ADD THIS LINE
+pytz==2024.1
+requests==2.31.0
+six==1.16.0
+sqlparse==0.5.0
+tomli==2.0.1
+tzdata==2024.1
+

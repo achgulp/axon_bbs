@@ -1,0 +1,320 @@
+Axon BBS - Consolidated Product Requirements Document
+Version: 6.0 (Consolidated)
+
+
+Date: July 17, 2025 
+
+Overview
+Axon BBS is a modern, anonymous bulletin board system (BBS) inspired by the classic 90s BBS era. It leverages the Nostr protocol for all message and data distribution, ensuring censorship resistance and anonymity within its network. The system is built using Django for the backend and React for the frontend, with a focus on user privacy and security.
+
+
+
+User Roles & Stories
+As a User...
+
+I want to generate a new Nostr identity or import my existing one so I can control my account.
+
+
+
+I want my private key to be encrypted with my password so the SysOp cannot impersonate me.
+
+
+I want to send and receive end-to-end encrypted private messages.
+
+
+I want to post on public message boards and read posts from others.
+
+
+
+
+I want to upload and download files.
+
+
+
+I want to stream large video and audio files without downloading the entire file first.
+
+I want a personal ignore list to hide all content from users I don't want to interact with.
+
+
+I want a list of my content so I can request a pinning extension from moderators.
+
+
+I want to request an extension on the lifespan of my content before it is deleted.
+
+As a Moderator...
+
+I want to be able to temporarily or permanently ban unruly users from the local BBS instance.
+
+
+
+I want to review and approve or deny user requests for extending the pin duration of their content.
+
+
+I want to review and approve or deny user requests for extending the lifespan of their content.
+
+As a SysOp (Admin)...
+
+I want all the powers of a Moderator.
+
+
+
+
+I want to be able to override pinning rules for any content.
+
+
+I want to configure which external Nostr relays our BBS connects to.
+
+
+
+I want to set the default time durations for how long content is stored on my BBS.
+
+Key Features
+User Registration and Authentication
+
+Users can register with a username and password. Passwords are hashed and salted for security.
+
+
+API endpoints are secured using JWT authentication.
+
+
+Nostr Identity Management
+
+The user interface MUST provide the ability for users to generate a new Nostr public/private key pair.
+
+
+The user interface MUST allow users to import an existing Nostr private key (
+
+nsec...).
+
+
+The user's private key MUST be encrypted with a key derived from their login password and stored locally in the browser. The Axon BBS server MUST NEVER have access to a user's unencrypted private key.
+
+
+
+
+Message Boards
+
+The system supports multiple message boards.
+
+
+Boards are defined by names, descriptions, and required access levels.
+
+
+Federated BBS Network (Private File Sync)
+
+
+Concept: Trusted Axon BBS nodes can form a private, federated network to synchronize files for resilience and redundancy.
+
+
+
+Mechanism (Hybrid Encryption): The system uses a secure "digital envelope" model to broadcast a single data chunk to multiple trusted relays.
+
+
+
+Session Key: For each data chunk, a random, single-use symmetric key is generated.
+
+
+
+Data Encryption: The chunk is encrypted once with this session key.
+
+
+
+Digital Envelopes: The session key is then encrypted multiple times, once for each recipient relay's public key.
+
+
+
+Bundled Event: A single Nostr event contains the encrypted data chunk and the list of encrypted session keys. This single event is broadcast to all private relays.
+
+
+
+
+
+
+Key Revocation: A relay's access is revoked by no longer including an envelope for its public key in future messages.
+
+
+Anonymity and Privacy
+All external network communications are routed through Tor.
+
+The server's 
+
+SECRET_KEY is stored securely in an .env file.
+
+
+External Link Policy: To prevent IP address leakage, links to external websites posted by users MUST NOT be rendered as clickable hyperlinks (<a> tags). They should be displayed as plain text, requiring the user to consciously copy and paste the link into their browser.
+
+
+
+
+
+File Handling and Viewing
+
+Live Reassembly: For standard downloads, the React frontend will request all of a file's chunks from the backend and reassemble them live in the browser to create a downloadable file (Blob).
+
+
+Streaming for Media: For large media files (video/audio), the frontend will use a streaming approach. It will request chunks sequentially and feed them into a media player using the Media Source Extensions API. This provides a fast start time and low memory usage.
+
+
+
+Content Lifecycle and Storage
+Content Storage Model
+
+The Axon BBS nodes themselves are the sole storage layer for all content.
+
+The Nostr relays act only as a real-time transport layer.
+
+Files are stored as individual, encrypted chunks and are not reassembled on the server's filesystem. Reassembly is handled by the client application on demand.
+
+
+Content Lifecycle Policies (Trash Collection)
+
+The Time-to-Live (TTL) for all content is configurable by the SysOp.
+
+A scheduled task performs "trash collection," deleting content that has exceeded its TTL.
+
+
+Private Messages: TTL of 3 months.
+
+
+Message Board Posts: TTL of 1 month.
+
+
+
+Uploaded Files: TTL of 1 week by default.
+
+
+
+Federated Content: TTL of 3 days.
+
+
+
+
+Moderator Pins: Content pinned by a Moderator has a TTL of 1 month.
+
+
+
+Admin Pins: Can be set to a default of 1 month, but Admins have the authority to change or remove the expiration for any pinned object.
+
+
+Content Persistence Extension
+
+Users can request a 30-day extension for any of their content.
+
+These requests appear in a queue for Moderators and SysOps to approve or deny.
+
+Moderation and Compliance
+Content Policy and Compliance:
+
+A clear content policy must be defined, outlining prohibited content types and procedures for handling reports.
+
+
+The platform must implement a DMCA-compliant takedown process, allowing SysOps to unpin and flag reported content.
+
+
+Moderation tools will include automated scanning and a review queue for reported content.
+
+
+Connectivity and User Experience
+Alternative Connection Handlers
+
+The BBS will act as a privacy proxy for users connecting via non-internet native handlers like Audio Modem or Meshtastic.
+
+
+User Onboarding and Education
+
+To address the complexity of the underlying decentralized technologies, the platform must prioritize user education.
+
+
+
+
+Onboarding Flow: A user-friendly onboarding flow will guide new users through key concepts like generating Nostr keys and understanding the federated network.
+
+
+
+
+In-App Help Section: A dedicated help section will provide FAQs and a glossary of terms.
+
+
+
+Performance and Monitoring
+The system will integrate monitoring tools like Prometheus and Grafana to track the health of the Nostr relay connections, and Tor network latency.
+
+
+Secure, detailed error logging will be implemented to capture critical failures without exposing user data.
+
+
+The user interface will provide basic status indicators to inform users of the current connection health to Nostr.
+
+
+Technical Requirements
+
+Backend: Django 5.2.4, Python 3.13 
+
+
+
+Frontend: React 18+, Tailwind CSS.
+
+
+Streaming media playback will be implemented using a library that supports Media Source Extensions, such as hls.js or shaka-player.
+
+Project File Structure
+axon_bbs/
+├── axon_project/           # Django Project Configuration
+│   ├── __init__.py
+│   ├── settings.py
+│   └── urls.py
+│
+├── core/                   # BBS Core Engine
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   └── services/           # Integrated Services
+│       ├── __init__.py
+│       ├── encryption_utils.py
+│       ├── identity_service.py
+│       ├── nostr_service.py
+│       ├── service_manager.py
+│       ├── socket_utils.py
+│       └── tor_service.py
+│
+├── api/                    # Web Handler / RESTful API
+│   ├── __init__.py
+│   ├── urls.py
+│   └── views.py
+│
+├── handlers/               # Connection Handlers
+│   ├── __init__.py
+│   ├── audio_modem_handler.py
+│   └── meshtastic_handler.py
+│
+├── frontend/               # Web Front-End (React)
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── components/
+│   │   ├── App.js
+│   │   └── apiClient.js
+│   └── package.json
+│
+├── data/                   # Application Data (SQLite DB)
+│
+├── manage.py               # Django's command-line utility
+└── requirements.txt        # Python package dependencies
+
+
+
+
+
+Future Enhancements
+Threaded discussions (Nostr replies).
+
+
+
+
+User profiles on Nostr.
+
+
+
+
+Unique tags for boards (e.g., "axon-general") to filter out public Nostr noise.

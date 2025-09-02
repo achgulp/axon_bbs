@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Axon BBS - Complete Specification</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        h1, h2, h3, h4 {
+            border-bottom: 1px solid #4A5568;
+            padding-bottom: 0.5rem;
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+        h1 { font-size: 2.5rem; color: #FFFFFF; }
+        h2 { font-size: 1.875rem; color: #E2E8F0; }
+        h3 { font-size: 1.5rem; color: #CBD5E0;}
+        h4 { font-size: 1.25rem; color: #A0AEC0; border-bottom: none; }
+        ul { list-style-type: disc; margin-left: 2rem; margin-bottom: 1rem; }
+        li { margin-bottom: 0.5rem; }
+        code {
+            background-color: #2D3748;
+            color: #E2E8F0;
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        pre {
+            background-color: #1A202C;
+            color: #CBD5E0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-gray-300">
+    <div class="container mx-auto p-8 max-w-4xl">
+        <header class="text-center mb-12">
+            <h1 class="text-5xl font-bold text-white">Axon BBS Modernization</h1>
+            <p class="text-xl text-gray-400 mt-2">Product Requirements Document (PRD)</p>
+            <p class="text-sm text-gray-500">Version: 3.0 (Final)</p>
+        </header>
+
+        <main>
+            <section>
+                <h2>1. Introduction & Purpose</h2>
+                <p>This document outlines the requirements for the complete modernization of the Impulse BBS software, now reborn as <strong>Axon BBS</strong>. The goal is to re-engineer the original application into a secure, decentralized communication platform using <strong>Nostr</strong> for messaging and <strong>IPFS</strong> for all persistent content storage.</p>
+            </section>
+
+            <section>
+                <h2>2. Product Vision & Goals</h2>
+                <h3>Vision</h3>
+                <p>To create a modern, privacy-focused communication platform that leverages decentralized protocols to give users ultimate control over their identity and data, while preserving the community-oriented spirit of classic Bulletin Board Systems.</p>
+                <h3>Core Goals</h3>
+                <ul>
+                    <li><strong>Embrace Decentralization:</strong> Utilize Nostr for real-time event transmission and IPFS for all content storage.</li>
+                    <li><strong>Maximize Anonymity & Privacy:</strong> Route all external traffic through Tor. Ensure user keys are client-side and encrypted.</li>
+                    <li><strong>Flexible Identity:</strong> Allow users to generate new keys within the application or import their existing Nostr identity.</li>
+                    <li><strong>Robust Moderation & User Controls:</strong> Implement both platform-level (bans) and user-level (ignores) moderation tools.</li>
+                    <li><strong>Guaranteed Content Lifecycle:</strong> Implement a clear, operator-controlled system for content pinning and garbage collection using IPFS.</li>
+                </ul>
+            </section>
+            
+            <section>
+                <h2>3. User Roles & Stories</h2>
+                <h4>As a User...</h4>
+                <ul>
+                    [cite_start]<li>I want to generate a new Nostr identity or import my existing one so I can control my account. [cite: 2]</li>
+                    <li>I want my private key to be encrypted with my password so the SysOp cannot impersonate me.</li>
+                    <li>I want to send and receive end-to-end encrypted private messages.</li>
+                    <li>I want to post on public message boards and read posts from others.</li>
+                    <li>I want to upload and download files.</li>
+                    <li>I want a list of my content so I can request a pinning extension from moderators.</li>
+                    <li>I want a personal ignore list to hide all content from users I don't want to interact with.</li>
+                </ul>
+                <h4>As a Moderator...</h4>
+                <ul>
+                    <li>I want to be able to temporarily or permanently ban unruly users from the local BBS instance.</li>
+                    <li>I want to review and approve or deny user requests for extending the pin duration of their content.</li>
+                </ul>
+                <h4>As a SysOp (Admin)...</h4>
+                <ul>
+                    <li>I want all the powers of a Moderator.</li>
+                    <li>I want to be able to override pinning rules for any content.</li>
+                    [cite_start]<li>I want to configure which external Nostr relays our BBS connects to. [cite: 13]</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>4. [cite_start]User Onboarding and Education [cite: 4]</h2>
+                [cite_start]<p>To address the complexity of the underlying decentralized technologies, the platform must prioritize user education. [cite: 4, 5]</p>
+                <ul>
+                    [cite_start]<li><strong>Onboarding Flow:</strong> A user-friendly onboarding flow will guide new users through key concepts like generating Nostr keys and understanding IPFS pinning. [cite: 6, 7, 8]</li>
+                    [cite_start]<li><strong>In-App Help Section:</strong> A dedicated help section will provide FAQs, a glossary of terms, and links to advanced resources. [cite: 9, 10]</li>
+                    [cite_start]<li><strong>User Notifications:</strong> The system will use in-app notifications to provide critical information, such as warnings about key loss or reminders about content expiration. [cite: 11, 12]</li>
+                    [cite_start]<li><strong>SysOp Documentation:</strong> Comprehensive guides will be provided for SysOps on configuring all underlying services (Tor, IPFS, Nostr). [cite: 13, 14]</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>5. Decentralized Communication via Nostr</h2>
+                <h4>5.1. Key Management</h4>
+                <ul>
+                    <li>The user interface MUST provide the ability for users to generate a new Nostr public/private key pair.</li>
+                    <li>The user interface MUST allow users to import an existing Nostr private key (`nsec...`).</li>
+                    <li>The user's private key MUST be encrypted with a key derived from their login password and stored locally in the browser. The Axon BBS server MUST NEVER have access to a user's unencrypted private key.</li>
+                </ul>
+                <h4>5.2. Event Handling</h4>
+                <ul>
+                    <li>All user actions (private messages, public posts) will be created as standard Nostr events, signed by the user's key.</li>
+                    <li>The Axon BBS server will broadcast these events to relevant Nostr relays for real-time communication.</li>
+                    <li>Simultaneously, the server will package the full Nostr event object and store it in IPFS for long-term persistence.</li>
+                </ul>
+            </section>
+            
+            <section>
+                <h2>6. Content Storage and Lifecycle via IPFS</h2>
+                <h4>6.1. Unified Storage Backend</h4>
+                <ul>
+                    <li>All persistent content, including user-uploaded files and the full JSON data of Nostr events, MUST be stored on the InterPlanetary File System (IPFS).</li>
+                    <li>The Axon BBS server will run its own IPFS node and act as a pinning service for its registered users.</li>
+                </ul>
+                <h4>6.2. Federated Pinning Protocol</h4>
+                <ul>
+                    <li>When a user posts a message containing a link to IPFS content, the originating Axon BBS server MUST parse the IPFS CID from the message.</li>
+                    <li>The server will then broadcast a separate, special-purpose Nostr event. This "pin request" event MUST contain a `["pin", "&lt;ipfs_cid&gt;"]` tag and an `["e", "&lt;original_message_id&gt;"]` tag.</li>
+                    <li>Other Axon BBS instances subscribed to the federated network will listen for events with a `pin` tag. Upon receiving one, they MUST automatically fetch and pin the specified IPFS content, applying the "Federated Content" pinning rule.</li>
+                </ul>
+                <h4>6.3. Pinning Rules (Content Lifecycle)</h4>
+                <ul>
+                    <li><strong>Private Messages (Nostr Events):</strong> Pinned for **3 months**.</li>
+                    <li><strong>Message Board Posts (Nostr Events):</strong> Pinned for **1 month**.</li>
+                    <li><strong>Uploaded Files:</strong> Pinned for **1 week** by default.</li>
+                    <li><strong>Federated Content (from external relays):</strong> Pinned for **3 days**.</li>
+                    <li><strong>Moderator Pins:</strong> Content pinned by a Moderator is pinned for **1 month**.</li>
+                    <li><strong>Admin Pins:</strong> Content pinned by an Admin is pinned for **1 month** by default. Admins have the authority to change or remove the expiration for any pinned object.</li>
+                </ul>
+                <h4>6.4. Pinning Extension Request Workflow</h4>
+                <ul>
+                    <li><strong>User View:</strong> Users MUST have a dedicated page to view all their IPFS-stored content (posts, files). This view will display the current pin expiration date for each item.</li>
+                    <li><strong>Request Form:</strong> Each item will have a "Request Extension" button that opens a simple form for the user to provide a justification.</li>
+                    <li><strong>Moderation Queue:</strong> A new section in the administration panel MUST be created to display all pending extension requests.</li>
+                    <li><strong>Approval/Denial:</strong> Moderators and SysOps can approve or deny these requests with a single button click.</li>
+                </ul>
+                 <h4>6.5. Unpinning Rules (Moderation)</h4>
+                <ul>
+                    <li><strong>Users:</strong> Can only unpin their own content.</li>
+                    <li><strong>Moderators:</strong> Can unpin any user's content but CANNOT unpin content pinned by an Admin.</li>
+                    <li><strong>Admins:</strong> Can unpin any content on the server.</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>7. Moderation, Compliance, and User Controls</h2>
+                 <h4>7.1. [cite_start]Content Policy and Compliance [cite: 16]</h4>
+                <ul>
+                    [cite_start]<li>A clear content policy must be defined, outlining prohibited content types and procedures for handling reports. [cite: 17]</li>
+                    [cite_start]<li>The platform must implement a DMCA-compliant takedown process, allowing SysOps to unpin and flag reported content. [cite: 18, 19]</li>
+                    [cite_start]<li>Moderation tools will include automated scanning and a review queue for reported content. [cite: 21, 22]</li>
+                </ul>
+                <h4>7.2. Platform-Level Ban System</h4>
+                <ul>
+                    <li>Admins and Moderators MUST have the ability to "ban" a user's Nostr public key.</li>
+                    <li>A ban can be temporary (with a set expiration date) or permanent.</li>
+                    <li>When a user is banned, the Axon BBS server MUST refuse to accept or broadcast any Nostr events signed by that user's key. It will also unpin all of their content from the local IPFS node.</li>
+                </ul>
+                <h4>7.3. User-Level Ignore System (Ghosting)</h4>
+                <ul>
+                    <li>Each user MUST have a personal "ignore list" where they can add other users' Nostr public keys.</li>
+                    <li>The Axon BBS client application MUST filter out all content from ignored public keys.</li>
+                </ul>
+            </section>
+            
+            <section>
+                <h2>8. Network Architecture and Security</h2>
+                <h4>8.1. Tor-Native Networking</h4>
+                <ul>
+                    <li>All outbound connections from the Axon BBS server to public Nostr relays and the public IPFS swarm MUST be routed exclusively through the Tor network to protect the server's IP address.</li>
+                </ul>
+                <h4>8.2. Connection Handlers and Proxy Identity</h4>
+                <ul>
+                     <li>The BBS instance will act as a **privacy proxy** for users connecting via non-internet native handlers (e.g., Audio Modem, Meshtastic).</li>
+                     <li>For these users, the BBS will publish its own public network address (its `.onion` address) as the user's "home," effectively hiding the user's true connection method from the wider network.</li>
+                </ul>
+                <h4>8.3. External Link Policy</h4>
+                <ul>
+                     <li>To prevent IP address leakage, links to external websites posted by users MUST NOT be rendered as clickable hyperlinks (`<a>` tags).</li>
+                     <li>They should be displayed as plain text, requiring the user to consciously copy and paste the link into their browser.</li>
+                </ul>
+                <h4>8.4. [cite_start]Federation Trust Model [cite: 37]</h4>
+                <ul>
+                    [cite_start]<li>Federation will be managed via a whitelist of trusted Axon BBS instances, configurable by SysOps. [cite: 38]</li>
+                    [cite_start]<li>Pin requests between instances must be authenticated using public keys to verify the source. [cite: 39]</li>
+                    [cite_start]<li>The system must include rate-limiting and content validation for incoming pin requests to prevent abuse. [cite: 41]</li>
+                </ul>
+            </section>
+
+             <section>
+                <h2>9. [cite_start]Performance and Monitoring [cite: 25]</h2>
+                <ul>
+                    [cite_start]<li>The system will integrate monitoring tools like Prometheus and Grafana to track the health of the IPFS node, Nostr relay connections, and Tor network latency. [cite: 26, 27]</li>
+                    [cite_start]<li>Secure, detailed error logging will be implemented to capture critical failures without exposing user data. [cite: 30, 31, 32]</li>
+                    [cite_start]<li>The user interface will provide basic status indicators to inform users of the current connection health to Nostr and IPFS. [cite: 33]</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>10. Project File Structure</h2>
+                <pre><code>
+axon_bbs/
+├── axon_project/           # Django Project Configuration
+│   ├── __init__.py
+│   ├── settings.py
+│   └── urls.py
+│
+├── core/                   # BBS Core Engine
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   └── services/           # Integrated Services
+│       ├── __init__.py
+│       ├── encryption_utils.py
+│       ├── identity_service.py
+│       ├── nostr_service.py
+│       ├── service_manager.py
+│       ├── socket_utils.py
+│       └── tor_service.py
+│
+├── api/                    # Web Handler / RESTful API
+│   ├── __init__.py
+│   ├── urls.py
+│   └── views.py
+│
+├── handlers/               # Connection Handlers
+│   ├── __init__.py
+│   ├── audio_modem_handler.py
+│   └── meshtastic_handler.py
+│
+├── frontend/               # Web Front-End (React)
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── components/
+│   │   ├── App.js
+│   │   └── apiClient.js
+│   └── package.json
+│
+├── data/                   # Application Data (SQLite DB)
+│
+├── manage.py               # Django's command-line utility
+└── requirements.txt        # Python package dependencies
+                </code></pre>
+            </section>
+        </main>
+    </div>
+</body>
+</html>

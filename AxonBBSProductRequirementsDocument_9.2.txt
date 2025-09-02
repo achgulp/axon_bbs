@@ -1,0 +1,175 @@
+Axon BBS - Product Requirements Document
+Version: 9.2.0 (BitSync Protocol with Swarming)
+Date: July 29, 2025
+
+1. Overview
+Axon BBS is a modern, anonymous bulletin board system (BBS) built on a private, federated network of trusted nodes. This version marks a significant architectural shift by replacing the external libtorrent library with a custom, native P2P data synchronization protocol named BitSync.
+
+The BitSync protocol is designed for simplicity and robustness, eliminating external dependencies and tailoring the data transfer mechanism specifically for Axon's needs. It retains the core principles of trackerless, pull-based synchronization over Tor but replaces magnet links and the BitTorrent protocol with a streamlined, chunk-based file transfer system using standard HTTPS requests.
+
+2. User Roles & Stories
+As a User...
+I want to generate a new identity keypair or import an existing one so I can control my account.
+
+I want to unlock my identity with my password once per session so I don't have to re-enter it for every action.
+
+I want to send and receive end-to-end encrypted private messages.
+
+I want to post on public message boards and read posts from others.
+
+I want to choose a nickname associated with my public key, which is signed and verifiable across the network.
+
+I want to upload, download, and stream large media files without downloading the entire file first.
+
+I want a personal ignore list to hide all content from specific users based on their public keys.
+
+I want to receive notifications when my content is about to expire so I can request an extension.
+
+I want to request an extension on the lifespan of my content before it is deleted.
+
+As a Moderator...
+I want to be able to temporarily or permanently ban users from the local BBS instance by their public key.
+
+I want to review and approve or deny user requests for extending the lifespan of their content.
+
+I want to be able to unpin any user's content to enforce content policies, except for content pinned by an Admin.
+
+As a SysOp (Admin)...
+I want all the powers of a Moderator.
+
+I want to be able to override pinning rules and unpin any content on the server, including content pinned by moderators.
+
+I want to configure and manage a whitelist of trusted federated BBS peers via their public keys and .onion URLs.
+
+I want to explicitly mark which peers are trusted for syncing via an is_trusted_peer checkbox.
+
+I want to set the default time durations for how long content is stored on my BBS.
+
+3. The BitSync Protocol
+BitSync is the new P2P layer for Axon BBS. It is a trackerless, web-seeded protocol designed to synchronize encrypted content between trusted peers entirely over Tor.
+
+Key Concepts
+Content Hash: Instead of a torrent info-hash, each piece of content (e.g., a message) is identified by a unique SHA256 hash of its raw data.
+
+Content Manifest: For each new piece of content, the originating node generates a small JSON object called a Manifest. This manifest is the key to discovering and reassembling the content. It contains:
+
+content_hash: The SHA256 hash of the original, unencrypted data.
+
+chunk_hashes: A list of SHA256 hashes for each encrypted chunk of the content.
+
+chunk_size: The size of each chunk in bytes.
+
+encrypted_aes_key: A dictionary where keys are the pubkey checksums of trusted peers and values are the "digital envelopes" (the AES key encrypted with that peer's public key).
+
+encryption_iv: The initialization vector (IV) used for AES encryption.
+
+Web Seed via API: Content chunks are downloaded directly from hosting peers via a standard, authenticated API endpoint: /api/bitsync/chunk/<content_hash>/<chunk_index>.
+
+Trackerless Peer Discovery: The system remains trackerless. Peers are discovered exclusively through the TrustedInstance model.
+
+Swarming and Redundancy (New in v9.2): Once a node learns of a content_hash via a manifest, it can poll all of its trusted peers to see who else has the content. This allows the node to download different chunks from different peers in parallel, increasing download speed and providing redundancy if one peer becomes unavailable.
+
+BitSync Data Synchronization Flow
+Content Creation (Node A):
+
+A user posts a message on Node A.
+
+The system generates a random one-time AES key and IV.
+
+The message data is encrypted and split into fixed-size chunks (e.g., 256KB).
+
+A Manifest is created containing the content hash, chunk hashes, and encrypted AES keys for all trusted peers.
+
+The new Message object is saved to Node A's database, storing the Manifest JSON.
+
+Peer Polling (Node B):
+
+Node B's background SyncService polls Node A's /api/sync/ endpoint, providing the timestamp of its last successful sync.
+
+Manifest Transfer:
+
+Node A finds all Message objects created since the provided timestamp.
+
+It responds to Node B with a JSON list containing the full Manifest for each new message.
+
+Peer Discovery for Swarming (Node B):
+
+For each new manifest received, Node B extracts the content_hash.
+
+Node B then queries all of its trusted peers (including Node A, C, D, etc.) via a new endpoint: GET /api/bitsync/has_content/<content_hash>.
+
+Peers that have the content respond affirmatively. Node B compiles a list of all available seeders for that content.
+
+Parallel Chunk Download (Node B):
+
+Node B's BitSyncService initiates parallel downloads. It can request different chunks from different available seeders simultaneously (e.g., chunks 0-5 from Node A, chunks 6-10 from Node C).
+
+Each chunk is requested from a peer's endpoint: GET /api/bitsync/chunk/<content_hash>/<chunk_index>.
+
+As chunks are downloaded, their hashes are verified against the manifest. If a peer fails to provide a valid chunk or goes offline, Node B requests that same chunk from another available seeder.
+
+Reassembly and Decryption (Node B):
+
+Once all chunks are successfully downloaded and verified, they are concatenated in order.
+
+Node B finds its own digital envelope in the manifest, decrypts it with its instance private key to get the AES key, and decrypts the complete data.
+
+The final, decrypted message is saved to Node B's database.
+
+4. Technical Requirements & System Changes
+Technical Stack
+Backend: Django 5.0.6, Python 3.11+
+
+Frontend: React 18+, Tailwind CSS
+
+P2P Protocol: BitSync (native Python, HTTP-based)
+
+Cryptography: cryptography library
+
+Service & API Changes
+core/services/bittorrent_service.py will be removed and replaced with core/services/bitsync_service.py.
+
+The SyncService will be updated to orchestrate the swarm discovery and parallel download process.
+
+The Message model will be updated to include a manifest field.
+
+New Endpoint: An API view at GET /api/bitsync/has_content/<content_hash> will be added to allow peers to check for content availability.
+
+New Endpoint: An API view at GET /api/bitsync/chunk/<content_hash>/<chunk_index> will be created to serve content chunks.
+
+Full Project File Structure (Updated)
+axon_bbs/
+├── axon_project/           # Django Project Configuration
+│   ├── settings.py
+│   └── urls.py
+├── core/                   # BBS Core Engine
+│   ├── migrations/
+│   ├── services/
+│   │   ├── bitsync_service.py    # REPLACED
+│   │   ├── encryption_utils.py
+│   │   ├── identity_service.py
+│   │   ├── service_manager.py
+│   │   ├── sync_service.py
+│   │   └── tor_service.py
+│   ├── admin.py
+│   ├── apps.py
+│   └── models.py
+├── api/                    # Web Handler / RESTful API
+│   ├── permissions.py
+│   ├── serializers.py
+│   ├── urls.py
+│   └── views.py
+├── handlers/               # Alternative Connection Handlers
+│   ├── audio_modem_handler.py
+│   └── meshtastic_handler.py
+├── frontend/               # Web Front-End (React)
+│   ├── public/
+│   ├── src/
+│   └── package.json
+├── data/                   # Application Data
+│   └── axon_bbs.sqlite3
+├── logs/                   # Log files
+│   └── bbs.log
+├── manage.py               # Django's command-line utility
+└── requirements.txt        # Python package dependencies
+

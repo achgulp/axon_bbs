@@ -1,0 +1,91 @@
+Fortress Overlord - Product Requirements Document (PRD)
+Version: 2.0
+Date: September 1, 2025
+Game Type: Asynchronous, Persistent Real-Time Strategy (RTS) Applet
+
+1. Core Concept & Lore
+In the year 2342, Earth is a graveyard. Centuries of war and environmental collapse have left the planet barren, its population struggling for survival. Humanity has not fled; it is trapped. The stars are a distant dream, but the inner planets offer a desperate lifeline. Your mission is not one of colonization for a new home, but of extraction for the old one. You have been sent to the hellish, high-pressure atmosphere of Venus to build and command an autonomous fortress, a vital outpost designed to harvest the resources Earth so desperately needs to begin a multi-generational rebuilding effort.
+
+As a Commander, you will not command units in real-time; instead, you will act as an overseer, issuing high-level commands, programming drone AI, and managing your industrial base from the first-person perspective of your Command Center console. Actions are resolved by a server-side Overlord Agent while you are offline. Success depends on strategic planning, robust automation, and logistical efficiency to keep the resource pipeline to Earth flowing.
+
+2. The Gameplay Loop
+The core gameplay is a cycle of planning, execution, and analysis:
+
+Assess: Log in to your console and review the Command Log. This contains all after-action reports and status updates from your drones and the Overlord Agent that occurred while you were offline.
+
+Manage: Access management panels to upgrade buildings, construct new drones, and manage resource production queues.
+
+Command: Issue specific, task-based commands to your drones (e.g., "Harvest," "Build," "Patrol") by selecting a drone and then a target on the strategic map.
+
+Program (Future): Design and assign AI scripts to drones to automate complex behaviors.
+
+Await Results: Log off. The Overlord Agent resolves your commands and simulates your fortress's operation over time. You discover the outcomes upon your next login.
+
+3. The Console User Interface (UI)
+The player experience is entirely confined to a retro-futuristic, console-based UI within the Command Center, reinforcing the role of a remote commander.
+
+Central Multi-Purpose Screen: Toggles between a Strategic Map, a Building Management list, and a Unit Roster.
+
+System Status Panel: Displays real-time gauges for the fortress's internal temperature, pressure, oxygen, and power levels.
+
+Telemetry Panel:
+
+Video Playback Screen: A small, low-fidelity screen for replaying Procedural After-Action Reports—3D-rendered animations of key events generated from agent data.
+
+Sensor Feed: Displays detailed information about a selected unit or building.
+
+Command Log: A scrolling text log of all events, commands, and agent reports. Clickable links on certain events will trigger the playback of their corresponding after-action report.
+
+4. Resources & Production Chain
+The economy is based on a realistic, multi-stage production chain.
+
+Raw Ore: The base raw material, gathered from Ore Deposits on the map by drones assigned to a Crystal Mine.
+
+Crystals: A refined component produced by a Forge/Smelter. It consumes Raw Ore to create industrial-grade crystals essential for all high-tech construction.
+
+Refined Metal: (Future) Produced by the Forge/Smelter, likely consuming Raw Ore and Crystals. The primary material for advanced units and structures.
+
+Hydrogen: (Future) A rare gas extracted from Hydrogen Geysers.
+
+Atmospheric Gas: (Future) Harvested directly from the Venusian atmosphere.
+
+5. Drones & Logistics
+Drones are the player's hands in the world. They are fully autonomous but require clear commands.
+
+Single-Tasking: A drone can only perform one task at a time (e.g., traveling, harvesting, constructing). Issuing a new command to a busy drone requires confirmation and will cancel its current task.
+
+Positional Tracking & Travel Time: Drones have a physical location on the map and a defined speed. When tasked, a drone must travel from its current location to its target. The agent calculates travel time based on distance and the drone's speed, simulating the journey over multiple world ticks.
+
+Logistics Loop: A drone tasked to harvest will:
+
+Travel to the target resource node.
+
+Harvest until its cargo is full.
+
+Automatically travel back to the Command Center to deposit resources.
+
+Return to the resource node to continue harvesting.
+
+Communication Range: The Command Center projects a communications bubble of a fixed radius.
+
+In Range: Drones within this range can receive new commands (e.g., "STOP") and send back real-time status updates.
+
+Out of Range: A drone that travels outside this range will continue to execute its last valid command but cannot receive new ones. It will buffer any after-action reports and deliver them in a burst upon returning to communication range. On the map, it is visually marked as "out-of-contact."
+
+6. Buildings & Construction
+All structures are built by drones at player-specified locations.
+
+Drone-Initiated Construction: To build, a player selects a drone, issues a "BUILD" command for a specific structure (e.g., "Greenhouse"), and then clicks a location on the map.
+
+Construction Sites: The Overlord Agent creates a "Construction Site" at the target location. The selected drone travels to this site to initiate construction. Once started, the drone is freed up for new tasks.
+
+Autonomous Construction: The construction site builds itself automatically over a number of world ticks defined in the game's configuration. Progress is visible on the map and in the building management panel.
+
+Completion: When progress is complete, the agent replaces the site with the finished building and posts a "Construction Complete" report, which may include a playable 3D replay.
+
+7. Core Systems & Vulnerabilities
+Double-Loop Cooling: All drones and buildings require a cooling system to operate in the extreme Venusian heat. This is a critical vulnerability that can be targeted in future combat.
+
+Power Management: All structures require energy to function. The player starts with a single fission generator and must expand their power grid to support their growing fortress.
+
+Marauders: NPC raiders, likely remnants of other failed colonization efforts, will periodically attack the player's fortress, creating a constant source of pressure and a need for defensive structures.
