@@ -8,11 +8,11 @@
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 // Full path: axon_bbs/frontend/src/applets/FloatUpMaze.js
@@ -36,10 +36,15 @@ window.bbs = {
       window.parent.postMessage({ command, payload, requestId }, '*');
     });
   },
+  // --- Standard API ---
   getUserInfo: function() { return this._postMessage('getUserInfo'); },
-  getData: function() { return this._postMessage('getData');
-  },
-  saveData: function(newData) { return this._postMessage('saveData', newData); }
+  getData: function() { return this._postMessage('getData'); },
+  saveData: function(newData) { return this._postMessage('saveData', newData); },
+
+  // --- NEW: Event Bus API ---
+  getAppletInfo: function() { return this._postMessage('getAppletInfo'); },
+  postEvent: function(eventData) { return this._postMessage('postEvent', eventData); },
+  readEvents: function() { return this._postMessage('readEvents'); }
 };
 window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- End of Applet API Helper ---
@@ -66,20 +71,14 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         .controls button, .start-button { background-color: #3b82f6; color: white; border: none; padding: 10px 15px; margin: 5px; border-radius: 8px; font-size: 16px; cursor: pointer; }
         .char-select button { background-color: #4a5568;
-        width: 48px; height: 48px; padding: 0; display: inline-flex; justify-content: center; align-items: center; border-radius: 8px; border: none;
+        width: 48px; height: 48px; padding: 0;
+        display: inline-flex; justify-content: center; align-items: center; border-radius: 8px; border: none;
         }
-        .char-select button.selected { background-color: #10b981;
-        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.5); }
-        .message-area { margin-top: 10px;
-        font-size: 18px; font-weight: bold; min-height: 25px; color: #cbd5e0; }
-        .score-stats-area { display: flex;
-        justify-content: center; font-size: 14px; margin-top: 5px; color: #a0aec0; min-height: 20px;
-        }
-        #debug-dialog { position: absolute; top: 10px; left: 10px; width: 250px; height: 150px;
-        background-color: rgba(0,0,0,0.7); border: 1px solid #4a5568; border-radius: 5px; color: #fc8181; font-family: monospace; font-size: 10px; overflow-y: scroll; padding: 5px; z-index: 1000;
-        }
-        #debug-dialog-header { padding: 2px 5px; cursor: move; background-color: #4a5568; color: white;
-        font-weight: bold; user-select: none; }
+        .char-select button.selected { background-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.5); }
+        .message-area { margin-top: 10px; font-size: 18px; font-weight: bold; min-height: 25px; color: #cbd5e0; }
+        .score-stats-area { display: flex; justify-content: center; font-size: 14px; margin-top: 5px; color: #a0aec0; min-height: 20px; }
+        #debug-dialog { position: absolute; top: 10px; left: 10px; width: 250px; height: 150px; background-color: rgba(0,0,0,0.7); border: 1px solid #4a5568; border-radius: 5px; color: #fc8181; font-family: monospace; font-size: 10px; overflow-y: scroll; padding: 5px; z-index: 1000; }
+        #debug-dialog-header { padding: 2px 5px; cursor: move; background-color: #4a5568; color: white; font-weight: bold; user-select: none; }
     `;
     const styleSheet = document.createElement("style");
     styleSheet.innerText = styles;
@@ -92,13 +91,11 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             <div id="messageArea" class="message-area">Loading...</div>
             <div class="score-stats-area"><div id="statsArea"></div></div>
             <div class="char-select my-3">
-     
                 <span class="mr-2 font-semibold align-middle">Character:</span>
                 <button id="charGiraffe" data-char="giraffe" title="Giraffe"><canvas width="48" height="48"></canvas></button>
                 <button id="charElephant" data-char="elephant" title="Elephant"><canvas width="48" height="48"></canvas></button>
                 <button id="charZebra" data-char="zebra" title="Zebra"><canvas width="48" height="48"></canvas></button>
             </div>
-           
             <div class="controls mb-3">
                 <button id="leftButton">← Left</button>
                 <button id="rightButton">Right →</button>
@@ -133,7 +130,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = false;
-
         const messageArea = document.getElementById('messageArea');
         const statsArea = document.getElementById('statsArea');
         const startButton = document.getElementById('startButton');
@@ -151,11 +147,10 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const T = null, K = '#000000', W = '#FFFFFF', G = '#808080', LG = '#D3D3D3', Y = '#FFD700', BR = '#A0522D', DG = '#333333', OR = '#FFA500', FY = '#FFFF00', SC = '#C0C0C0', BC = 'rgba(173, 216, 230, 0.5)', GC = '#228B22', LGC = '#90EE90', TRUNK_C = '#8B4513';
         const giraffeBitmap = [ [T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, Y, Y, Y, Y, T, T, T, T, T, T, T, T],[T, T, T, T, Y, BR, Y, Y, T, T, T, T, T, T, T, T],[T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, Y, Y, T, T, T, T, T, T, T, T, T],[T, T, T, T, Y, Y, Y, Y, T, T, T, T, T, T, T, T],[T, T, T, Y, Y, BR, Y, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, Y, Y, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, Y, Y, T, T, Y, Y, T, T, T, T, T, T, T],[T, T, T, BR, BR, T, T, BR, BR, T, T, T, T, T, T, T],[T, T, T, BR, BR, T, T, BR, BR, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
         const elephantBitmap = [ [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, G, G, G, G, G, G, G, T, T, T, T, T],[T, T, T, G, G, G, G, G, G, G, G, G, T, T, T, T],[T, T, G, G, LG, G, G, G, LG, G, G, G, G, T, T, T],[T, T, G, G, G, G, G, G, G, G, G, G, G, T, T, T],[T, G, G, G, G, G, G, G, G, G, G, G, G, G, T, T],[T, G, G, G, G, G, G, G, G, G, G, G, G, G, T, T],[T, G, G, G, G, T, T, T, T, T, G, G, G, G, T, T],[T, T, G, G, T, T, T, T, T, T, T, G, G, T, T, T],[T, T, G, G, T, T, G, G, T, T, T, G, G, T, T, T],[T, T, G, G, T, G, G, G, G, T, G, G, T, T, T, T],[T, T, G, G, T, G, G, G, G, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, G, G, T, T, G, G, T, T, G, G, T, T, T, T],[T, T, T, LG, LG, T, T, LG, LG, T, T, LG, LG, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
-        const zebraBitmap = [ [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, W, K, W, K, T, T, T, T, T, T, T],[T, T, T, T, W, K, W, K, W, K, T, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, T, T, K, W, T, T, T, T, T, T],[T, T, T, K, K, T, T, T, T, K, T, T, T, T, T, T],[T, T, T, W, W, T, T, T, T, W, T, T, T, T, T, T],[T, T, T, K, K, T, T, T, T, K, T, T, T, T, T, T],[T, T, T, W, W, T, T, T, T, W, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
-        const simpleBombBitmap = [ [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, BR, BR, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, BR, OR, FY, BR, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, BR, FY, OR, BR, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T, T],[T, T, T, T, T, T, DG, DG, K, K, W, K, K, W, K, K, DG, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T],[T, T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
+        const zebraBitmap = [ [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, W, K, W, K, T, T, T, T, T, T, T],[T, T, T, T, W, K, W, K, W, K, T, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, K, K, W, K, W, K, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, K, W, K, W, K, T, T, T, T, T],[T, T, T, K, W, K, W, K, W, K, W, T, T, T, T, T],[T, T, T, W, K, W, T, T, K, W, T, T, T, T, T, T],[T, T, T, K, K, T, T, T, T, K, T, T, T, T, T, T],[T, T, T, W, W, T, T, T, T, W, T, T, T, T, T, T],[T, T, T, K, K, T, T, T, T, K, T, T, T, T, T, T],[T, T, T, W, W, T, T, T, T, W, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
+        const simpleBombBitmap = [ [T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, BR, BR, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, BR, OR, FY, BR, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, BR, FY, OR, BR, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T, T],[T, T, T, T, T, T, DG, DG, K, K, W, K, K, W, K, K, DG, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, K, K, K, K, K, K, K, K, K, K, DG, T, T, T, T, T, T],[T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T],[T, T, T, T, T, T, T, DG, DG, K, K, K, K, K, K, DG, DG, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, DG, DG, DG, DG, DG, DG, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T],[T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T]];
         const characterBitmaps = { giraffe: giraffeBitmap, elephant: elephantBitmap, zebra: zebraBitmap };
         let sounds = {}, audioInitialized = false;
-
         function drawBitmap(ctx, bitmap, x, y, scale = 1) {
             const height = bitmap.length;
             if (height === 0) return;
@@ -172,13 +167,13 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         }
         
         function updateStatsDisplay() { 
-            statsArea.innerHTML = `🏆: ${stats.wins} | ☠️: ${stats.deaths} | 👽: ${stats.abductions} | 🌌: ${stats.spaceLosses} | 📉: ${stats.losses} | <b>Score: ${stats.score || 0}</b>`; 
+            statsArea.innerHTML = `🏆: ${stats.wins} | ☠️: ${stats.deaths} | 👽: ${stats.abductions} | 🌌: ${stats.spaceLosses} | 📉: ${stats.losses} | <b>Score: ${stats.score || 0}</b>`;
         }
         
         async function handleWin() { 
             if (isGameOver || isExploding) return;
             isGameOver = true; isGameRunning = false; playSound('win'); 
-            stats.wins = (stats.wins || 0) + 1; 
+            stats.wins = (stats.wins || 0) + 1;
             stats.score = (stats.score || 0) + 1000;
             messageArea.textContent = "You Win! +1000 points!"; 
             await bbs.saveData(stats); 
@@ -191,7 +186,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             isGameOver = true; isGameRunning = false; 
             
             stats.losses = (stats.losses || 0) + 1;
-
             if (reason === "Hit a mine!") {
                 stats.deaths = (stats.deaths || 0) + 1;
                 stats.score = (stats.score || 0) - 50;
@@ -203,7 +197,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
             playSound('lose'); 
             messageArea.textContent = `Game Over! ${reason}`; 
-            await bbs.saveData(stats); 
+            await bbs.saveData(stats);
             debugLog(`Lose: ${reason}. Stats saved.`);
             resetGameAfterDelay(); 
         }
@@ -234,7 +228,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         }
 
         function initializeAudio() { if (audioInitialized) return Promise.resolve();
-            return new Promise((resolve, reject) => { if (typeof Tone === 'undefined') { const script = document.createElement('script'); script.src = "https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"; script.onload = () => { setupTones(); resolve(); }; script.onerror = reject; document.head.appendChild(script); } else { setupTones(); resolve(); } });
+        return new Promise((resolve, reject) => { if (typeof Tone === 'undefined') { const script = document.createElement('script'); script.src = "https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"; script.onload = () => { setupTones(); resolve(); }; script.onerror = reject; document.head.appendChild(script); } else { setupTones(); resolve(); } });
         }
         function setupTones() { sounds.collision = new Tone.Synth({ oscillator: { type: "square" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } }).toDestination();
         sounds.win = new Tone.Synth({ oscillator: { type: "triangle" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.2 } }).toDestination();

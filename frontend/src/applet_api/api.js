@@ -8,14 +8,14 @@
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
-# Full path: axon_bbs/frontend/src/applet_api/api.js
+// Full path: axon_bbs/frontend/src/applet_api/api.js
 // UPDATED: Added new functions for agent/event-bus interaction.
 window.bbs = {
   _callbacks: {},
@@ -38,8 +38,8 @@ window.bbs = {
     return new Promise((resolve, reject) => {
       const requestId = this._requestId++;
       this._callbacks[requestId] = { resolve, reject };
-      // Target window.parent to communicate out of the iframe
-      window.parent.postMessage({ command, payload, requestId }, '*');
+      // Target window.parent, specifying the exact origin for security
+      window.parent.postMessage({ command, payload, requestId }, window.location.origin);
     });
   },
 
@@ -71,4 +71,3 @@ window.bbs = {
 };
 
 window.addEventListener('message', (event) => window.bbs._handleMessage(event));
-
