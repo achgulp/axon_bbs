@@ -8,11 +8,11 @@
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 // Full path: axon_bbs/frontend/src/applets/FortressOverlord.js
@@ -36,9 +36,11 @@ window.bbs = {
     });
   },
   getUserInfo: function() { return this._postMessage('getUserInfo'); },
-  getData: function() { return this._postMessage('getData'); },
+  getData: function() { return this._postMessage('getData');
+  },
   saveData: function(newData) { return this._postMessage('saveData', newData); },
-  getAppletInfo: function() { return this._postMessage('getAppletInfo'); },
+  getAppletInfo: function() { return this._postMessage('getAppletInfo');
+  },
   postEvent: function(eventData) { return this._postMessage('postEvent', eventData); },
   readEvents: function() { return this._postMessage('readEvents'); }
 };
@@ -47,9 +49,11 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 
 // --- Main Applet Execution ---
+try {
 (async function() {
     // --- 1. SETUP: Styles, HTML, and Game Configuration ---
-    const APPLET_VERSION = "v7.9-fixed"; 
+    // --- UPDATED: Version number incremented for new feature ---
+    const APPLET_VERSION = "v8.0"; 
 
     const styles = `
         :root {
@@ -60,70 +64,141 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
         body { font-family: 'Lucida Console', 'Courier New', monospace; background-color: var(--gunmetal-dark); color: var(--text-primary); display: flex; align-items: center; justify-content: center; }
         
-        #site-selection-screen { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--gunmetal-dark); }
-        #globe-container { width: 68vmin; height: 68vmin; max-width: 600px; max-height: 600px; cursor: pointer; }
-        .selection-header { text-align: center; margin-bottom: 20px; }
-        .selection-header h1 { font-size: 2rem; color: var(--accent-green); text-shadow: 0 0 5px var(--accent-green); margin: 0; }
-        .selection-header p { color: var(--text-primary); margin-top: 5px; }
-        #confirm-landing-button { background-color: var(--accent-green); color: #000; border: 2px solid #55ff55; padding: 10px 20px; font-size: 1.2rem; font-family: inherit; cursor: pointer; margin-top: 20px; box-shadow: 0 0 10px var(--accent-green); transition: all 0.2s; }
-        #confirm-landing-button:disabled { background-color: var(--gunmetal-medium); color: #666; border-color: var(--border-color); box-shadow: none; cursor: not-allowed; }
-        #force-reset-button { background-color: var(--accent-red); color: #fff; border: 1px solid #ff7b7b; padding: 8px 15px; font-size: 0.9rem; font-family: inherit; cursor: pointer; margin-top: 20px; opacity: 0.7; }
-        #force-reset-button:hover { opacity: 1.0; }
+        body.console-active {
+            align-items: initial;
+            justify-content: initial;
+        }
 
-        #console-screen { display: none; width: 100%; height: 100%; }
+        #site-selection-screen { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--gunmetal-dark); }
+        #globe-container { width: 68vmin;
+height: 68vmin; max-width: 600px; max-height: 600px; cursor: pointer; }
+        .selection-header { text-align: center;
+margin-bottom: 20px; }
+        .selection-header h1 { font-size: 2rem; color: var(--accent-green);
+text-shadow: 0 0 5px var(--accent-green); margin: 0; }
+        .selection-header p { color: var(--text-primary);
+margin-top: 5px; }
+        #confirm-landing-button { background-color: var(--accent-green); color: #000; border: 2px solid #55ff55;
+padding: 10px 20px; font-size: 1.2rem; font-family: inherit; cursor: pointer; margin-top: 20px; box-shadow: 0 0 10px var(--accent-green); transition: all 0.2s;
+        }
+        #confirm-landing-button:disabled { background-color: var(--gunmetal-medium); color: #666; border-color: var(--border-color); box-shadow: none; cursor: not-allowed;
+        }
+        #force-reset-button { background-color: var(--accent-red); color: #fff; border: 1px solid #ff7b7b;
+padding: 8px 15px; font-size: 0.9rem; font-family: inherit; cursor: pointer; margin-top: 20px; opacity: 0.7;
+        }
+        #force-reset-button:hover { opacity: 1.0;
+        }
+
+        #console-screen { display: none; width: 100%; height: 100%;
+        }
         .console-container {
-            width: 100%; height: 100%; max-width: 1920px; max-height: 1080px;
+            width: 100%;
+height: 100%; max-width: 1920px; max-height: 1080px;
             background: linear-gradient(145deg, var(--gunmetal-light), var(--gunmetal-medium));
             padding: 20px; box-sizing: border-box; display: grid; grid-template-columns: 320px 1fr 320px;
-            grid-template-rows: auto 1fr; gap: 15px; border: 3px solid var(--border-color);
-            border-radius: 15px; box-shadow: inset 0 0 15px var(--shadow-color), 0 0 20px var(--shadow-color);
+grid-template-rows: auto 1fr; gap: 15px; border: 3px solid var(--border-color);
+            border-radius: 15px;
+box-shadow: inset 0 0 15px var(--shadow-color), 0 0 20px var(--shadow-color);
             position: relative;
         }
-        .panel { background: linear-gradient(var(--gunmetal-medium), var(--gunmetal-dark)); border: 2px solid var(--border-color); border-radius: 6px; padding: 15px; display: flex; flex-direction: column; box-shadow: inset 0 0 10px var(--shadow-color); }
-        .center-panel { padding: 15px; display: flex; flex-direction: column; }
-        .header { grid-column: 1 / -1; text-align: center; padding-bottom: 10px; border-bottom: 3px solid var(--border-color); }
-        .header h1 { margin: 0; font-size: 1.8rem; color: var(--accent-green); text-shadow: 0 0 5px var(--accent-green); }
-        .version-tag { position: absolute; top: 25px; right: 25px; font-size: 0.8rem; color: #666; }
-        .emergency-light { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); width: 40px; height: 20px; background: radial-gradient(circle at 50% 100%, #ff4b4b, #a71d1d); border-radius: 15px 15px 0 0; border: 2px solid #000; box-shadow: 0 -2px 10px var(--accent-red), inset 0 -2px 5px rgba(0,0,0,0.6); z-index: 10; }
-        .emergency-light::after { content: ''; position: absolute; top: 3px; left: 10px; width: 20px; height: 4px; background: rgba(255, 255, 255, 0.6); border-radius: 50%; filter: blur(2px); transform: rotate(-10deg); }
-        h2, h3 { font-size: 1.2rem; color: var(--accent-green); border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-top: 0; text-transform: uppercase; letter-spacing: 1px; }
-        h3 { font-size: 1rem; margin-bottom: 10px; }
-        .gauge-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .telemetry-screen, .main-panel-content, .command-log { background-color: #080c08; border: 2px solid #223a22; border-radius: 4px; color: var(--accent-green); position: relative; overflow: hidden; }
-        .telemetry-screen::after, .main-panel-content::after, .command-log::after { content: ' '; display: block; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(to bottom, rgba(30, 60, 30, 0.15) 50%, rgba(10, 20, 10, 0.2) 50%); background-size: 100% 4px; pointer-events: none; z-index: 2; }
-        .telemetry-screen { flex-grow: 1; display: flex; flex-direction: column; }
-        .main-panel-content { flex-grow: 1; padding: 0; box-sizing: border-box; display: flex; flex-direction: column; }
-        #map-canvas.crosshair-cursor { cursor: crosshair; }
-        .view-toggles { display: flex; gap: 5px; margin-bottom: 10px; }
-        .view-toggles button { background-color: var(--gunmetal-medium); border: 2px solid var(--border-color); color: var(--text-primary); padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 0.8rem; box-shadow: inset 0 2px 5px rgba(0,0,0,0.4); }
-        .view-toggles button.active { background-color: var(--accent-green); color: #000; font-weight: bold; border-color: #55ff55; }
-        .resource-display, .command-log { font-size: 0.9rem; }
-        .resource-display div { display: flex; justify-content: space-between; padding: 2px 0; }
-        .command-log { height: 200px; overflow-y: auto; margin-top: 10px; padding: 5px; font-size: 0.8rem; }
-        .log-entry { margin-bottom: 4px; }
-        .log-entry.info { color: var(--accent-green); }
-        .log-entry.warn { color: #facc15; }
-        .log-entry.error { color: var(--accent-red); }
-        .replay-link { color: #60a5fa; text-decoration: underline; cursor: pointer; margin-left: 5px; }
-        #video-playback-screen { height: 120px; background-color: #000; margin-bottom: 10px; border: 2px solid #223a22; border-radius: 4px; }
-        #sensor-feed-display { flex-grow: 1; background-color: #080c08; border: 2px solid #223a22; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; padding: 10px; box-sizing: border-box; }
-        #debug-dialog { display: none; position: absolute; bottom: 10px; right: 10px; width: 350px; height: 250px; background-color: rgba(0,0,0,0.8); border: 1px solid var(--accent-green); border-radius: 5px; color: #fc8181; font-family: inherit; font-size: 12px; overflow-y: scroll; padding-top: 25px; z-index: 1000; }
-        #debug-header { position: absolute; top: 0; left: 0; right: 0; background-color: var(--accent-green); color: #000; font-weight: bold; padding: 3px; cursor: move; user-select: none; }
-        #reset-button { background-color: var(--accent-red); color: #fff; border: 1px solid #ff7b7b; padding: 8px; font-family: inherit; cursor: pointer; margin-top: auto; }
-        .management-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex-grow: 1; }
-        .management-item { background-color: var(--gunmetal-medium); padding: 10px; border-radius: 4px; margin-bottom: 8px; border: 1px solid var(--border-color); }
-        .management-item-header { display: flex; justify-content: space-between; align-items: center; }
-        .management-item-title { font-weight: bold; color: var(--text-primary); }
-        .management-item-body { font-size: 0.8rem; color: #a0aec0; margin-top: 8px; }
-        .management-item-actions button { font-size: 0.7rem; padding: 4px 8px; background-color: var(--gunmetal-light); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; margin-left: 5px; border-radius: 3px; }
-        .management-item-actions button:hover { background-color: var(--accent-green); color: #000; }
-        #confirm-modal { display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.7); z-index: 2000; align-items: center; justify-content: center; }
-        .modal-content { background-color: var(--gunmetal-dark); padding: 20px; border-radius: 8px; border: 2px solid var(--border-color); text-align: center; }
+        .panel { background: linear-gradient(var(--gunmetal-medium), var(--gunmetal-dark)); border: 2px solid var(--border-color); border-radius: 6px;
+padding: 15px; display: flex; flex-direction: column; box-shadow: inset 0 0 10px var(--shadow-color);
+        }
+        .center-panel { padding: 15px; display: flex; flex-direction: column;
+        }
+        .header { grid-column: 1 / -1; text-align: center; padding-bottom: 10px;
+border-bottom: 3px solid var(--border-color); }
+        .header h1 { margin: 0; font-size: 1.8rem;
+color: var(--accent-green); text-shadow: 0 0 5px var(--accent-green); }
+        .version-tag { position: absolute;
+top: 25px; right: 25px; font-size: 0.8rem; color: #666; }
+        .emergency-light { position: absolute;
+top: -12px; left: 50%; transform: translateX(-50%); width: 40px; height: 20px; background: radial-gradient(circle at 50% 100%, #ff4b4b, #a71d1d);
+border-radius: 15px 15px 0 0; border: 2px solid #000; box-shadow: 0 -2px 10px var(--accent-red), inset 0 -2px 5px rgba(0,0,0,0.6);
+z-index: 10; }
+        .emergency-light::after { content: ''; position: absolute; top: 3px; left: 10px;
+width: 20px; height: 4px; background: rgba(255, 255, 255, 0.6); border-radius: 50%; filter: blur(2px); transform: rotate(-10deg);
+        }
+        h2, h3 { font-size: 1.2rem; color: var(--accent-green); border-bottom: 1px solid var(--border-color);
+padding-bottom: 8px; margin-top: 0; text-transform: uppercase; letter-spacing: 1px; }
+        h3 { font-size: 1rem;
+margin-bottom: 10px; }
+        .gauge-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+        }
+        .telemetry-screen, .main-panel-content, .command-log { background-color: #080c08; border: 2px solid #223a22; border-radius: 4px;
+color: var(--accent-green); position: relative; overflow: hidden; }
+        .telemetry-screen::after, .main-panel-content::after, .command-log::after { content: ' ';
+display: block; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+background: linear-gradient(to bottom, rgba(30, 60, 30, 0.15) 50%, rgba(10, 20, 10, 0.2) 50%); background-size: 100% 4px; pointer-events: none; z-index: 2;
+        }
+        .telemetry-screen { flex-grow: 1; display: flex; flex-direction: column;
+        }
+        .main-panel-content { flex-grow: 1; padding: 0; box-sizing: border-box; display: flex; flex-direction: column;
+        }
+        #map-canvas.crosshair-cursor { cursor: crosshair;
+        }
+        .view-toggles { display: flex; gap: 5px; margin-bottom: 10px;
+        }
+        .view-toggles button { background-color: var(--gunmetal-medium); border: 2px solid var(--border-color); color: var(--text-primary);
+padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 0.8rem; box-shadow: inset 0 2px 5px rgba(0,0,0,0.4);
+        }
+        .view-toggles button.active { background-color: var(--accent-green); color: #000; font-weight: bold; border-color: #55ff55;
+        }
+        .resource-display, .command-log { font-size: 0.9rem;
+        }
+        .resource-display div { display: flex; justify-content: space-between; padding: 2px 0;
+        }
+        .command-log { height: 200px; overflow-y: auto; margin-top: 10px; padding: 5px; font-size: 0.8rem;
+        }
+        .log-entry { margin-bottom: 4px;
+        }
+        .log-entry.info { color: var(--accent-green);
+        }
+        .log-entry.warn { color: #facc15;
+        }
+        .log-entry.error { color: var(--accent-red);
+        }
+        .replay-link { color: #60a5fa; text-decoration: underline; cursor: pointer; margin-left: 5px;
+        }
+        #video-playback-screen { height: 120px; background-color: #000; margin-bottom: 10px; border: 2px solid #223a22;
+border-radius: 4px; }
+        #sensor-feed-display { flex-grow: 1; background-color: #080c08; border: 2px solid #223a22;
+border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; padding: 10px; box-sizing: border-box;
+        }
+        #debug-dialog { display: none; position: absolute; bottom: 10px; right: 10px; width: 350px;
+height: 250px; background-color: rgba(0,0,0,0.8); border: 1px solid var(--accent-green); border-radius: 5px; color: #fc8181; font-family: inherit; font-size: 12px; overflow-y: scroll; padding-top: 25px;
+z-index: 1000; }
+        #debug-header { position: absolute; top: 0; left: 0; right: 0;
+background-color: var(--accent-green); color: #000; font-weight: bold; padding: 3px; cursor: move; user-select: none;
+        }
+        #reset-button { background-color: var(--accent-red); color: #fff; border: 1px solid #ff7b7b; padding: 8px;
+font-family: inherit; cursor: pointer; margin-top: auto; }
+        .management-list { list-style: none; padding: 0;
+margin: 0; overflow-y: auto; flex-grow: 1; }
+        .management-item { background-color: var(--gunmetal-medium); padding: 10px;
+border-radius: 4px; margin-bottom: 8px; border: 1px solid var(--border-color); }
+        .management-item-header { display: flex;
+justify-content: space-between; align-items: center; }
+        .management-item-title { font-weight: bold; color: var(--text-primary);
+        }
+        .management-item-body { font-size: 0.8rem; color: #a0aec0; margin-top: 8px;
+        }
+        .management-item-actions button { font-size: 0.7rem; padding: 4px 8px; background-color: var(--gunmetal-light);
+border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; margin-left: 5px; border-radius: 3px;
+        }
+        .management-item-actions button:hover { background-color: var(--accent-green); color: #000;
+        }
+        #confirm-modal { display: none; position: absolute; top: 0; left: 0; right: 0;
+bottom: 0; background-color: rgba(0,0,0,0.7); z-index: 2000; align-items: center; justify-content: center;
+        }
+        .modal-content { background-color: var(--gunmetal-dark); padding: 20px; border-radius: 8px; border: 2px solid var(--border-color);
+text-align: center; }
         .modal-content p { margin-bottom: 20px; }
     `;
     document.head.appendChild(Object.assign(document.createElement("style"), { innerText: styles }));
 
     document.getElementById('applet-root').innerHTML = `
+        <div id="debug-dialog"><div id="debug-header">DEBUG CONSOLE</div></div>
         <div id="site-selection-screen">
             <div class="selection-header">
                 <h1>Establish Fortress Location</h1>
@@ -164,7 +239,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     <h2>COMMAND LOG</h2>
                     <div class="command-log" id="event-log"></div>
                 </div>
-                <div id="debug-dialog"><div id="debug-header">DEBUG CONSOLE</div></div>
             </div>
         </div>
         <div id="confirm-modal">
@@ -178,6 +252,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         </div>
     `;
 
+    // --- Start of functions ---
     let userInfo = null, gameState = null;
     const confirmButton = document.getElementById('confirm-landing-button');
     const modal = document.getElementById('confirm-modal');
@@ -185,7 +260,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     const modalYes = document.getElementById('modal-yes');
     const modalNo = document.getElementById('modal-no');
     let modalConfirmCallback = null;
-
     function showConfirmModal(text, onConfirm) {
         modalText.textContent = text;
         modalConfirmCallback = onConfirm;
@@ -199,9 +273,15 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     modalNo.addEventListener('click', () => {
         modal.style.display = 'none';
     });
-    
     function setupDebugConsole() { if (window.BBS_DEBUG_MODE === true) { /* ... */ } }
-    function debugLog(message) { if (window.BBS_DEBUG_MODE !== true) return; console.log(message); }
+    function debugLog(message) { if (window.BBS_DEBUG_MODE !== true) return;
+        const debugDialog = document.getElementById('debug-dialog');
+        if (!debugDialog) return;
+        const logEntry = document.createElement('div');
+        logEntry.textContent = `> ${message}`;
+        debugDialog.appendChild(logEntry);
+        debugDialog.scrollTop = debugDialog.scrollHeight;
+    }
     
     function logEvent(message, level = 'info', eventData = {}) {
         const eventLogEl = document.getElementById('event-log');
@@ -209,7 +289,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const entry = document.createElement('div');
         entry.classList.add('log-entry', level);
         entry.textContent = `> ${message}`;
-
         if (eventData.replayData) {
             const replayLink = document.createElement('span');
             replayLink.className = 'replay-link';
@@ -228,7 +307,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             power: { current: 50, max: 100 }, 
             temperature: 25.5, 
             pressure: 101.3, 
-            oxygen: 98.2, 
+            oxygen: 98.2,
             landingSite: null,
             drones: [
                 { id: 'drone_01', type: 'Scout', status: 'Idle', x: 60, y: -30, health: 100, inventory: { rawOre: 0 }, is_in_comms_range: true }
@@ -240,14 +319,37 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 { id: 'ore_01', type: 'Ore Deposit', x: -80, y: 50 },
                 { id: 'gas_01', type: 'Hydrogen Geyser', x: 100, y: 120 }
             ]
-        }; 
+        };
+    }
+    
+    // --- UPDATED: ensureThreeJsIsLoaded now also ensures the GLTFLoader is available ---
+    function ensureThreeJsIsLoaded() {
+        return new Promise((resolve, reject) => {
+            if (typeof THREE !== 'undefined' && THREE.GLTFLoader) {
+                resolve();
+                return;
+            }
+            // Load base three.js first
+            const threeScript = document.createElement('script');
+            threeScript.src = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+            threeScript.onload = () => {
+                // After it loads, load the GLTFLoader
+                const loaderScript = document.createElement('script');
+                loaderScript.src = "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js";
+                loaderScript.onload = resolve;
+                loaderScript.onerror = reject;
+                document.head.appendChild(loaderScript);
+            };
+            threeScript.onerror = reject;
+            document.head.appendChild(threeScript);
+        });
     }
 
     function initSiteSelection() {
         const globeContainer = document.getElementById('globe-container');
         let scene, camera, renderer, globe, marker, raycaster, mouse;
         let isDragging = false, previousMousePosition = { x: 0, y: 0 };
-
+        
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, globeContainer.clientWidth / globeContainer.clientHeight, 0.1, 1000);
@@ -270,7 +372,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             renderer.domElement.addEventListener('mouseup', onMouseUp);
             renderer.domElement.addEventListener('click', onClick);
             window.addEventListener('resize', onWindowResize, false);
-            
             animate();
         }
 
@@ -286,13 +387,17 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             }
             ctx.strokeStyle = "rgba(0,0,0,0.2)";
             for(let i=0; i<512; i+=32) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,256); ctx.stroke(); }
-            for(let i=0; i<256; i+=32) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(512,i); ctx.stroke(); }
+            for(let i=0; i<256; i+=32) { ctx.beginPath();
+                ctx.moveTo(0,i); ctx.lineTo(512,i); ctx.stroke(); }
             return canvas;
         }
 
-        function onMouseDown(event) { isDragging = true; previousMousePosition.x = event.clientX; previousMousePosition.y = event.clientY; }
-        function onMouseMove(event) { if (isDragging) { const dX = event.clientX-previousMousePosition.x, dY = event.clientY-previousMousePosition.y; globe.rotation.y += dX*0.005; globe.rotation.x += dY*0.005; previousMousePosition.x=event.clientX; previousMousePosition.y=event.clientY; } }
-        function onMouseUp() { isDragging = false; }
+        function onMouseDown(event) { isDragging = true; previousMousePosition.x = event.clientX; previousMousePosition.y = event.clientY;
+        }
+        function onMouseMove(event) { if (isDragging) { const dX = event.clientX-previousMousePosition.x, dY = event.clientY-previousMousePosition.y;
+            globe.rotation.y += dX*0.005; globe.rotation.x += dY*0.005; previousMousePosition.x=event.clientX; previousMousePosition.y=event.clientY; } }
+        function onMouseUp() { isDragging = false;
+        }
         
         function onClick(event) {
             const rect = renderer.domElement.getBoundingClientRect();
@@ -314,28 +419,19 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         }
         function onWindowResize() { 
             if(renderer && camera && globeContainer){
-                camera.aspect = globeContainer.clientWidth / globeContainer.clientHeight; 
-                camera.updateProjectionMatrix(); 
+                camera.aspect = globeContainer.clientWidth / globeContainer.clientHeight;
+                camera.updateProjectionMatrix();
                 renderer.setSize(globeContainer.clientWidth, globeContainer.clientHeight); 
             }
         }
-        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+        function animate() { requestAnimationFrame(animate);
+            renderer.render(scene, camera); }
         
-        const startThreeJs = () => {
-            requestAnimationFrame(init);
-        };
-        
-        if (typeof THREE === 'undefined') {
-            const script = document.createElement('script');
-            script.src = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
-            script.onload = startThreeJs; 
-            document.head.appendChild(script);
-        } else {
-            startThreeJs();
-        }
+        init();
     }
-
+    
     function initCommandConsole() {
+        document.body.classList.add('console-active');
         const consoleScreen = document.getElementById('console-screen');
         const siteSelectionScreen = document.getElementById('site-selection-screen');
         siteSelectionScreen.style.display = 'none';
@@ -345,13 +441,10 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const resourceDisplayEl = document.getElementById('resource-display');
         const mainViewEl = document.getElementById('main-view');
         const resetButton = document.getElementById('reset-button');
-        const videoScreenEl = document.getElementById('video-playback-screen');
         const sensorFeedEl = document.getElementById('sensor-feed-display');
         const eventLogEl = document.getElementById('event-log');
-        
         let processedEventIds = new Set();
         let commandState = { active: false, command: null, sourceId: null, payload: {} };
-        
         mainViewEl.innerHTML = `
             <div id="view-map" style="width:100%; height:100%; display:block; background-color: #080c08;">
                 <canvas id="map-canvas" style="width: 100%; height: 100%;"></canvas>
@@ -363,7 +456,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const viewBuildings = mainViewEl.querySelector('#view-buildings');
         const viewUnits = mainViewEl.querySelector('#view-units');
         const mapCanvas = document.getElementById('map-canvas');
-
         async function submitCommand(subject, body) {
             try {
                 await bbs.postEvent({ subject, body: JSON.stringify(body) });
@@ -376,12 +468,20 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         async function pollForEvents() {
             try {
+                const latestData = await bbs.getData();
+                if (latestData) {
+                    gameState = { ...getInitialGameState(), ...latestData };
+                    renderGauges();
+                    renderResources();
+                    const currentView = document.querySelector('#view-toggles button.active')?.dataset.view || 'map';
+                    renderMainView(currentView);
+                }
+
                 const events = await bbs.readEvents();
                 const newEvents = events.filter(e => !processedEventIds.has(e.id));
 
                 if (newEvents.length > 0) {
                     newEvents.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-                    
                     for (const event of newEvents) {
                         processedEventIds.add(event.id);
                         if (event.author_display === 'overlord_agent') {
@@ -398,49 +498,68 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 debugLog(`Failed to poll for events: ${e.message}`);
             }
         }
+        
+        // --- NEW: Embedded Base64 model data ---
+        const DRONE_MODEL_BASE64 = 'Z2xURgIAAAAUAgAA+FwAAEFRU0gBAAAAART/AP8AAwAEAAgADgAQAFIAlgAAAAABAAMAAgAYAK4BAgACAAkADwATAFsBGAACAAkADwATAFwAGgACAAoAFAAXAGAA/wAAAwADAAQACAARAEcBGgADAAQACAARAEgAGgADAAUADAAQAEwBGQADAAUADAAQAE0AHAADAAcACQAWAFIAAgAHAAkAFgBTAAoAAQABAAAAAKgBAAAAAAAAAAABAAIAAwAEAAUABgAHAAgACQAaAAAAAAAAAAAAAAsADAANAA4ADwAQABEAEgATABQAFQAWABcAGAAAAAAAAAAYAKABAAAAAgAAAAAAAQAAAAAAAQAAAAAAAgAAAAAAAAADAAAAAAAAAAMAAAAAAAQAAAAAAAQAAAAABQAAAAAABQAAAAAABgAAAAAABgAAAAAABwAAAAAABwAAAAAACAAAAAAACAAAAAAACQAAAAAACQAAAAAZAAAAAAAAAAAAQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AANXU1AA1dXUANXV1AAABAAAAAAAAAAAAQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AQDA/AACAPwAAgD8AANXU1AA1dXUANXV1AAABAAAAAAAAAAAAAAsAEwALABMAAAAUABEAEQAAABUAEQARAAAAFgAIAAQAAAAWAAgABAAAAAIAAAACAAAACgAAAAoAAAACAAAACgAAAAoAAAAIAAAACAAAABIAAAAQAAAACAAAABAAAAASAAAADAAAAAwAAAAOAAAADgAAAAwAAAAOAAAADgAAAAEAAAABAAAAAwAAAAMAAAABAAAAAwAAAAMAAAAEAAAABAAAABYAAAAIAAAABAAAAAYAAAAGAAAAFwAAAAcAAAAHAAAABQAAAAUAAAAXAAAABQAAAAUAAAAHAAAABwAAADIAAwALAAwACwADACoABgAJAAsACQAGACgAEAARAA8AFAAPABEADwAWABcAFAAXABYAEQAUABIAEwASABQAEQATABIAHAAbABkAGgAZABsAHAAYADIANgA0ADMAMwA0ADYALgAyADEALwAvADEAMgAuACwALgAtACsAKwAtAC4ALAAtACsALQAwADQAOAA3ADcANAAwADYAOQA4ADUAOAA5ADYAQgBBAEMARABDAEEAQgA+AEUARgBFAEYARQBFAEYARQA+AEYARQBEAEYASABHAEYASQBGAEkASABGAEcASQBHAE4ATQBMAE8ATABNAE4ASwBMAFEAUABPAFEATwBQAFAAUwBWAFAAVgBTAFAAUABWAFMAWQBYAFUAWgBVAFIXAFgAWQBVAFoAVgBVAHgAdwB6AHsAegB3AHgAdgB5AHwAeQCBAH4AfgCBAHwAeQB+AIEAfAB4AIIAgwCEAIUAhACDAIIAfwB/AIMAggCEAIUAfgCEAIMAfwCJAIsAigCLAIsAiQCIAIgAiQCKAIsAiQCMAJAAjwCQAJAAjgCOAJAAjwCQAEsAUgBRAFMAUQBSAEsAUwBNAFQAVQBUAE0AUwBVAFQAVgBXAFYAWAALABQAHAAbABwAFQAJABgAFwAYAAkAFQAXAAgAGQAWABkACAAZABYAEQAaABMAEQAaABMADgAbABEADgAbABEADgAZAAwADQAMABkADAAaABUAGgAVABUAGgAMABkAFwAMAAkACwANAAkADQALAAQACAAFAAQABQAIAAAABgACAAIABgAAAAEAAwAAAAEDAAMAAgACAAQACAAFAAQABQAIAAAABgAAAAAAAAMAAAAAAAAGAAEAAgAAAAMAAQAAAAAGAAABAAIAAAADAAEAAwAAAAMAAAAAAAUABgAAAAUABgAEAAQABAAEAAUABgAAAAUABgAAAAAAAQAAAAMAAQADAAEAAQAAAAEABAAEAAQABAAEAAQAAAAEAAAAAwAAAAEAAwABAAMAAAAAAAADAAEAAgAAAAMAAQAAAAAAAQADAAMAAgACAAEAAAAAAAABAAIAAAACAAEAAAAAAAAGAAcACAAHAAYACQAJAAYACAAJAAcABwAAAAcAAAAJAAAABwAJAAcAAAAAAAYACAAGAAgABgAAAAAABgAHAAcACAAHAAYACQAJAAYACAAJAAcABwAAAAcAAAAJAAAABwAJAAcAAAAAAAAGAAgABgAIAAYACQAJAAYACAAJAAcABwAAAAcAAAAJAAAABwAJAAcAAAAAAAAGAAgABgAIAAYACQAJAAYACAAJAAcABwAAAAcAAAAJAAAABwAJAAcACQAJAAcACQAJAAcAAQAAAAEAAgAAAAIAAQACAAEAAgABAAMAAwAEAAQAAwAEAAQAAwAFAAUABgAGAAYABQAFAAYAAQAAAAEAAgAAAAIAAQACAAEAAgABAAMAAwAEAAQAAwAEAAQAAwAFAAUABgAGAAYABQAFAAYAAgACAAUABQACAAUAAgACAAUAAgAGAAQABgAEAAQAAgAGAAQABgAEAAQABAAGAAQAAgACAAUABQACAAUAAgACAAUAAgAGAAQABgAEAAQAAgAGAAQABgAEAAQABAAGAAQAEQAOAA8ADgANAAsADQANAAsAEQAOAA8ADgANAAsADQANAAsAHAAYABkAGAAcABgAHAAYABwAGAAcABgAGABMAUgBRAFIAUwBSAFMAUgBSAFMAUgBSAFMAUgBSAFIAAAAAAHcBAAAl/gEBAAAAAAAAAPA/AAAAAAAAAAAAAAB/AQAANf4BAQAAAAAAAADwPwAAAAAAAQAAAAIAAAMABAAFAAYABwAIAAkACgALAAwADQAOAA8AEAARABIAEwAUABUAFgAXABgAGQAaABsAHAAdAB4AHwAgACEAIgAjACQAJQAmACcAKAApACoAKwAsAC0ALgAvADAAMQAyADMANAA1ADYANwA4ADkAOgA7ADwAPQA+AD8AQABBAEIAQwBEAEUARgBHAHgAAAAAAACAgQAAAAAAgIEAAAAAAACAgQAAAAAAAIA=';
+
+        // --- NEW: Helper function to decode Base64 model data ---
+        function base64ToArrayBuffer(base64) {
+            const binary_string = window.atob(base64);
+            const len = binary_string.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary_string.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
 
         function play3DReplay(replayData) {
-            videoScreenEl.innerHTML = ''; // Clear previous content
-            const scene = new THREE.Scene();
-            const camera = new THREE.PerspectiveCamera(75, videoScreenEl.clientWidth / videoScreenEl.clientHeight, 0.1, 1000);
-            const renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(videoScreenEl.clientWidth, videoScreenEl.clientHeight);
-            videoScreenEl.appendChild(renderer.domElement);
+            const container = document.getElementById('video-playback-screen');
+            container.innerHTML = '';
             
-            scene.background = new THREE.Color(0x000000);
-            const light = new THREE.PointLight(0xffffff, 1, 100);
-            light.position.set(10, 10, 10);
-            scene.add(light);
-            scene.add(new THREE.AmbientLight(0x404040));
-            camera.position.z = 5;
-
-            // Simple representation of a constructed building
-            const geometry = new THREE.BoxGeometry(1, 1, 1);
-            const material = new THREE.MeshStandardMaterial({ color: 0x32cd32 });
-            const cube = new THREE.Mesh(geometry, material);
-            cube.scale.set(0, 0, 0); // Start invisible
-            scene.add(cube);
-
-            let startTime = null;
-            const duration = 2000; // 2 second animation
-
-            function animate(timestamp) {
-                if (!startTime) startTime = timestamp;
-                const progress = (timestamp - startTime) / duration;
-
-                if (progress < 1) {
-                    const scale = progress;
-                    cube.scale.set(scale, scale, scale);
-                    cube.rotation.y += 0.05;
-                    renderer.render(scene, camera);
-                    requestAnimationFrame(animate);
-                } else {
-                    cube.scale.set(1, 1, 1);
-                    renderer.render(scene, camera);
-                    // Animation finished
-                }
+            if (typeof THREE === 'undefined' || !THREE.GLTFLoader) {
+                container.innerHTML = '<p style="color:red;">Error: 3D loaders not ready.</p>';
+                return;
             }
-            requestAnimationFrame(animate);
+
+            try {
+                const scene = new THREE.Scene();
+                const renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                container.appendChild(renderer.domElement);
+                
+                scene.background = new THREE.Color(0x080c08);
+                const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+                camera.position.set(0, 2.5, 4);
+                camera.lookAt(0, 0, 0);
+
+                scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+                const light = new THREE.DirectionalLight(0xffffff, 1);
+                light.position.set(2, 5, 3);
+                scene.add(light);
+
+                const loader = new THREE.GLTFLoader();
+                const modelData = base64ToArrayBuffer(DRONE_MODEL_BASE64);
+
+                loader.parse(modelData, '', (gltf) => {
+                    const drone = gltf.scene;
+                    drone.scale.set(1.5, 1.5, 1.5);
+                    scene.add(drone);
+                    
+                    function animate() {
+                        requestAnimationFrame(animate);
+                        drone.rotation.y += 0.01;
+                        renderer.render(scene, camera);
+                    }
+                    animate();
+                }, (error) => {
+                    console.error('An error happened while loading the model:', error);
+                    container.innerHTML = `<p style="color:red;">Error: Could not load 3D model.</p>`;
+                });
+            } catch(e) {
+                container.innerHTML = '<p style="color:red;">3D Replay Error: ' + e.message + '</p>';
+                console.error("Error during 3D replay setup:", e);
+            }
         }
 
         function drawGauge(id, label, value, max) {
@@ -459,8 +578,10 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             ctx.strokeStyle=`hsl(${(1-percent)*120}, 80%, 50%)`; ctx.beginPath(); ctx.arc(60,60,40,Math.PI,Math.PI+(percent*Math.PI)); ctx.stroke();
             ctx.fillStyle='var(--text-primary)'; ctx.font='16px "Lucida Console", monospace'; ctx.textAlign='center'; ctx.fillText(Math.round(value), 60, 60);
         }
-        function renderGauges() { if (!gameState) return; const p=gameState.power||{c:0,m:100}; drawGauge('temp-gauge','TEMP',gameState.temperature||25,50); drawGauge('pressure-gauge','PRESSURE',gameState.pressure||101,120); drawGauge('oxygen-gauge','OXY',gameState.oxygen||98,100); drawGauge('power-gauge','POWER',p.current,p.max); }
-        function renderResources() { if (!gameState) return; const r=gameState.resources||{c:0,a:0}; resourceDisplayEl.innerHTML=`<div><span>RAW ORE:</span><span style="color:var(--accent-green);">${Math.floor(r.rawOre || 0)}</span></div><div><span>CRYSTALS:</span><span style="color:var(--accent-green);">${Math.floor(r.crystals)}</span></div><div><span>ALLOY:</span><span style="color:var(--accent-green);">${Math.floor(r.alloy)}</span></div>`;}
+        function renderGauges() { if (!gameState) return; const p=gameState.power||{c:0,m:100}; drawGauge('temp-gauge','TEMP',gameState.temperature||25,50); drawGauge('pressure-gauge','PRESSURE',gameState.pressure||101,120); drawGauge('oxygen-gauge','OXY',gameState.oxygen||98,100); drawGauge('power-gauge','POWER',p.current,p.max);
+        }
+        function renderResources() { if (!gameState) return; const r=gameState.resources||{c:0,a:0};
+            resourceDisplayEl.innerHTML=`<div><span>RAW ORE:</span><span style="color:var(--accent-green);">${Math.floor(r.rawOre || 0)}</span></div><div><span>CRYSTALS:</span><span style="color:var(--accent-green);">${Math.floor(r.crystals)}</span></div><div><span>ALLOY:</span><span style="color:var(--accent-green);">${Math.floor(r.alloy)}</span></div>`;}
         
         function renderMainView(view) {
             document.querySelectorAll('#view-toggles button').forEach(b => b.classList.remove('active'));
@@ -469,7 +590,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             viewMap.style.display = 'none';
             viewBuildings.style.display = 'none';
             viewUnits.style.display = 'none';
-
             if (view === 'map') {
                 viewMap.style.display = 'block';
                 drawStrategicMap();
@@ -549,7 +669,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             canvas.height = canvas.clientHeight;
             const centerX = canvas.width / 2;
             const centerY = canvas.height / 2;
-            const commRange = 200; // From GAME_CONFIG
+            const commRange = 200;
+            // From GAME_CONFIG
 
             ctx.fillStyle = '#080c08';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -565,8 +686,10 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
             // Draw Grid
             ctx.strokeStyle = 'rgba(50, 205, 50, 0.15)';
-            for(let i=0; i < canvas.width; i+=20) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
-            for(let i=0; i < canvas.height; i+=20) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
+            for(let i=0; i < canvas.width; i+=20) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+            }
+            for(let i=0; i < canvas.height; i+=20) { ctx.beginPath();
+                ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
 
             const allObjects = [...(gameState.buildings || []), ...(gameState.drones || []), ...(gameState.mapFeatures || [])];
             allObjects.forEach(obj => {
@@ -603,15 +726,23 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                             ctx.fillStyle = '#b0a090';
                             ctx.beginPath();
                             ctx.moveTo(drawX, drawY - 6); ctx.lineTo(drawX + 6, drawY);
-                            ctx.lineTo(drawX + 3, drawY + 6); ctx.lineTo(drawX - 3, drawY + 6);
+                            ctx.lineTo(drawX + 3, drawY + 6);
+                            ctx.lineTo(drawX - 3, drawY + 6);
                             ctx.lineTo(drawX - 6, drawY); ctx.closePath();
                             ctx.fill();
                             break;
                         case 'Hydrogen Geyser':
                              ctx.strokeStyle = '#add8e6';
                              ctx.beginPath(); ctx.arc(drawX, drawY, 6, 0, Math.PI*2); ctx.stroke();
-                             for(let i=0; i<3; i++){ ctx.beginPath(); ctx.moveTo(drawX - 4 + i*4, drawY - 6); ctx.quadraticCurveTo(drawX - 6 + i*4, drawY-12, drawX-4+i*4, drawY-18); ctx.stroke();}
+                             for(let i=0; i<3; i++){ ctx.beginPath(); ctx.moveTo(drawX - 4 + i*4, drawY - 6);
+                                 ctx.quadraticCurveTo(drawX - 6 + i*4, drawY-12, drawX-4+i*4, drawY-18); ctx.stroke();}
                              break;
+                        case 'Greenhouse': // Draw the finished building
+                            ctx.fillStyle = 'var(--accent-green)';
+                            ctx.beginPath();
+                            ctx.arc(drawX, drawY, 8, 0, Math.PI * 2);
+                            ctx.fill();
+                            break;
                     }
                 }
                 ctx.globalAlpha = 1.0;
@@ -673,11 +804,13 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 const objScreenX = centerX + obj.x;
                 const objScreenY = centerY + obj.y;
                 const distance = Math.sqrt(Math.pow(clickX - objScreenX, 2) + Math.pow(clickY - objScreenY, 2));
-                if (distance < 10) { clickedObject = obj; break; }
+                if (distance < 10) { 
+                    clickedObject = obj; break; }
             }
 
             if (commandState.active) {
-                const drone = (gameState.drones || []).find(d => d.id === commandState.sourceId);
+                const drone = (gameState.drones ||
+                    []).find(d => d.id === commandState.sourceId);
                 const performAction = (command, payload) => {
                     if (drone && drone.status !== 'Idle') {
                         showConfirmModal(`Drone ${drone.id} is busy (${drone.status}). Cancel current task and issue new command?`, () => {
@@ -688,7 +821,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                         submitCommand(command, payload);
                     }
                 };
-
                 if (commandState.command === 'HARVEST') {
                     if (clickedObject && (clickedObject.type === 'Ore Deposit' || clickedObject.type === 'Hydrogen Geyser')) {
                         performAction('ASSIGN_TASK', { droneId: commandState.sourceId, task: 'HARVEST', targetId: clickedObject.id });
@@ -718,7 +850,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 play3DReplay(replayData);
             }
         });
-        
         resetButton.addEventListener('click', () => {
             showConfirmModal("This will permanently delete your current fortress and start a new game. Are you sure?", async () => {
                 try {
@@ -730,7 +861,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 }
             });
         });
-        
         document.getElementById('view-toggles').addEventListener('click', e => { if (e.target.tagName === 'BUTTON') renderMainView(e.target.dataset.view); });
         window.addEventListener('resize', () => { 
             renderGauges(); 
@@ -739,24 +869,35 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             }
         });
         debugLog("Command Console Initialized.");
-        setInterval(pollForEvents, 10000);
+        setInterval(pollForEvents, 5000);
     }
     
     // --- Main Execution Logic ---
-    (async function run() {
-        try {
+    const appletRoot = document.getElementById('applet-root');
+    try {
+        await (async function run() {
             setupDebugConsole();
-            debugLog(`Fortress Overlord ${APPLET_VERSION} Initializing...`);
+            debugLog("Checkpoint 1: Starting applet...");
+            
+            // HTML is now defined inside the main innerHTML call below
+            debugLog("Checkpoint 2: Initial HTML and styles prepared.");
+
+            await ensureThreeJsIsLoaded();
+            debugLog("Checkpoint 3: Three.js library confirmed loaded.");
+            
             userInfo = await bbs.getUserInfo();
             let loadedData = await bbs.getData();
-            const defaultState = getInitialGameState();
+            debugLog("Checkpoint 4: User and game data fetched.");
             
+            const defaultState = getInitialGameState();
             const isGameInProgress = loadedData && typeof loadedData === 'object' && loadedData.landingSite && typeof loadedData.landingSite.x !== 'undefined';
 
             if (isGameInProgress) {
+                debugLog("Checkpoint 5a: Saved game found. Initializing console...");
                 gameState = { ...defaultState, ...loadedData };
                 initCommandConsole();
             } else {
+                debugLog("Checkpoint 5b: No saved game. Initializing site selection...");
                 gameState = getInitialGameState();
                 initSiteSelection();
             }
@@ -772,7 +913,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     }
                 }
             });
-
             const forceResetButton = document.getElementById('force-reset-button');
             if (forceResetButton) {
                 forceResetButton.addEventListener('click', () => {
@@ -786,10 +926,12 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     });
                 });
             }
-
-        } catch (e) {
-            document.getElementById('applet-root').innerHTML = `<p style="color:red;">CRITICAL ERROR: ${e.message}</p>`;
-            console.error("Applet initialization failed:", e);
-        }
-    })();
+        })();
+    } catch (e) {
+        appletRoot.innerHTML = `<p style="color:red; font-family:monospace;">CRITICAL ERROR: ${e.message}</p><pre>${e.stack}</pre>`;
+        console.error("Applet initialization failed:", e);
+    }
 })();
+} catch (e) {
+    document.body.innerHTML = '<h1>A critical error occurred while loading the applet.</h1><pre>' + e.stack + '</pre>';
+}
