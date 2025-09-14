@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/api/permissions.py
@@ -136,3 +136,13 @@ class TrustedPeerPermission(permissions.BasePermission):
             logger.warning(f"Signature verification FAILED for pubkey {generate_checksum(cleaned_sender_pubkey)}: {e}", exc_info=True)
             return False
 
+# --- NEW CLASS FOR MODERATION ---
+class IsModeratorOrAdmin(permissions.BasePermission):
+    """
+    Custom permission to only allow moderators or admins (staff).
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return request.user.is_moderator or request.user.is_staff
+# --- END NEW CLASS ---

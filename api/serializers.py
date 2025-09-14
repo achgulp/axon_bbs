@@ -19,7 +19,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest, FileAttachment, PrivateMessage, Applet, HighScore
+from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest, FileAttachment, PrivateMessage, Applet, HighScore, ModerationReport
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
 import os
@@ -128,13 +128,17 @@ class PrivateMessageSerializer(serializers.ModelSerializer):
         return "Unknown Sender"
     
     def get_author_avatar_url(self, obj):
-        # In the inbox, the author is the sender
         if obj.author and obj.author.avatar:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.author.avatar.url)
             return obj.author.avatar.url
-        # For remote users, find the local user record via pubkey
         if obj.sender_pubkey:
             user = User.objects.filter(pubkey=obj.sender_pubkey).first()
             if user and user.avatar:
+                request = self.context.get('request')
+                if request:
+                    return request.build_absolute_uri(user.avatar.url)
                 return user.avatar.url
         return None
 
@@ -162,6 +166,9 @@ class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
 
     def get_recipient_avatar_url(self, obj):
         if obj.recipient and obj.recipient.avatar:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.recipient.avatar.url)
             return obj.recipient.avatar.url
         return None
 
@@ -178,7 +185,6 @@ class AppletSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True, default=None)
     class Meta:
         model = Applet
-        # UPDATED: Add is_debug_mode to the serializer
         fields = ('id', 'name', 'description', 'author_pubkey', 'code_manifest', 'created_at', 'category_name', 'is_debug_mode')
         read_only_fields = fields
 
@@ -186,3 +192,16 @@ class HighScoreSerializer(serializers.ModelSerializer):
     class Meta:
         model = HighScore
         fields = ('owner_nickname', 'score', 'wins', 'losses', 'kills', 'deaths', 'assists', 'last_updated')
+
+# --- NEW SERIALIZER FOR MODERATION ---
+class ModerationReportSerializer(serializers.ModelSerializer):
+    # Make the output more readable by showing usernames instead of just IDs
+    reporting_user = serializers.StringRelatedField()
+    reviewed_by = serializers.StringRelatedField()
+    # Include a summary of the reported message
+    reported_message = MessageSerializer(read_only=True)
+
+    class Meta:
+        model = ModerationReport
+        fields = ('id', 'reported_message', 'reporting_user', 'comment', 'status', 'created_at', 'reviewed_by', 'reviewed_at')
+# --- END NEW SERIALIZER ---

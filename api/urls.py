@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/api/urls.py
@@ -50,9 +50,13 @@ from .views import (
     HighScoreListView,
     PostAppletEventView,
     ReadAppletEventsView,
-    # NEW: Views for the shared state reconciliation protocol
     AppletSharedStateView,
     AppletStateVersionView,
+    # --- NEW IMPORTS FOR MODERATION ---
+    ReportMessageView,
+    ModeratorQueueView,
+    ReviewReportView,
+    # --- END NEW IMPORTS ---
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -86,6 +90,12 @@ urlpatterns = [
     path('messages/post/', PostMessageView.as_view(), name='post-message'),
     path('user/ignore/', IgnorePubkeyView.as_view(), name='ignore-pubkey'),
     
+    # --- NEW MODERATION URLS ---
+    path('messages/report/', ReportMessageView.as_view(), name='report-message'),
+    path('moderation/queue/', ModeratorQueueView.as_view(), name='mod-queue'),
+    path('moderation/review/<int:report_id>/', ReviewReportView.as_view(), name='mod-review'),
+    # --- END NEW URLS ---
+    
     # Admin & Moderator Actions
     path('admin/ban/', BanPubkeyView.as_view(), name='ban-pubkey'),
     path('content/request-extension/', RequestContentExtensionView.as_view(), name='request-extension'),
@@ -104,8 +114,6 @@ urlpatterns = [
     path('high_scores/<uuid:applet_id>/', HighScoreListView.as_view(), name='high-scores'),
     path('applets/<uuid:applet_id>/post_event/', PostAppletEventView.as_view(), name='applet-post-event'),
     path('applets/<uuid:applet_id>/read_events/', ReadAppletEventsView.as_view(), name='applet-read-events'),
-
-    # NEW: Endpoints for applets to get shared world state
     path('applets/<uuid:applet_id>/shared_state/', AppletSharedStateView.as_view(), name='applet-shared-state'),
     path('applets/<uuid:applet_id>/state_version/', AppletStateVersionView.as_view(), name='applet-state-version'),
 
@@ -114,5 +122,3 @@ urlpatterns = [
     path('bitsync/has_content/<str:content_hash>/', BitSyncHasContentView.as_view(), name='bitsync-has-content'),
     path('bitsync/chunk/<str:content_hash>/<int:chunk_index>/', BitSyncChunkView.as_view(), name='bitsync-chunk'),
 ]
-
-

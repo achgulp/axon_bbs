@@ -239,15 +239,24 @@ class FederatedAction(models.Model):
     ACTION_CHOICES = [
         ('ban_pubkey', 'Ban Pubkey'),
         ('unpin_content', 'Unpin Content'),
-        ('update_profile', 'Update Profile'), # New action type
+        ('update_profile', 'Update Profile'),
+        ('DELETE_CONTENT', 'Delete Content'), # New action for purged messages
     ]
-    # --- END ADDED FEATURE ---
+    STATUS_CHOICES = [
+        ('approved', 'Approved'),
+        ('pending_approval', 'Pending Approval'),
+        ('denied', 'Denied'),
+    ]
+    # --- END MODIFICATIONS ---
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     action_type = models.CharField(max_length=50, choices=ACTION_CHOICES)
     pubkey_target = models.TextField(blank=True, null=True, help_text="The pubkey targeted by the action (e.g., for a ban).")
     content_hash_target = models.CharField(max_length=64, blank=True, null=True, help_text="The content_hash of the item being acted upon.")
     action_details = models.JSONField(default=dict, help_text="Additional details, e.g., {'is_temporary': true, 'duration_hours': 72}")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    # --- ADDED FOR MODERATION FEATURES ---
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='approved')
+    # --- END ADDED FIELD ---
 
     def __str__(self):
         target = self.pubkey_target[:12] if self.pubkey_target else self.content_hash_target[:12]

@@ -38,9 +38,9 @@ from PIL import Image
 from django.core.files.base import ContentFile
 import io
 
-from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer, AppletSerializer, HighScoreSerializer
-from .permissions import TrustedPeerPermission
-from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction, Applet, AppletData, HighScore, AppletSharedState
+from .serializers import UserSerializer, MessageBoardSerializer, MessageSerializer, ContentExtensionRequestSerializer, FileAttachmentSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer, AppletSerializer, HighScoreSerializer, ModerationReportSerializer
+from .permissions import TrustedPeerPermission, IsModeratorOrAdmin
+from core.models import MessageBoard, Message, IgnoredPubkey, BannedPubkey, TrustedInstance, Alias, ContentExtensionRequest, FileAttachment, PrivateMessage, FederatedAction, Applet, AppletData, HighScore, AppletSharedState, ModerationReport
 from core.services.identity_service import IdentityService, DecryptionError
 from core.services.encryption_utils import derive_key_from_password, generate_checksum, generate_short_id, encrypt_with_public_key, decrypt_with_private_key
 from core.services.service_manager import service_manager
@@ -49,7 +49,6 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (RegisterView to FileStatusView remain unchanged) ...
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -213,7 +212,20 @@ class UpdateNicknameView(views.APIView):
             user = request.user
             user.nickname = nickname
             user.save()
-            return Response({"status": "Nickname updated successfully.", "nickname": nickname}, status=status.HTTP_200_OK)
+
+            avatar_attachment = FileAttachment.objects.filter(author=user, filename=f'{user.username}_avatar.png').first()
+
+            FederatedAction.objects.create(
+                action_type='update_profile',
+                pubkey_target=user.pubkey,
+                status='pending_approval',
+                action_details={
+                    'nickname': user.nickname,
+                    'karma': user.karma,
+                    'avatar_hash': avatar_attachment.manifest.get('content_hash') if avatar_attachment else None
+                }
+            )
+            return Response({"status": "Nickname update submitted for approval.", "nickname": nickname}, status=status.HTTP_200_OK)
         except IntegrityError:
             return Response({"error": "This nickname is already taken."}, status=status.HTTP_409_CONFLICT)
         except Exception as e:
@@ -229,7 +241,9 @@ class UserProfileView(views.APIView):
             "username": user.username,
             "nickname": user.nickname,
             "pubkey": user.pubkey,
-            "avatar_url": user.avatar.url if user.avatar else None,
+            "avatar_url": request.build_absolute_uri(user.avatar.url) if user.avatar else None,
+            "karma": user.karma,
+            "is_moderator": user.is_moderator,
         })
 
 class UploadAvatarView(views.APIView):
@@ -257,11 +271,38 @@ class UploadAvatarView(views.APIView):
             img.save(thumb_io, format='PNG')
             
             user = request.user
-            user.avatar.save(f'{user.username}_avatar.png', ContentFile(thumb_io.getvalue()), save=True)
             
+            file_content = {
+                "type": "file", "filename": f'{user.username}_avatar.png', "content_type": 'image/png',
+                "size": thumb_io.tell(), "data": base64.b64encode(thumb_io.getvalue()).decode('ascii')
+            }
+            _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(file_content)
+            
+            FileAttachment.objects.update_or_create(
+                author=user,
+                filename=f'{user.username}_avatar.png',
+                defaults={
+                    'content_type': 'image/png',
+                    'size': thumb_io.tell(),
+                    'manifest': manifest
+                }
+            )
+
+            user.avatar.save(f'{user.username}_avatar.png', ContentFile(thumb_io.getvalue()), save=True)
             user.save()
 
-            return Response({"status": "Avatar updated.", "avatar_url": user.avatar.url})
+            FederatedAction.objects.create(
+                action_type='update_profile',
+                pubkey_target=user.pubkey,
+                status='pending_approval',
+                action_details={
+                    'nickname': user.nickname,
+                    'karma': user.karma,
+                    'avatar_hash': manifest.get('content_hash')
+                }
+            )
+
+            return Response({"status": "Avatar update submitted for approval.", "avatar_url": user.avatar.url})
 
         except Exception as e:
             logger.error(f"Could not process avatar for {request.user.username}: {e}")
@@ -470,7 +511,6 @@ class FileUploadView(views.APIView):
             logger.error(f"Failed to process file upload for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "Server error during file processing."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 class FileDownloadView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request, file_id, *args, **kwargs):
@@ -539,7 +579,6 @@ class DownloadContentView(views.APIView):
             logger.error(f"Error during generic content download for hash {content_hash}: {e}", exc_info=True)
             return Response({"error": "An error occurred while preparing content for download."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 class FileStatusView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -556,34 +595,22 @@ class FileStatusView(views.APIView):
             logger.error(f"Error checking status for file {file_id}: {e}", exc_info=True)
             return Response({"error": "Could not determine file status."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# --- MODIFICATION START (Sort boards and restrict by access level) ---
 class MessageBoardListView(generics.ListAPIView):
     serializer_class = MessageBoardSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        """
-        This method is overridden to filter boards based on the
-        requesting user's access level and sort them by name.
-        """
         user_access_level = self.request.user.access_level
         return MessageBoard.objects.filter(
             required_access_level__lte=user_access_level
         ).order_by('name')
-# --- MODIFICATION END ---
 
 class MessageListView(generics.ListAPIView):
     serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated]
-
-    # --- ADD THIS METHOD (To help fix avatar URLs) ---
+    
     def get_serializer_context(self):
-        """
-        Pass the request context to the serializer. This is needed
-        for the serializer to build absolute URLs for media files.
-        """
         return {'request': self.request}
-    # --- END OF METHOD ---
 
     def get_queryset(self):
         board_id = self.kwargs['pk']
@@ -666,7 +693,78 @@ class BanPubkeyView(views.APIView):
         status_msg = f"Pubkey temporarily banned until {expires_at.strftime('%Y-%m-%d %H:%M:%S %Z')}." if is_temporary else "Pubkey permanently banned."
         return Response({"status": status_msg}, status=status.HTTP_200_OK)
 
-# ... (Remaining views from RequestContentExtensionView to the end of the file remain unchanged) ...
+class ReportMessageView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        message_id = request.data.get('message_id')
+        comment = request.data.get('comment', '')
+        
+        try:
+            message_to_report = Message.objects.get(id=message_id)
+            if message_to_report.author == request.user:
+                return Response({"error": "You cannot report your own messages."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            report, created = ModerationReport.objects.get_or_create(
+                reported_message=message_to_report,
+                reporting_user=request.user,
+                defaults={'comment': comment}
+            )
+
+            if not created:
+                return Response({"error": "You have already reported this message."}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response({"status": "Message reported successfully."}, status=status.HTTP_201_CREATED)
+        except Message.DoesNotExist:
+            return Response({"error": "Message not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error creating report by user {request.user.username}: {e}")
+            return Response({"error": "An error occurred while creating the report."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class ModeratorQueueView(generics.ListAPIView):
+    permission_classes = [IsModeratorOrAdmin]
+    serializer_class = ModerationReportSerializer
+    queryset = ModerationReport.objects.filter(status='pending').order_by('created_at')
+
+class ReviewReportView(views.APIView):
+    permission_classes = [IsModeratorOrAdmin]
+
+    def post(self, request, report_id, *args, **kwargs):
+        action = request.data.get('action') # "approve" or "reject"
+        try:
+            report = ModerationReport.objects.get(id=report_id, status='pending')
+        except ModerationReport.DoesNotExist:
+            return Response({"error": "Report not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
+
+        if action == 'approve':
+            report.status = 'approved'
+            report.reviewed_by = request.user
+            report.reviewed_at = timezone.now()
+            
+            reporter = report.reporting_user
+            reporter.karma = reporter.karma + 5
+            reporter.save()
+            
+            message_to_delete = report.reported_message
+            if message_to_delete.manifest:
+                FederatedAction.objects.create(
+                    action_type='DELETE_CONTENT',
+                    content_hash_target=message_to_delete.manifest.get('content_hash'),
+                    action_details={'reason': f'Content removed by {request.user.username} based on user report: {report.comment}'}
+                )
+            
+            message_to_delete.delete()
+            report.save()
+            return Response({"status": "Report approved and message deleted."})
+
+        elif action == 'reject':
+            report.status = 'rejected'
+            report.reviewed_by = request.user
+            report.reviewed_at = timezone.now()
+            report.save()
+            return Response({"status": "Report rejected."})
+
+        return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
 
 class RequestContentExtensionView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -732,7 +830,7 @@ class SyncView(views.APIView):
             new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
             new_applets = Applet.objects.filter(created_at__gt=since_dt, is_local=False, code_manifest__isnull=False)
-            new_actions = FederatedAction.objects.filter(created_at__gt=since_dt)
+            new_actions = FederatedAction.objects.filter(created_at__gt=since_dt, status='approved')
 
             manifests = []
             all_items = list(new_messages) + list(new_files) + list(new_pms) + list(new_applets)
@@ -912,7 +1010,7 @@ class PostAppletEventView(views.APIView):
                 author=user, 
                 pubkey=user.pubkey, 
                 manifest=manifest,
-                agent_status='pending' # Explicitly flag for agent processing
+                agent_status='pending'
             )
             return Response({"status": "event posted successfully"}, status=status.HTTP_201_CREATED)
         except Applet.DoesNotExist:
@@ -935,7 +1033,6 @@ class ReadAppletEventsView(generics.ListAPIView):
             return Message.objects.none()
         return Message.objects.none()
 
-# NEW: View for applets to get the shared world state
 class AppletSharedStateView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -951,7 +1048,6 @@ class AppletSharedStateView(views.APIView):
         except AppletSharedState.DoesNotExist:
             raise Http404
 
-# NEW: View for peers to quickly check the version of the shared state
 class AppletStateVersionView(views.APIView):
     permission_classes = [TrustedPeerPermission]
 
@@ -960,4 +1056,4 @@ class AppletStateVersionView(views.APIView):
             shared_state = AppletSharedState.objects.get(applet_id=applet_id)
             return JsonResponse({"version": shared_state.version})
         except AppletSharedState.DoesNotExist:
-            raise Http404
+            raise Http4e
