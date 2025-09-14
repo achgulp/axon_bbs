@@ -39,7 +39,6 @@ class ModeratorAgentService:
         self.log_board = None
         self.is_initialized = False
         self.bitsync_service = BitSyncService()
-        # Store the host's public key once on initialization
         self.host_pubkey = None
 
     def start(self):
@@ -66,7 +65,7 @@ class ModeratorAgentService:
             return False
 
     def _run(self):
-        time.sleep(15) # Wait for Django to fully start
+        time.sleep(15)
         while not self.shutdown_event.is_set():
             if not self.is_initialized:
                 self._initialize_agent()
@@ -74,6 +73,7 @@ class ModeratorAgentService:
             if self.is_initialized:
                 try:
                     self.process_completed_reports()
+                    # It's better to process federated actions after reports
                     self.process_federated_actions()
                 except Exception as e:
                     logger.error(f"Error in Moderator Agent loop: {e}", exc_info=True)
@@ -81,6 +81,7 @@ class ModeratorAgentService:
             self.shutdown_event.wait(self.poll_interval)
 
     def process_completed_reports(self):
+        # This query correctly fetches reports that have been actioned (approved/rejected)
         reports_to_log = ModerationReport.objects.filter(is_logged=False).exclude(status='pending')
         for report in reports_to_log:
             moderator = report.reviewed_by
@@ -92,7 +93,7 @@ class ModeratorAgentService:
                 "details": {
                     "report_id": report.id,
                     "reporter_nickname": report.reporting_user.nickname,
-                    "decision": report.status, # 'approved' or 'rejected'
+                    "decision": report.status,
                     "target_message_subject": report.reported_message.subject,
                     "target_message_hash": report.reported_message.manifest.get('content_hash')
                 }
@@ -102,7 +103,8 @@ class ModeratorAgentService:
             report.save()
 
     def process_federated_actions(self):
-        actions_to_log = FederatedAction.objects.filter(is_logged=False, status='approved')
+        # --- MODIFIED: Ensure we only log actions that have a timestamp ---
+        actions_to_log = FederatedAction.objects.filter(is_logged=False, status='approved', created_at__isnull=False)
         for action in actions_to_log:
              log_entry = {
                 "log_type": "FEDERATED_ACTION",
