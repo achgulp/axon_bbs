@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/models.py
@@ -38,6 +38,12 @@ class User(AbstractUser):
     nickname = models.CharField(max_length=50, unique=True, blank=True, null=True, help_text="User's chosen nickname.")
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     is_agent = models.BooleanField(default=False, help_text="Designates this user as an automated agent.")
+    
+    # --- ADDED FOR MODERATION FEATURES ---
+    is_moderator = models.BooleanField(default=False, help_text="Grants moderator permissions.")
+    karma = models.IntegerField(default=10, help_text="User's reputation score.")
+    last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this user.")
+    # --- END ADDED FIELDS ---
    
     groups = models.ManyToManyField(
         'auth.Group',
@@ -56,7 +62,6 @@ class User(AbstractUser):
         related_query_name="user",
     )
     def __str__(self):
- 
         return self.username
     
     def save(self, *args, **kwargs):
@@ -66,13 +71,12 @@ class User(AbstractUser):
             try:
                 pubkey_obj = serialization.load_pem_public_key(self.pubkey.encode())
                 self.pubkey = pubkey_obj.public_bytes(
- 
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
                 ).decode('utf-8').strip()
             except Exception as e:
                 print(f"Warning: Could not normalize public key for user {self.username}: {e}")
-     
+        
         super(User, self).save(*args, **kwargs)
 
 
@@ -130,7 +134,6 @@ class ValidFileType(models.Model):
     is_enabled = models.BooleanField(default=True, help_text="Disable to temporarily disallow this file type.")
 
     def __str__(self):
-    
         return f"{self.mime_type} ({self.description})"
 
 class Content(models.Model):
@@ -148,7 +151,6 @@ class MessageBoard(models.Model):
     description = models.TextField(blank=True)
     required_access_level = models.PositiveIntegerField(default=10)
     def __str__(self):
-        
         return self.name
 
 class FileAttachment(Content):
@@ -168,6 +170,10 @@ class Message(Content):
     manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for P2P content distribution.")
     attachments = models.ManyToManyField(FileAttachment, blank=True, related_name='messages')
     agent_status = models.CharField(max_length=20, default='pending', choices=[('pending', 'Pending'), ('processed', 'Processed'), ('failed', 'Failed')])
+    
+    # --- ADDED FOR MODERATION FEATURES ---
+    last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this message.")
+    # --- END ADDED FIELD ---
 
     def __str__(self):
         return f"'{self.subject}' by {self.author.username if self.author else 'system'}"
@@ -183,7 +189,6 @@ class PrivateMessage(Content):
     def __str__(self):
         recipient_display = "Unknown"
         if self.recipient:
-            
             recipient_display = self.recipient.username
         else:
             recipient_display = f"PubKey starting with {self.recipient_pubkey[:12]}..."
@@ -203,7 +208,6 @@ class TrustedInstance(models.Model):
                 pubkey_obj = serialization.load_pem_public_key(self.pubkey.encode())
                 self.pubkey = pubkey_obj.public_bytes(
                     encoding=serialization.Encoding.PEM,
-                    
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
                 ).decode('utf-8').strip()
             except Exception as e:
@@ -215,7 +219,6 @@ class TrustedInstance(models.Model):
 class ContentExtensionRequest(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
-      
         ('approved', 'Approved'),
         ('denied', 'Denied'),
     ]
@@ -232,10 +235,13 @@ class ContentExtensionRequest(models.Model):
         return f"Extension Request for {self.content_type} {self.id} by {self.user.username}"
 
 class FederatedAction(models.Model):
+    # --- ADDED FOR MODERATION FEATURES ---
     ACTION_CHOICES = [
         ('ban_pubkey', 'Ban Pubkey'),
         ('unpin_content', 'Unpin Content'),
+        ('update_profile', 'Update Profile'), # New action type
     ]
+    # --- END ADDED FEATURE ---
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     action_type = models.CharField(max_length=50, choices=ACTION_CHOICES)
     pubkey_target = models.TextField(blank=True, null=True, help_text="The pubkey targeted by the action (e.g., for a ban).")
@@ -246,6 +252,25 @@ class FederatedAction(models.Model):
     def __str__(self):
         target = self.pubkey_target[:12] if self.pubkey_target else self.content_hash_target[:12]
         return f"'{self.action_type}' on target '{target}...'"
+
+# --- NEW MODEL FOR MODERATION REPORTS ---
+class ModerationReport(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'), # Report was valid, action taken
+        ('rejected', 'Rejected'), # Report was invalid
+    ]
+    reported_message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='reports')
+    reporting_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reports_filed')
+    comment = models.TextField(blank=True, help_text="Reason for the report.")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reports_reviewed')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Report by {self.reporting_user.username} on message {self.reported_message.id}"
+# --- END NEW MODEL ---
 
 class AppletCategory(models.Model):
     name = models.CharField(max_length=50, unique=True)
@@ -313,5 +338,3 @@ class HighScore(models.Model):
 
     def __str__(self):
         return f"{self.owner_nickname}: {self.score} on {self.applet.name}"
-
-

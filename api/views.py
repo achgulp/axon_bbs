@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/api/views.py
@@ -49,7 +49,7 @@ from core.services.content_validator import is_file_type_valid
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ... (Existing views from RegisterView to HighScoreListView are unchanged) ...
+# ... (RegisterView to FileStatusView remain unchanged) ...
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -556,14 +556,35 @@ class FileStatusView(views.APIView):
             logger.error(f"Error checking status for file {file_id}: {e}", exc_info=True)
             return Response({"error": "Could not determine file status."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# --- MODIFICATION START (Sort boards and restrict by access level) ---
 class MessageBoardListView(generics.ListAPIView):
-    queryset = MessageBoard.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
     serializer_class = MessageBoardSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        This method is overridden to filter boards based on the
+        requesting user's access level and sort them by name.
+        """
+        user_access_level = self.request.user.access_level
+        return MessageBoard.objects.filter(
+            required_access_level__lte=user_access_level
+        ).order_by('name')
+# --- MODIFICATION END ---
 
 class MessageListView(generics.ListAPIView):
     serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    # --- ADD THIS METHOD (To help fix avatar URLs) ---
+    def get_serializer_context(self):
+        """
+        Pass the request context to the serializer. This is needed
+        for the serializer to build absolute URLs for media files.
+        """
+        return {'request': self.request}
+    # --- END OF METHOD ---
+
     def get_queryset(self):
         board_id = self.kwargs['pk']
         ignored_pubkeys = IgnoredPubkey.objects.filter(user=self.request.user).values_list('pubkey', flat=True)
@@ -644,6 +665,8 @@ class BanPubkeyView(views.APIView):
 
         status_msg = f"Pubkey temporarily banned until {expires_at.strftime('%Y-%m-%d %H:%M:%S %Z')}." if is_temporary else "Pubkey permanently banned."
         return Response({"status": status_msg}, status=status.HTTP_200_OK)
+
+# ... (Remaining views from RequestContentExtensionView to the end of the file remain unchanged) ...
 
 class RequestContentExtensionView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -938,4 +961,3 @@ class AppletStateVersionView(views.APIView):
             return JsonResponse({"version": shared_state.version})
         except AppletSharedState.DoesNotExist:
             raise Http404
-

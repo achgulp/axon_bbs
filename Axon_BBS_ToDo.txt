@@ -1,0 +1,20 @@
+1) Sort Message board in Alpha
+2) Message board restriction for users that are not high enough to see board.
+3) Moderation and Moderation Agent
+4) Agent processing bogus messages more gracefully
+ERROR Error processing event 'test on 202509141042': Expecting value: line 1 column 1 (char 0)
+Traceback (most recent call last):
+  File "/home/dukejer/axon_bbs/core/services/overlord_agent_service.py", line 412, in process_game_events
+    body = json.loads(post.body)
+  File "/usr/lib/python3.13/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/usr/lib/python3.13/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+INFO Creating manifest for 2 total instance(s).
+5) Avatars still not showing up on messages.
+6) Aliases Nick Names and Avatars sent through moderation events to other BBSes to be processed

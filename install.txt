@@ -1,148 +1,96 @@
-Axon BBS - New System Installation Guide (Ubuntu 24.04)
-======================================================
+Axon BBS - Tor-Only Raspberry Pi Installation Guide
+===================================================
 
-This guide outlines the complete process for setting up a new Axon BBS instance from scratch. It follows the project's convention of regenerating database migrations on each new setup.
+This guide covers the setup of an Axon BBS instance on a Debian-based system (like Raspberry Pi OS) that can only access the internet through Tor.
 
----
-## 1. System Preparation (Run as root or with sudo)
+--- Phase 1: System Prerequisites ---
 
-# Update system packages to the latest versions
-sudo apt update
-sudo apt upgrade -y
+1. Update your system's package list.
+   # sudo apt-get update
 
-# Install core dependencies: Python, Node.js, Tor, Git, and supporting libraries
-sudo apt install python3 python3-pip python3-venv -y
-sudo apt install nodejs npm -y
-sudo apt install tor -y
-sudo apt install libmagic-dev -y
-sudo apt install git -y
+2. Install all required software: Python, Git, Torsocks, and Node.js/NPM.
+   # sudo apt-get install python3 python3-pip python3-venv torsocks git nodejs npm -y
 
-# Enable and start the Tor service
-sudo systemctl enable --now tor
+--- Phase 2: Download Source Code ---
 
+1. Create a project directory.
+   # mkdir ~/pibbs_project && cd ~/pibbs_project
 
----
-## 2. User Creation (Run as root or with sudo)
+2. Clone the repository using torsocks to route the connection through Tor.
+   # torsocks git clone https://github.com/achgulp/axon_bbs
 
-# Create a dedicated, non-root user for the application (e.g., "axon")
-# The --uid 1000 flag is optional but sets a specific user ID.
-sudo adduser --uid 1000 axon
+3. Enter the project directory.
+   # cd axon_bbs
 
-# Add the new user to the sudo group to allow administrative tasks
-sudo usermod -aG sudo axon
+--- Phase 3: Backend Setup ---
 
-# Switch to the new user for the rest of the installation
-su - axon
+1. Create and activate a Python virtual environment.
+   # python3 -m venv venv
+   # source venv/bin/activate
 
+2. Install the required Python packages using torsocks.
+   # torsocks pip install -r requirements.txt
 
----
-## 3. Project Installation (Run as the new user)
+3. Generate the secret key and .env file.
+   # python generate_secret_key.py
 
-# Navigate to the home directory (should be the default)
-cd ~
+4. Run the database migrations. The necessary directories will be created automatically.
+   # python manage.py migrate
 
-# Clone the project repository (replace with your actual repository URL)
-git clone <your-repo-url>
-cd axon_bbs
+5. Create your administrator account.
+   # python manage.py createsuperuser
 
+--- Phase 4: Frontend Setup ---
 
----
-## 4. Environment Setup (Run as the new user)
+1. Navigate to the frontend directory.
+   # cd frontend
 
-# Create and activate a Python virtual environment
-python3 -m venv venv
-source venv/bin/activate
+2. Install the required Node.js packages using torsocks.
+   # torsocks npm install
 
-# IMPORTANT: Proactively fix the known typo in the requirements file before installing
-sed -i 's/corsheaders==/django-cors-headers==/' requirements.txt
+3. Build the static web interface files.
+   # npm run build
 
-# Install all Python dependencies into the virtual environment
-pip install -r requirements.txt
+4. Return to the project root directory.
+   # cd ..
 
-# Install all Node.js dependencies for the frontend
-cd frontend
-npm install
-cd ..
+--- Phase 5: Tor Hidden Service Configuration ---
 
+1. Edit the main Tor configuration file.
+   # sudo nano /etc/tor/torrc
 
----
-## 5. Application & Database Setup (Run as the new user)
+2. Add these lines to the bottom of the file to create the hidden service.
+   HiddenServiceDir /var/lib/tor/bbs_hidden_service/
+   HiddenServicePort 80 127.0.0.1:8000
 
-# Generate the Django SECRET_KEY and save it to a new .env file
-python generate_secret_key.py
+3. Save the file (Ctrl+X, Y, Enter) and restart the Tor service.
+   # sudo systemctl restart tor@default.service
 
-# Create the logs directory required by the application settings
-mkdir logs
+4. View your new .onion address. Save this address.
+   # sudo cat /var/lib/tor/bbs_hidden_service/hostname
 
-# --- Database Migration Workflow ---
-# This project's configuration requires regenerating migrations for each new setup.
-# The following steps ensure a clean database build.
+--- Phase 6: Axon BBS Configuration ---
 
-# 1. Remove any stale database file
-rm -f data/axon_bbs.sqlite3
+1. Start the Django server.
+   # python manage.py runserver 0.0.0.0:8000
 
-# 2. Delete any incomplete migration files from the cloned repository
-find core/migrations/ -type f -name "*.py" -not -name "__init__.py" -delete
+2. From a computer on the same network, access the admin panel at http://<YOUR_PI_IP_ADDRESS>:8000/admin/ and log in.
 
-# 3. Create a fresh, initial migration based on the current models.py
-python manage.py makemigrations core
+3. Go to "Core" -> "Trusted instances" and add a new instance.
+   - Web ui onion url: your-new-onion-address.onion (WITHOUT http://)
+   - Is trusted peer: Leave this UNCHECKED.
+   - Save the instance.
 
-# 4. Apply the new migration to create the database schema
-python manage.py migrate
+4. On the "Trusted instances" list, check the box next to your new instance, select the "Generate and encrypt keys for LOCAL instance" action from the dropdown, and click "Go".
 
-# 5. Create your administrator account
-python manage.py createsuperuser
+5. Stop the server (Ctrl+C) and update your .env file with your onion address.
+   # nano .env
+   # Add this line:
+   ONION_ADDRESS=your-new-onion-address.onion
 
+--- Phase 7: Running the BBS ---
 
----
-## 6. Running the Application (Run as the new user)
+1. Start the server again. It is now fully configured.
+   # python manage.py runserver 0.0.0.0:8000
 
-# 1. Create the final, optimized build of the React frontend
-cd frontend
-npm run build
-cd ..
-
-# 2. Run the Django development server in a dedicated terminal (e.g., using tmux or screen)
-# The 0.0.0.0 host allows access from other machines on the network
-python manage.py runserver 0.0.0.0:8000
-
-
----
-## 7. Tor Hidden Service Setup (Run as root or with sudo)
-
-# 1. Edit the main Tor configuration file
-sudo nano /etc/tor/torrc
-
-# 2. Add the following lines to the very end of the file to define your hidden service.
-# This tells Tor where to find your service and which port to forward.
-HiddenServiceDir /var/lib/tor/axon_bbs_service/
-HiddenServicePort 80 127.0.0.1:8000
-
-# 3. Save the file (in nano: Ctrl+X, then Y, then Enter).
-
-# 4. Restart Tor to apply the changes and generate your new .onion address
-sudo systemctl restart tor
-
-# 5. View and copy your new .onion address. You will need this for the next steps.
-sudo cat /var/lib/tor/axon_bbs_service/hostname
-
-# 6. Add your .onion address to your Django project's allowed hosts.
-# Open the settings file (as your 'axon' user):
-# nano ~/axon_bbs/axon_project/settings.py
-#
-# Find the ALLOWED_HOSTS list and add your new .onion address inside the quotes.
-# For example:
-# ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'your-new-address.onion']
-#
-# Save the file. The Django server will auto-reload with the new setting.
-
----
-## 8. Post-Installation Configuration (In the Web Interface)
-
-1.  Log into the admin panel (e.g., `http://<your_vm_ip>:8000/admin/`).
-2.  Navigate to **Core > Trusted instances**.
-3.  Add a new instance for this machine itself. Use the **.onion URL** you just generated.
-4.  In the list, check the box next to this new instance and run the **"Generate and encrypt keys..."** action.
-5.  Copy the new public key.
-6.  On your other BBS instances, add this new machine as a trusted peer, using its `.onion` URL and public key, and check the **"Is trusted peer"** box.
-7.  On this new machine, add your other instances as trusted peers, making sure to check the **"Is trusted peer"** box for them.
+2. Access your BBS via the Tor Browser at your .onion address.

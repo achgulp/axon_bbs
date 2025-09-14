@@ -21,14 +21,14 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
-from pathlib import Path
+from pathlib import Path # <-- ADD THIS LINE
 
 # --- Application Version ---
 APP_VERSION = "10.5.0"
 
 def main():
     """Run administrative tasks."""
-    # --- Ensure necessary directories exist before Django tries to use them. ---
+    # --- ADD THIS BLOCK TO AUTOMATICALLY CREATE DIRECTORIES ---
     BASE_DIR = Path(__file__).resolve().parent
     REQUIRED_DIRS = [
         BASE_DIR / 'logs',
@@ -36,7 +36,7 @@ def main():
     ]
     for path in REQUIRED_DIRS:
         os.makedirs(path, exist_ok=True)
-    # --- End of added block ---
+    # --- END OF BLOCK TO ADD ---
 
     if os.environ.get('RUN_MAIN') != 'true':
         print(f"--- Axon BBS Management Utility v{APP_VERSION} ---")

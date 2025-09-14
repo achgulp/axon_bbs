@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/api/serializers.py
@@ -95,10 +95,15 @@ class MessageSerializer(serializers.ModelSerializer):
         
         return 'Anonymous'
     
+    # --- MODIFICATION START (Build absolute URL for avatars) ---
     def get_author_avatar_url(self, obj):
         if obj.author and obj.author.avatar:
-            return obj.author.avatar.url
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.author.avatar.url)
+            return obj.author.avatar.url # Fallback
         return None
+    # --- MODIFICATION END ---
 
 class PrivateMessageSerializer(serializers.ModelSerializer):
     author_display = serializers.SerializerMethodField()
