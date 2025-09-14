@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/services/service_manager.py
@@ -32,7 +32,7 @@ class ServiceManager:
         self.bitsync_service = None
         self.sync_service = None
         self.high_score_service = None
-        self.game_agents = {} # Use a dict to track running agents by username
+        self.game_agents = {}
 
     def initialize_services(self):
         logger.info("Initializing Tor service...")
@@ -49,11 +49,36 @@ class ServiceManager:
         self.high_score_service = HighScoreService()
         self.high_score_service.start()
 
-        self.start_game_agents()
+        self.start_all_game_agents()
         
         logger.info("All services initialized.")
 
-    def start_game_agents(self):
+    def _load_and_start_agent(self, agent_user):
+        """Helper function to load and start a single agent service."""
+        try:
+            username = agent_user.username
+            module_name = f"core.services.{username}_service"
+            class_name = ''.join(word.capitalize() for word in username.split('_')) + 'Service'
+            
+            logger.info(f"Attempting to start agent: {class_name} from {module_name}")
+            
+            agent_module = importlib.import_module(module_name)
+            AgentClass = getattr(agent_module, class_name)
+            
+            agent_instance = AgentClass()
+            agent_instance.start()
+            self.game_agents[username] = agent_instance
+            
+            logger.info(f"Successfully started agent for user '{username}'.")
+            return True
+
+        except (ImportError, AttributeError):
+            logger.error(f"Failed to start agent for user '{agent_user.username}'. Could not find matching service module or class.")
+        except Exception as e:
+            logger.error(f"An unexpected error occurred while starting agent for '{agent_user.username}': {e}", exc_info=True)
+        return False
+
+    def start_all_game_agents(self):
         from core.models import User
 
         try:
@@ -71,25 +96,38 @@ class ServiceManager:
 
         logger.info(f"Found {agent_users.count()} game agent(s) to start...")
         for agent_user in agent_users:
-            try:
-                module_name = f"core.services.{agent_user.username}_service"
-                class_name = ''.join(word.capitalize() for word in agent_user.username.split('_')) + 'Service'
-                
-                logger.info(f"Attempting to start agent: {class_name} from {module_name}")
-                
-                agent_module = importlib.import_module(module_name)
-                AgentClass = getattr(agent_module, class_name)
-                
-                agent_instance = AgentClass()
-                agent_instance.start()
-                self.game_agents[agent_user.username] = agent_instance
-                
-                logger.info(f"Successfully started agent for user '{agent_user.username}'.")
+            self._load_and_start_agent(agent_user)
+            
+    # --- NEW METHOD to start a single agent ---
+    def start_agent(self, user):
+        """Starts a new agent service that is not currently running."""
+        if not user.is_agent:
+            logger.warning(f"Cannot start agent for '{user.username}': 'is_agent' flag is false.")
+            return False
+        if user.username in self.game_agents:
+            logger.warning(f"Cannot start agent for '{user.username}': Service is already running.")
+            return False
+        
+        return self._load_and_start_agent(user)
 
-            except (ImportError, AttributeError) as e:
-                logger.error(f"Failed to start agent for user '{agent_user.username}'. Could not find matching service module or class.")
-            except Exception as e:
-                logger.error(f"An unexpected error occurred while starting agent for '{agent_user.username}': {e}", exc_info=True)
+    # --- NEW METHOD to stop a single agent ---
+    def stop_agent(self, username):
+        """Stops a running agent service."""
+        if username not in self.game_agents:
+            logger.warning(f"Cannot stop agent for '{username}': Service is not running.")
+            return False
+        
+        logger.info(f"Attempting to stop agent '{username}'...")
+        agent_instance = self.game_agents.get(username)
+        agent_instance.stop()
+        agent_instance.thread.join(timeout=10)
+        if agent_instance.thread.is_alive():
+            logger.error(f"Failed to stop agent thread for '{username}' in time.")
+            return False
+        
+        del self.game_agents[username]
+        logger.info(f"Agent '{username}' stopped successfully.")
+        return True
 
     def reload_agent(self, username):
         logger.info(f"Attempting to hot-reload agent '{username}'...")
@@ -97,35 +135,15 @@ class ServiceManager:
             logger.error(f"Cannot reload: Agent '{username}' is not currently running.")
             return False
 
-        # 1. Stop the old agent thread
-        old_agent_instance = self.game_agents.get(username)
-        old_agent_instance.stop()
-        old_agent_instance.thread.join(timeout=10)
-        if old_agent_instance.thread.is_alive():
-            logger.error(f"Failed to stop agent thread for '{username}' in time.")
-            return False
-        logger.info(f"Old agent thread for '{username}' has stopped.")
-
-        # 2. Reload the module and start a new instance
-        try:
-            module_name = f"core.services.{username}_service"
-            class_name = ''.join(word.capitalize() for word in username.split('_')) + 'Service'
-
-            agent_module = importlib.import_module(module_name)
-            importlib.reload(agent_module)
-            
-            AgentClass = getattr(agent_module, class_name)
-            
-            new_agent_instance = AgentClass()
-            new_agent_instance.start()
-            self.game_agents[username] = new_agent_instance
-            
-            logger.info(f"Successfully reloaded and started new agent for '{username}'.")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to reload and start new agent for '{username}': {e}", exc_info=True)
-            del self.game_agents[username]
-            return False
+        if self.stop_agent(username):
+            from core.models import User
+            try:
+                user = User.objects.get(username=username)
+                return self.start_agent(user)
+            except User.DoesNotExist:
+                logger.error(f"Cannot restart agent for '{username}': User not found.")
+                return False
+        return False
 
     def shutdown(self):
         if self.tor_service and self.tor_service.is_running():
@@ -133,4 +151,3 @@ class ServiceManager:
             self.tor_service.stop()
 
 service_manager = ServiceManager()
-

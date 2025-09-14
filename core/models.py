@@ -38,12 +38,9 @@ class User(AbstractUser):
     nickname = models.CharField(max_length=50, unique=True, blank=True, null=True, help_text="User's chosen nickname.")
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     is_agent = models.BooleanField(default=False, help_text="Designates this user as an automated agent.")
-    
-    # --- ADDED FOR MODERATION FEATURES ---
     is_moderator = models.BooleanField(default=False, help_text="Grants moderator permissions.")
     karma = models.IntegerField(default=10, help_text="User's reputation score.")
     last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this user.")
-    # --- END ADDED FIELDS ---
    
     groups = models.ManyToManyField(
         'auth.Group',
@@ -170,10 +167,7 @@ class Message(Content):
     manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for P2P content distribution.")
     attachments = models.ManyToManyField(FileAttachment, blank=True, related_name='messages')
     agent_status = models.CharField(max_length=20, default='pending', choices=[('pending', 'Pending'), ('processed', 'Processed'), ('failed', 'Failed')])
-    
-    # --- ADDED FOR MODERATION FEATURES ---
     last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this message.")
-    # --- END ADDED FIELD ---
 
     def __str__(self):
         return f"'{self.subject}' by {self.author.username if self.author else 'system'}"
@@ -235,39 +229,36 @@ class ContentExtensionRequest(models.Model):
         return f"Extension Request for {self.content_type} {self.id} by {self.user.username}"
 
 class FederatedAction(models.Model):
-    # --- ADDED FOR MODERATION FEATURES ---
     ACTION_CHOICES = [
         ('ban_pubkey', 'Ban Pubkey'),
         ('unpin_content', 'Unpin Content'),
         ('update_profile', 'Update Profile'),
-        ('DELETE_CONTENT', 'Delete Content'), # New action for purged messages
+        ('DELETE_CONTENT', 'Delete Content'),
     ]
     STATUS_CHOICES = [
         ('approved', 'Approved'),
         ('pending_approval', 'Pending Approval'),
         ('denied', 'Denied'),
     ]
-    # --- END MODIFICATIONS ---
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     action_type = models.CharField(max_length=50, choices=ACTION_CHOICES)
     pubkey_target = models.TextField(blank=True, null=True, help_text="The pubkey targeted by the action (e.g., for a ban).")
     content_hash_target = models.CharField(max_length=64, blank=True, null=True, help_text="The content_hash of the item being acted upon.")
     action_details = models.JSONField(default=dict, help_text="Additional details, e.g., {'is_temporary': true, 'duration_hours': 72}")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    # --- ADDED FOR MODERATION FEATURES ---
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='approved')
-    # --- END ADDED FIELD ---
+    # --- NEW FIELD ---
+    is_logged = models.BooleanField(default=False, help_text="True if this action has been logged by the moderation agent.")
 
     def __str__(self):
         target = self.pubkey_target[:12] if self.pubkey_target else self.content_hash_target[:12]
         return f"'{self.action_type}' on target '{target}...'"
 
-# --- NEW MODEL FOR MODERATION REPORTS ---
 class ModerationReport(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
-        ('approved', 'Approved'), # Report was valid, action taken
-        ('rejected', 'Rejected'), # Report was invalid
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
     ]
     reported_message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='reports')
     reporting_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reports_filed')
@@ -276,10 +267,11 @@ class ModerationReport(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reports_reviewed')
     reviewed_at = models.DateTimeField(null=True, blank=True)
+    # --- NEW FIELD ---
+    is_logged = models.BooleanField(default=False, help_text="True if this report's outcome has been logged.")
 
     def __str__(self):
         return f"Report by {self.reporting_user.username} on message {self.reported_message.id}"
-# --- END NEW MODEL ---
 
 class AppletCategory(models.Model):
     name = models.CharField(max_length=50, unique=True)
