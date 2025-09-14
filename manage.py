@@ -21,13 +21,23 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
+from pathlib import Path
 
 # --- Application Version ---
-# UPDATED: Version number incremented to reflect the Agent & Event-Bus architecture.
-[cite_start]APP_VERSION = "10.5.0" [cite: 223]
+APP_VERSION = "10.5.0"
 
 def main():
     """Run administrative tasks."""
+    # --- Ensure necessary directories exist before Django tries to use them. ---
+    BASE_DIR = Path(__file__).resolve().parent
+    REQUIRED_DIRS = [
+        BASE_DIR / 'logs',
+        BASE_DIR / 'data',
+    ]
+    for path in REQUIRED_DIRS:
+        os.makedirs(path, exist_ok=True)
+    # --- End of added block ---
+
     if os.environ.get('RUN_MAIN') != 'true':
         print(f"--- Axon BBS Management Utility v{APP_VERSION} ---")
     
@@ -38,7 +48,7 @@ def main():
         
         raise ImportError(
             "Couldn't import Django. Are you sure it's installed and "
-            [cite_start]"available on your PYTHONPATH environment variable? Did you " [cite: 224]
+            "available on your PYTHONPATH environment variable? Did you "
             "forget to activate a virtual environment?"
         ) from exc
 
@@ -48,7 +58,7 @@ def main():
     if is_runserver and not is_reloader:
        
         print("Starting development server at http://127.0.0.1:8000/")
-        [cite_start]print("Admin site available at http://127.0.0.1:8000/admin/") [cite: 225]
+        print("Admin site available at http://127.0.0.1:8000/admin/")
 
     execute_from_command_line(sys.argv)
 
