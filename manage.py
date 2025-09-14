@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/manage.py
@@ -24,7 +24,7 @@ import sys
 
 # --- Application Version ---
 # UPDATED: Version number incremented to reflect the Agent & Event-Bus architecture.
-APP_VERSION = "10.5.0"
+[cite_start]APP_VERSION = "10.5.0" [cite: 223]
 
 def main():
     """Run administrative tasks."""
@@ -38,7 +38,7 @@ def main():
         
         raise ImportError(
             "Couldn't import Django. Are you sure it's installed and "
-            "available on your PYTHONPATH environment variable? Did you "
+            [cite_start]"available on your PYTHONPATH environment variable? Did you " [cite: 224]
             "forget to activate a virtual environment?"
         ) from exc
 
@@ -48,11 +48,10 @@ def main():
     if is_runserver and not is_reloader:
        
         print("Starting development server at http://127.0.0.1:8000/")
-        print("Admin site available at http://127.0.0.1:8000/admin/")
+        [cite_start]print("Admin site available at http://127.0.0.1:8000/admin/") [cite: 225]
 
     execute_from_command_line(sys.argv)
 
 
 if __name__ == '__main__':
     main()
-
