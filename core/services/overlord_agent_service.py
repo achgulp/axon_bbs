@@ -50,7 +50,6 @@ GAME_CONFIG = {
     }
 }
 
-# --- CORRECTED CLASS NAME ---
 class OverlordAgentService:
     def __init__(self, poll_interval=15, reconciliation_interval=300):
         self.poll_interval = poll_interval
@@ -61,11 +60,12 @@ class OverlordAgentService:
         self.last_reconciliation_time = 0
         self.last_world_tick_time = 0
         self.game_applet_name = "Fortress Overlord"
-        # --- CORRECTED AGENT USERNAME ---
         self.agent_username = "overlord_agent" 
         self.agent_user = None
         self.game_board = None
         self.game_applet = None
+        # --- ADDED: A flag to track initialization ---
+        self.is_initialized = False
         self.bitsync_service = BitSyncService()
         self.sync_service = service_manager.sync_service
 
@@ -82,18 +82,31 @@ class OverlordAgentService:
             self.agent_user = User.objects.get(username=self.agent_username, is_agent=True)
             self.game_applet = Applet.objects.get(name=self.game_applet_name)
             self.game_board = self.game_applet.event_board
-            if not self.game_board: return False
+            if not self.game_board:
+                logger.warning(f"Agent '{self.agent_username}' cannot initialize: Game board not set for applet '{self.game_applet_name}'.")
+                return False
             logger.info(f"Agent '{self.agent_user.username}' is monitoring board '{self.game_board.name}'.")
+            # --- ADDED: Set flag on success ---
+            self.is_initialized = True
             return True
         except (User.DoesNotExist, Applet.DoesNotExist):
+            logger.warning(f"Agent '{self.agent_username}' cannot initialize yet: User or Applet not found in database.")
             return False
 
+    # --- MODIFIED: _run method is now more resilient ---
     def _run(self):
-        time.sleep(10)
-        if not self._initialize_agent(): return
+        time.sleep(10) # Initial delay for Django to start up
 
         while not self.shutdown_event.is_set():
             try:
+                # If initialization failed before, try again
+                if not self.is_initialized:
+                    if not self._initialize_agent():
+                        # If it fails again, wait for the next poll interval before retrying
+                        self.shutdown_event.wait(self.poll_interval)
+                        continue
+
+                # If initialization is successful, run the main logic
                 current_time = time.time()
                 self.process_game_events()
                 if current_time - self.last_world_tick_time > self.world_tick_interval:
@@ -272,6 +285,7 @@ class OverlordAgentService:
     def _get_player_data(self, user):
         try:
             player_applet_data = AppletData.objects.get(applet=self.game_applet, owner=user)
+            # This call depends on the SyncService having a loaded identity
             decrypted_bytes = self.sync_service.get_decrypted_content(player_applet_data.data_manifest)
             return json.loads(decrypted_bytes.decode('utf-8')).get('data', {}) if decrypted_bytes else None
         except AppletData.DoesNotExist:
