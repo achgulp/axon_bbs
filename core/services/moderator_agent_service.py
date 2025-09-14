@@ -21,8 +21,9 @@ import time
 import logging
 import json
 from django.utils import timezone
+from datetime import timedelta
 
-from core.models import User, Message, MessageBoard, ModerationReport, FederatedAction, TrustedInstance
+from core.models import User, Message, MessageBoard, ModerationReport, FederatedAction, TrustedInstance, BannedPubkey
 from .service_manager import service_manager
 from .bitsync_service import BitSyncService
 
@@ -72,24 +73,75 @@ class ModeratorAgentService:
             
             if self.is_initialized:
                 try:
+                    # Log local moderation actions
                     self.process_completed_reports()
-                    # It's better to process federated actions after reports
                     self.process_federated_actions()
+                    # --- NEW: Process incoming logs from peers ---
+                    self.process_incoming_logs()
                 except Exception as e:
                     logger.error(f"Error in Moderator Agent loop: {e}", exc_info=True)
 
             self.shutdown_event.wait(self.poll_interval)
 
+    # --- NEW METHOD to process logs from other BBSes ---
+    def process_incoming_logs(self):
+        """Reads the moderation board for events from other agents and applies them locally."""
+        incoming_logs = Message.objects.filter(
+            board=self.log_board,
+            agent_status='pending'
+        ).exclude(author=self.agent_user)
+
+        for log_message in incoming_logs:
+            try:
+                log_data = json.loads(log_message.body)
+                details = log_data.get('details', {})
+                
+                if log_data.get('log_type') == 'FEDERATED_ACTION':
+                    action_type = details.get('action_type')
+                    
+                    if action_type == 'ban_pubkey':
+                        pubkey = details.get('target_pubkey')
+                        if pubkey:
+                            action_details = details.get('action_details', {})
+                            is_temporary = action_details.get('is_temporary', False)
+                            duration = action_details.get('duration_hours')
+                            expires_at = None
+                            if is_temporary and duration:
+                                expires_at = timezone.now() + timedelta(hours=int(duration))
+                            
+                            BannedPubkey.objects.update_or_create(
+                                pubkey=pubkey,
+                                defaults={'is_temporary': is_temporary, 'expires_at': expires_at}
+                            )
+                            logger.info(f"Applied federated ban for pubkey: {pubkey[:12]}...")
+
+                    elif action_type == 'DELETE_CONTENT':
+                        content_hash = details.get('target_hash')
+                        if content_hash:
+                            Message.objects.filter(manifest__content_hash=content_hash).delete()
+                            logger.info(f"Applied federated delete for content hash: {content_hash[:12]}...")
+
+                log_message.agent_status = 'processed'
+            except json.JSONDecodeError:
+                logger.warning(f"Moderator agent could not parse incoming log message body (ID: {log_message.id})")
+                log_message.agent_status = 'failed'
+            except Exception as e:
+                logger.error(f"Error processing incoming log (ID: {log_message.id}): {e}", exc_info=True)
+                log_message.agent_status = 'failed'
+            
+            log_message.save()
+
     def process_completed_reports(self):
-        # This query correctly fetches reports that have been actioned (approved/rejected)
         reports_to_log = ModerationReport.objects.filter(is_logged=False).exclude(status='pending')
         for report in reports_to_log:
             moderator = report.reviewed_by
+            timestamp_to_log = report.reviewed_at if report.reviewed_at else timezone.now()
+            
             log_entry = {
                 "log_type": "REPORT_REVIEWED",
                 "moderator_nickname": moderator.nickname if moderator else "System",
                 "moderator_bbs_pubkey": self.host_pubkey,
-                "timestamp": report.reviewed_at.isoformat(),
+                "timestamp": timestamp_to_log.isoformat(),
                 "details": {
                     "report_id": report.id,
                     "reporter_nickname": report.reporting_user.nickname,
@@ -103,7 +155,6 @@ class ModeratorAgentService:
             report.save()
 
     def process_federated_actions(self):
-        # --- MODIFIED: Ensure we only log actions that have a timestamp ---
         actions_to_log = FederatedAction.objects.filter(is_logged=False, status='approved', created_at__isnull=False)
         for action in actions_to_log:
              log_entry = {
@@ -143,6 +194,7 @@ class ModeratorAgentService:
             pubkey=self.agent_user.pubkey,
             subject=subject,
             body=body_json,
-            manifest=manifest
+            manifest=manifest,
+            agent_status='processed'
         )
         logger.info(f"Moderator Agent logged event: {subject}")
