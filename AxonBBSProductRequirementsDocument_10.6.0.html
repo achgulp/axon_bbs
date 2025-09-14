@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Axon BBS - Product Requirements Document 10.6.0</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1b;
+            color: #d7dadc;
+        }
+        main {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #272729;
+            border: 1px solid #343536;
+            border-radius: 8px;
+        }
+        h1, h2, h3, h4 {
+            color: #ffffff;
+            border-bottom: 1px solid #343536;
+            padding-bottom: 10px;
+        }
+        h1 { font-size: 2.2em; }
+        h2 { font-size: 1.8em; margin-top: 40px; }
+        h3 { font-size: 1.4em; border-bottom: none; margin-top: 30px; }
+        h4 { font-size: 1.1em; border-bottom: none; margin-top: 20px; color: #d7a248; }
+        p { margin-bottom: 1em; }
+        ul { padding-left: 20px; }
+        li { margin-bottom: 0.5em; }
+        pre { background-color: #1a1a1b; border: 1px solid #343536; border-radius: 4px; padding: 15px; overflow-x: auto; white-space: pre; }
+        strong { color: #d7a248; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Axon BBS - Product Requirements Document</h1>
+        <p><strong>Version:</strong> 10.6.0 (Moderation & Federation Enhancements)</p>
+        <p><strong>Date:</strong> September 14, 2025</p>
+
+        <hr>
+
+        <h2>1. Overview</h2>
+        <p>Axon BBS is a modern, anonymous bulletin board system built on a private, federated network of trusted nodes. It prioritizes user privacy and architectural resilience through a custom P2P data synchronization protocol named BitSync. This version enhances the platform with a comprehensive, federated moderation system, including user reporting, karma, and moderator approval workflows. It also formalizes the federation of user profile updates (nicknames and avatars). This document consolidates all previous versions and serves as the definitive guide for the platform's current state.</p>
+
+        <hr>
+
+        <h2>2. User Roles & Stories</h2>
+        
+        <h3>As a User...</h3>
+        <p>A standard participant on the BBS. Their focus is on communication, personalization, and interacting with the applications hosted on the platform.</p>
+        <ul>
+            <li>I want to generate or import my cryptographic identity, so that I can securely and anonymously interact with the system.</li>
+            <li>I want to securely back up my private key, so that I can recover my account and preserve my identity if I lose access to my primary device.</li>
+            <li>I want to upload a profile avatar, so that I can personalize my identity and be more recognizable to others.</li>
+            <li>I want my profile updates (nickname and avatar) to be sent to other BBSes so my identity is consistent across the network.</li>
+            <li>I want to send and receive E2E encrypted private messages, so I can communicate securely with other users without the server or admins being able to read my conversations.</li>
+            <li>I want to post on public message boards, so I can participate in community discussions.</li>
+            <li>I want to run sandboxed games and applications (applets), so I can enjoy interactive content securely without risk to my device or data.</li>
+            <li>I want to play persistent games that continue to run while I am offline, allowing for a dynamic game world.</li>
+            <li>I want to report a message that violates the rules, with an optional comment, to help keep the community clean.</li>
+            <li>I want to gain karma points when my reports are validated by a moderator, to build my reputation.</li>
+            <li>I want to see my karma score on my profile.</li>
+        </ul>
+
+        <h4>As a Moderator...</h4>
+        <p>A trusted user responsible for maintaining community health. They have a subset of admin powers focused on content and user management.</p>
+        <ul>
+            <li>I want to have all the powers of a standard User.</li>
+            <li>I want to review a queue of user-submitted reports for inappropriate messages.</li>
+            <li>I want to approve valid reports, which purges the message from the network and awards karma to the reporter.</li>
+            <li>I want to reject invalid reports.</li>
+            <li>I want to review profile updates (nicknames, avatars) from users before they are federated to other BBSes.</li>
+            <li>I want the ability to manually adjust a user's karma score to penalize abuse or reward good behavior.</li>
+        </ul>
+
+        <h3>As an Applet Developer...</h3>
+        <p>A technical user who creates the games and utilities that run on the BBS. Their needs revolve around a simple, secure, and powerful API.</p>
+        <ul>
+            <li>I want to package my application as a single, self-contained JavaScript file, for easy distribution and installation by a SysOp.</li>
+            <li>I want a simple, secure API to save and load my applet's private data, so that user progress is encrypted and tied to their identity.</li>
+            <li>I want an API to post public "action" messages to a designated message board for my game, so that my applet can broadcast player actions to the entire network.</li>
+            <li>I want to provide a server-side agent script that defines the rules and logic for my game, which will run persistently to manage the game world.</li>
+        </ul>
+
+        <h3>As a SysOp (System Operator/Admin)...</h3>
+        <p>The administrator of a BBS node. They are responsible for maintenance, user management, content curation, and federation with other nodes.</p>
+        <ul>
+            <li>I want all the powers of a standard User and Moderator.</li>
+            <li>I want to manage a whitelist of trusted federated peers, to control which other BBS nodes my instance will synchronize with.</li>
+            <li>I want to create special "agent" user accounts that can run persistently in the background, to enable features like persistent multiplayer games and automated moderation.</li>
+            <li>I want to assign a specific message board to an applet or agent to act as its official "Event Bus".</li>
+            <li>I want to promote or demote standard users to the Moderator role.</li>
+            <li>I want to create and manage a dedicated message board for federated moderation events.</li>
+        </ul>
+
+        <hr>
+
+        <h2>3. The Architecture</h2>
+        
+        <h3>The Agent & Event-Bus Architecture</h3>
+        <p>To support persistent, pseudo-real-time multiplayer applets, Axon BBS provides a generic, reusable architecture. This system is not hard-coded to any specific game and is designed to be secure and scalable. A game's server-side logic is run as a special, non-player user account (an "Agent"). Player actions are posted as public messages to a dedicated message board that acts as a game-wide event log.</p>
+
+        <h3>The Moderation & Karma System</h3>
+        <p>This version introduces a federated moderation system that leverages the existing architecture.</p>
+        <ul>
+            <li><strong>Moderator Role:</strong> A new <code>is_moderator</code> flag on the User model grants access to moderation tools.</li>
+            <li><strong>User Reporting:</strong> Users can flag messages for review. These flags are stored as <code>ModerationReport</code> objects in the database, creating a queue for moderators.</li>
+            <li><strong>Federated Actions:</strong> When a moderator approves a report to delete a message, a <code>DELETE_CONTENT</code> <code>FederatedAction</code> is created and synced. Peer BBSes receive this action and delete their local copy of the content.</li>
+            <li><strong>Profile Federation:</strong> When a user updates their profile (nickname/avatar), an <code>update_profile</code> <code>FederatedAction</code> is created with a status of <code>pending_approval</code>.</li>
+            <li><strong>Approval Workflow:</strong> Moderators can approve or deny these pending profile updates. If no action is taken within 24 hours, a scheduled task automatically approves the action, allowing it to be federated.</li>
+            <li><strong>Karma:</strong> Karma points are awarded to users for approved reports. This karma score is included in the <code>update_profile</code> federated action, allowing reputation to be shared across the network.</li>
+        </ul>
+
+        <hr>
+        
+        <h2>4. Full Project File Structure</h2>
+        <p>This diagram represents the complete and accurate file structure for the <code>axon_bbs</code> project.</p>
+        <pre><code>axon_bbs/
+├── .env
+├── manage.py
+├── requirements.txt
+├── install.txt
+├── media/
+│   └── avatars/
+├── logs/
+│   └── bbs.log
+├── data/
+│   ├── axon_bbs.sqlite3
+│   ├── bitsync_chunks/
+│   └── user_data/
+├── axon_project/
+│   ├── __init__.py
+│   ├── asgi.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+├── api/
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── permissions.py
+│   ├── serializers.py
+│   ├── tests.py
+│   ├── urls.py
+│   └── views.py
+├── core/
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── tests.py
+│   ├── management/
+│   │   └── commands/
+│   │       ├── approve_pending_profiles.py
+│   │       └── ... (other commands) ...
+│   ├── migrations/
+│   │   ├── 0001_initial.py
+│   │   ├── 0002_add_moderation_features.py
+│   │   └── __init__.py
+│   └── services/
+│       ├── __init__.py
+│       ├── bitsync_service.py
+│       ├── encryption_utils.py
+│       ├── high_score_service.py
+│       ├── identity_service.py
+│       ├── overlord_agent_service.py
+│       ├── service_manager.py
+│       ├── sync_service.py
+│       └── tor_service.py
+└── frontend/
+    └── src/
+        ├── applets/
+        │   ├── FortressOverlord.js
+        │   └── ... (other applets) ...
+        └── components/
+            ├── App.js
+            ├── MessageList.js
+            ├── ProfileScreen.js
+            └── ... (other React components) ...
+</code></pre>
+
+        <hr>
+
+        <h2>5. Featured Applet: Fortress Overlord</h2>
+        <p>Fortress Overlord is a strategic game where players manage an autonomous fortress and command robotic drones. Gameplay is asynchronous and persistent, with a server-side "Overlord Agent" resolving actions while the player is offline.</p>
+
+    </main>
+</body>
+</html>

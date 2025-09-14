@@ -8,22 +8,23 @@
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 // Full path: axon_bbs/frontend/src/components/MessageList.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
 import UnlockForm from './UnlockForm';
+import ReportModal from './ReportModal'; // --- NEW: Import the modal ---
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
+
 const AttachmentItem = ({ attachment, onDownload }) => {
   const [status, setStatus] = useState('checking');
-  // States: 'checking', 'syncing', 'available'
 
   const fetchStatus = useCallback(() => {
     apiClient.get(`/api/files/status/${attachment.id}/`)
@@ -35,41 +36,33 @@ const AttachmentItem = ({ attachment, onDownload }) => {
         setStatus('error');
       });
   }, [attachment.id]);
+
   useEffect(() => {
     fetchStatus();
-  }, [fetchStatus]);
-  useEffect(() => {
-    if (status === 'syncing') {
-      const interval = setInterval(() => {
+    const interval = setInterval(() => {
+      if (status === 'syncing') {
         fetchStatus();
-      }, 5000); // Check every 5 seconds
-
-      return () => clearInterval(interval);
-    }
+      }
+    }, 5000);
+    return () => clearInterval(interval);
   }, [status, fetchStatus]);
+
   return (
     <li key={attachment.id} className="flex items-center gap-4">
       <span className="text-gray-200">{attachment.filename}</span>
       <span className="text-gray-400 text-sm">({Math.round(attachment.size / 1024)} KB)</span>
-      <div className="flex-grow"></div> {/* Spacer */}
+      <div className="flex-grow"></div>
       {status === 'available' && (
         <button onClick={() => onDownload(attachment.id, attachment.filename)} className="text-blue-400 hover:text-blue-300 hover:underline">
           Download
         </button>
       )}
-      {status === 'syncing' && (
-        <span className="text-yellow-400 text-sm italic">Syncing in progress...</span>
-      )}
-      {status === 'checking' && (
-        <span className="text-gray-400 text-sm italic">Checking status...</span>
-      )}
-      {status === 'error' && (
-        <span className="text-red-500 text-sm italic">Error</span>
-      )}
+      {status === 'syncing' && <span className="text-yellow-400 text-sm italic">Syncing...</span>}
+      {status === 'checking' && <span className="text-gray-400 text-sm italic">Checking...</span>}
+      {status === 'error' && <span className="text-red-500 text-sm italic">Error</span>}
     </li>
   );
 };
-
 
 const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
   const [messages, setMessages] = useState([]);
@@ -80,17 +73,20 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
-
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [attachments, setAttachments] = useState([]);
+  // --- NEW: State for the report modal ---
+  const [showReportModal, setShowReportModal] = useState(false);
+
   const fetchMessages = useCallback(async () => {
     try {
       const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
       setMessages(response.data);
     } catch (err) { console.error("Failed to fetch messages:", err); }
   }, [board.id]);
+
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
   const handlePostMessage = useCallback(async () => {
@@ -110,6 +106,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
       }
     }
   }, [subject, body, board.name, attachments, fetchMessages]);
+
   const handleFileUpload = async () => {
     if (!selectedFile) { setUploadError('Please select a file first.'); return; }
     setIsUploading(true); setUploadError('');
@@ -125,6 +122,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
       setIsUploading(false);
     }
   };
+
   const handleFileDownload = useCallback(async (fileId, filename) => {
     try {
       const response = await apiClient.get(`/api/files/download/${fileId}/`, {
@@ -148,6 +146,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
       }
     }
   }, []);
+
   const handleReply = () => {
     if (!selectedMessage) return;
     const quotedBody = selectedMessage.body.split('\n').map(line => `> ${line}`).join('\n');
@@ -156,6 +155,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
     setSelectedMessage(null);
     setShowPostForm(true);
   };
+  
   const handleUnlockSuccess = () => {
     setNeedsUnlock(false);
     if (postUnlockAction) {
@@ -164,9 +164,27 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
     }
   };
 
+  // --- NEW: Function to handle submitting a report ---
+  const handleReportSubmit = async (message_id, comment) => {
+    try {
+        await apiClient.post('/api/messages/report/', { message_id, comment });
+    } catch (err) {
+        console.error("Failed to submit report:", err);
+        // Throw the error so the modal can display it
+        throw new Error(err.response?.data?.error || 'An unexpected error occurred.');
+    }
+  };
+
   if (selectedMessage) {
     return (
       <div>
+        {/* --- NEW: Render the ReportModal component --- */}
+        <ReportModal 
+            message={selectedMessage}
+            show={showReportModal} 
+            onClose={() => setShowReportModal(false)}
+            onSubmit={handleReportSubmit}
+        />
         <div className="flex justify-between items-center mb-4">
             <button onClick={() => setSelectedMessage(null)} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
               ← Back to {board.name}
@@ -177,6 +195,10 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
                 </button>
                 <button onClick={() => onStartPrivateMessage(selectedMessage.pubkey, selectedMessage.author_display)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
                     Send Private Message
+                </button>
+                {/* --- NEW: Report Button --- */}
+                <button onClick={() => setShowReportModal(true)} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+                    Report
                 </button>
             </div>
         </div>
