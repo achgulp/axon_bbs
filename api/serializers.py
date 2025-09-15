@@ -24,15 +24,22 @@ from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
 import os
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
+# --- MODIFIED: UserSerializer now handles security questions for new registration flow ---
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    security_question_1 = serializers.CharField(write_only=True, required=True)
+    security_answer_1 = serializers.CharField(write_only=True, required=True)
+    security_question_2 = serializers.CharField(write_only=True, required=True)
+    security_answer_2 = serializers.CharField(write_only=True, required=True)
+
     class Meta:
         model = User
-        fields = ('username', 'password')
+        fields = ('username', 'password', 'security_question_1', 'security_answer_1', 'security_question_2', 'security_answer_2')
 
     def create(self, validated_data):
         user = User.objects.create_user(
@@ -40,25 +47,21 @@ class UserSerializer(serializers.ModelSerializer):
             password=validated_data['password'],
         )
         try:
-            user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
-            os.makedirs(user_data_dir, exist_ok=True)
-            salt = generate_salt()
-            with open(os.path.join(user_data_dir, 'salt.bin'), 'wb') as f:
-                f.write(salt)
-            encryption_key = derive_key_from_password(validated_data['password'], salt)
-            identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
-            identity_service = IdentityService(
-                storage_path=identity_storage_path,
-                encryption_key=encryption_key
+            identity_service = IdentityService(user=user)
+            identity = identity_service.generate_identity_with_manifest(
+                password=validated_data['password'],
+                sq1=validated_data['security_question_1'],
+                sa1=validated_data['security_answer_1'],
+                sq2=validated_data['security_question_2'],
+                sa2=validated_data['security_answer_2']
             )
-            identity = identity_service.generate_and_add_identity(name="default")
             user.pubkey = identity['public_key']
             user.save()
-            logger.info(f"Successfully created initial identity for {user.username}")
+            logger.info(f"Successfully created manifest-based identity for {user.username}")
         except Exception as e:
             logger.error(f"Failed to create identity for {user.username}. Rolling back user creation. Error: {e}")
             user.delete()
-            raise e
+            raise serializers.ValidationError("Failed to create identity during registration.")
         return user
 
 class MessageBoardSerializer(serializers.ModelSerializer):
@@ -91,11 +94,10 @@ class MessageSerializer(serializers.ModelSerializer):
                 return alias.nickname
             else:
                 short_id = generate_short_id(obj.pubkey, length=8)
-                return f"Moo-{short_id}"
+                return f"User-{short_id}"
         
         return 'Anonymous'
     
-    # --- MODIFICATION START (Build absolute URL for avatars) ---
     def get_author_avatar_url(self, obj):
         if obj.author and obj.author.avatar:
             request = self.context.get('request')
@@ -103,7 +105,6 @@ class MessageSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.author.avatar.url)
             return obj.author.avatar.url # Fallback
         return None
-    # --- MODIFICATION END ---
 
 class PrivateMessageSerializer(serializers.ModelSerializer):
     author_display = serializers.SerializerMethodField()
@@ -124,7 +125,7 @@ class PrivateMessageSerializer(serializers.ModelSerializer):
                 return alias.nickname
             else:
                 short_id = generate_short_id(obj.sender_pubkey, length=8)
-                return f"Moo-{short_id}"
+                return f"User-{short_id}"
         return "Unknown Sender"
     
     def get_author_avatar_url(self, obj):
@@ -161,7 +162,7 @@ class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
                 return alias.nickname
             else:
                 short_id = generate_short_id(obj.recipient_pubkey, length=8)
-                return f"Moo-{short_id}"
+                return f"User-{short_id}"
         return 'Unknown Recipient'
 
     def get_recipient_avatar_url(self, obj):
@@ -171,7 +172,6 @@ class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.recipient.avatar.url)
             return obj.recipient.avatar.url
         return None
-
 
 class ContentExtensionRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField()
@@ -193,15 +193,11 @@ class HighScoreSerializer(serializers.ModelSerializer):
         model = HighScore
         fields = ('owner_nickname', 'score', 'wins', 'losses', 'kills', 'deaths', 'assists', 'last_updated')
 
-# --- NEW SERIALIZER FOR MODERATION ---
 class ModerationReportSerializer(serializers.ModelSerializer):
-    # Make the output more readable by showing usernames instead of just IDs
     reporting_user = serializers.StringRelatedField()
     reviewed_by = serializers.StringRelatedField()
-    # Include a summary of the reported message
     reported_message = MessageSerializer(read_only=True)
 
     class Meta:
         model = ModerationReport
         fields = ('id', 'reported_message', 'reporting_user', 'comment', 'status', 'created_at', 'reviewed_by', 'reviewed_at')
-# --- END NEW SERIALIZER ---

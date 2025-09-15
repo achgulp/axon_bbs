@@ -1,0 +1,164 @@
+Axon BBS - Product Requirements Document
+========================================
+
+**Version:** 10.7.0 (Moderation Agent Implementation)
+**Date:** September 15, 2025
+
+---
+
+## 1. Overview
+
+Axon BBS is a modern, anonymous bulletin board system built on a private, federated network of trusted nodes. It prioritizes user privacy and architectural resilience through a custom P2P data synchronization protocol named BitSync. This version completes the implementation of the federated moderation system by introducing a `moderator_agent` responsible for logging local moderation actions and processing incoming actions from peer systems. This document consolidates all previous versions and serves as the definitive guide for the platform's current state.
+
+---
+
+## 2. Full User Roles and Stories
+
+### As a User...
+A standard participant on the BBS. Their focus is on communication, personalization, and interacting with the applications hosted on the platform.
+* [cite_start]I want to generate or import my cryptographic identity so that I can securely and anonymously interact with the system. [cite: 73]
+* [cite_start]I want to securely back up my private key so that I can recover my account if I lose access to my primary device. [cite: 73]
+* [cite_start]I want to upload a profile avatar so that I can personalize my identity. [cite: 74]
+* I want my profile updates (nickname and avatar) to be sent to other BBSes so my identity is consistent across the network.
+* [cite_start]I want to send and receive E2E encrypted private messages. [cite: 75]
+* [cite_start]I want to post on public message boards to participate in community discussions. [cite: 75]
+* [cite_start]I want to run sandboxed games and applications (applets) securely. [cite: 76]
+* [cite_start]I want to play persistent games that continue to run while I am offline. [cite: 76]
+* I want to report a message that violates the rules, with an optional comment, to help keep the community clean.
+* I want to gain karma points when my reports are validated by a moderator to build my reputation.
+* I want to see my karma score on my profile.
+
+### As a Moderator...
+A trusted user responsible for maintaining community health. They have a subset of admin powers focused on content and user management.
+* I want to have all the powers of a standard User.
+* I want to review a queue of user-submitted reports for inappropriate messages.
+* I want to approve valid reports, which purges the message from the network and awards karma to the reporter.
+* I want to reject invalid reports.
+* I want to review profile updates (nicknames, avatars) from users before they are federated to other BBSes.
+* I want the ability to manually adjust a user's karma score to penalize abuse or reward good behavior.
+
+### As an Applet Developer...
+A technical user who creates the games and utilities that run on the BBS. Their needs revolve around a simple, secure, and powerful API.
+* [cite_start]I want to package my application as a single, self-contained JavaScript file for easy distribution. [cite: 78]
+* [cite_start]I want a simple, secure API to save and load my applet's private data. [cite: 78]
+* [cite_start]I want an API to post public "action" messages to a designated message board for my game. [cite: 79]
+* [cite_start]I want to provide a server-side agent script that defines the rules and logic for my game. [cite: 80]
+
+### As a SysOp (System Operator/Admin)...
+The administrator of a BBS node responsible for maintenance, user management, content curation, and federation.
+* I want all the powers of a standard User and Moderator.
+* [cite_start]I want to manage a whitelist of trusted federated peers to control synchronization. [cite: 81]
+* [cite_start]I want to create special "agent" user accounts that can run persistently in the background. [cite: 82]
+* [cite_start]I want to assign a specific message board to an applet or agent to act as its official "Event Bus". [cite: 83]
+* I want to promote or demote standard users to the Moderator role.
+* I want to create and manage a dedicated message board for federated moderation events.
+* I want to dynamically start, stop, and reload agent services from the admin panel without restarting the entire BBS.
+
+---
+
+## 3. The Architecture
+
+### The Agent & Event-Bus Architecture
+[cite_start]The platform features a generic architecture where server-side logic is run as a special "Agent" user account. [cite: 86] [cite_start]These agents interact with the system by posting and reading messages on dedicated "Event Bus" message boards, allowing for features like persistent games and automated moderation. [cite: 90, 87]
+
+### The Moderation & Karma System
+The federated moderation system uses the Agent & Event-Bus model to share moderation actions across the network.
+* **Workflow:** A user reports a message, creating a `ModerationReport`. A moderator reviews this report and approves it.
+* **Local Logging:** The `moderator_agent` detects the approved report and posts a detailed log message to the "Moderation" message board. This log includes which moderator took the action and from which BBS public key they originated.
+* **Peer Processing:** The `moderator_agent` on a peer BBS reads this log message. It parses the event and, if the content or user exists on its system, it applies the same action locally (e.g., deleting a message or banning a user).
+* [cite_start]**Ban Federation:** When an admin bans a user, it creates a `FederatedAction`. [cite: 428] The `moderator_agent` sees this action and posts it to the "Moderation" board, allowing other BBSes to enforce the ban.
+
+---
+
+## 4. Full Project File Structure
+
+This diagram represents the complete and accurate file structure for the `axon_bbs` project.
+
+axon_bbs/
+├── .env
+├── manage.py
+├── requirements.txt
+├── install.txt
+├── media/
+│   └── avatars/
+├── logs/
+│   └── bbs.log
+├── data/
+│   ├── axon_bbs.sqlite3
+│   ├── bitsync_chunks/
+│   └── user_data/
+├── axon_project/
+│   ├── init.py
+│   ├── asgi.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+├── api/
+│   ├── init.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── permissions.py
+│   ├── serializers.py
+│   ├── tests/
+│   │   ├── init.py
+│   │   └── test_views.py
+│   ├── urls.py
+│   └── views.py
+├── core/
+│   ├── init.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── tests/
+│   │   ├── init.py
+│   │   └── test_models.py
+│   ├── management/
+│   │   └── commands/
+│   │       ├── init.py
+│   │       ├── approve_pending_profiles.py
+│   │       ├── check_local_content.py
+│   │       ├── cleanup_orphaned_files.py
+│   │       ├── compare_sync_status.py
+│   │       ├── diagnose_sync_content.py
+│   │       ├── process_scores.py
+│   │       ├── reset_peer_sync_time.py
+│   │       └── update_peer_key.py
+│   ├── migrations/
+│   │   ├── 0001_initial.py
+│   │   ├── 0002_add_moderation_features.py
+│   │   └── init.py
+│   └── services/
+│       ├── init.py
+│       ├── bitsync_service.py
+│       ├── content_validator.py
+│       ├── encryption_utils.py
+│       ├── high_score_service.py
+│       ├── identity_service.py
+│       ├── moderator_agent_service.py
+│       ├── overlord_agent_service.py
+│       ├── service_manager.py
+│       ├── sync_service.py
+│       └── tor_service.py
+└── frontend/
+└── src/
+├── applet_api/
+│   └── api.js
+├── applets/
+│   ├── FortressOverlord.js
+│   ├── FloatUpMaze.js
+│   ├── PipeDodger.js
+│   └── Template.js
+├── components/
+│   ├── AnsiViewer.js
+│   ├── App.js
+│   ├── AppletRunner.js
+│   ├── AppletView.js
+│   ├── HighScoreBoard.js
+│   ├── LoginScreen.js
+│   ├── MessageList.js
+│   ├── ProfileScreen.js
+│   ├── RegisterScreen.js
+│   ├── ReportModal.js
+│   └── UnlockForm.js
+└── apiClient.js

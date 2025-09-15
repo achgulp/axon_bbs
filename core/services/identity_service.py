@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/services/identity_service.py
@@ -22,161 +22,110 @@ import logging
 from typing import Dict, Any, List, Optional
 import uuid
 from datetime import datetime
-from .encryption_utils import encrypt_data, decrypt_data
+from .encryption_utils import encrypt_data, decrypt_data, derive_key_from_password, generate_salt
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
+from cryptography.fernet import Fernet, InvalidToken
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
 class DecryptionError(Exception):
-    """Raised when the identity file cannot be decrypted, likely due to a wrong password."""
+    """Raised when a file cannot be decrypted, likely due to a wrong password/key."""
     pass
 
 class IdentityService:
-    """
-    Manages user key pairs with encrypted storage.
-    Each user on the BBS will have their own instance of this service,
-    unlocked with their password.
-    """
-    def __init__(self, storage_path: str, encryption_key: bytes):
-        """
-        Initializes the service for a specific user.
-        :param storage_path: The full path to the user's encrypted identity file.
-        :param encryption_key: The key derived from the user's password to encrypt/decrypt the file.
-        """
-        self.storage_file = storage_path
-        self.encryption_key = encryption_key
-        self.identities: List[Dict[str, Any]] = []
-        self._load_identities()
-        logger.info(f"IdentityService instance created for storage file: {storage_path}")
+    def __init__(self, user):
+        self.user = user
+        self.user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', self.user.username)
+        self.identity_storage_path = os.path.join(self.user_data_dir, 'identities.dat')
+        self.manifest_path = os.path.join(self.user_data_dir, 'identity_key_manifest.json')
+        os.makedirs(self.user_data_dir, exist_ok=True)
 
-    def _load_identities(self) -> None:
-        """
-        Loads and decrypts identities from the user's storage file.
-        """
-        if os.path.exists(self.storage_file):
-            try:
-                with open(self.storage_file, "rb") as f:
-                    encrypted_data = f.read()
-                if not encrypted_data:
-                    self.identities = []
-                    return
-                decrypted_data = decrypt_data(encrypted_data, self.encryption_key)
-                self.identities = json.loads(decrypted_data)
-            except Exception as e:
-                logger.error(f"Failed to load identities from {self.storage_file}: {e}", exc_info=True)
-                raise DecryptionError("Failed to decrypt identity file. Password may be incorrect.") from e
-        else:
-            self.identities = []
+    def _encrypt_identities(self, identities_json: str, master_aes_key: bytes) -> bytes:
+        f = Fernet(master_aes_key)
+        return f.encrypt(identities_json.encode())
 
-    def _save_identities(self) -> None:
-        """
-        Encrypts and saves the user's current identities to their storage file.
-        """
+    def _decrypt_identities(self, encrypted_data: bytes, master_aes_key: bytes) -> str:
+        f = Fernet(master_aes_key)
+        return f.decrypt(encrypted_data).decode()
+
+    def get_master_key_from_password(self, password: str) -> Optional[bytes]:
+        """Attempt to get the master AES key using the main password."""
         try:
-            os.makedirs(os.path.dirname(self.storage_file), exist_ok=True)
-            identities_json = json.dumps(self.identities, indent=4)
-            encrypted_data = encrypt_data(identities_json, self.encryption_key)
-            with open(self.storage_file, "wb") as f:
-                f.write(encrypted_data)
-            logger.debug(f"Saved identities to {self.storage_file}")
-        except Exception as e:
-            logger.error(f"Failed to save identities to {self.storage_file}: {e}", exc_info=True)
-
-    def generate_and_add_identity(self, name: str = "default") -> Dict[str, Any]:
-        """
-        Generates a new RSA key pair and adds it as an identity.
-        """
-        try:
-            private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-            public_key_pem = private_key.public_key().public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
-            ).decode('utf-8')
-            private_key_pem = private_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.TraditionalOpenSSL,
-                encryption_algorithm=serialization.NoEncryption()
-            ).decode('utf-8')
-            identity = {
-                "id": str(uuid.uuid4()),
-                "name": name,
-                "type": "rsa",
-                "public_key": public_key_pem,
-                "private_key": private_key_pem,
-                "created_at": datetime.now().isoformat()
-            }
-            self.identities.append(identity)
-            self._save_identities()
-            logger.info(f"Generated RSA identity '{name}'")
-            return identity
-        except Exception as e:
-            logger.error(f"Failed to generate identity: {e}", exc_info=True)
-            raise
-
-    # UPDATED: This method now accepts a password to decrypt the PEM file.
-    def add_existing_identity(self, name: str, private_key_pem: str, password: str = None) -> Dict[str, Any]:
-        """
-        Adds an existing private key as a new identity.
-        """
-        try:
-            cleaned_pem = private_key_pem.strip()
-            private_key = serialization.load_pem_private_key(
-                cleaned_pem.encode(),
-                password=password.encode() if password else None
-            )
+            with open(self.manifest_path, 'r') as f:
+                manifest = json.load(f)
             
-            public_key_pem = private_key.public_key().public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
-            ).decode('utf-8')
+            salt = bytes.fromhex(manifest['password_salt'])
+            derived_key = derive_key_from_password(password, salt)
             
-            # Note: We save the key unencrypted inside our own encrypted blob.
-            unencrypted_pem_to_store = private_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.TraditionalOpenSSL,
-                encryption_algorithm=serialization.NoEncryption()
-            ).decode('utf-8')
-
-            identity = {
-                "id": str(uuid.uuid4()),
-                "name": name,
-                "type": "rsa",
-                "public_key": public_key_pem,
-                "private_key": unencrypted_pem_to_store,
-                "created_at": datetime.now().isoformat()
-            }
-            self.identities.append(identity)
-            self._save_identities()
-            logger.info(f"Added existing identity '{name}'")
-            return identity
+            f = Fernet(derived_key)
+            master_aes_key = f.decrypt(bytes.fromhex(manifest['envelopes']['password']))
+            return master_aes_key
+        except (FileNotFoundError, KeyError, InvalidToken) as e:
+            logger.warning(f"Failed to get master key with password for {self.user.username}: {e}")
+            raise DecryptionError("Invalid password.")
         except Exception as e:
-            logger.error(f"Failed to add existing identity: {e}", exc_info=True)
-            raise
+            logger.error(f"An unexpected error occurred getting master key for {self.user.username}: {e}")
+            return None
 
-    def get_all_identities(self) -> List[Dict[str, Any]]:
-        """
-        Retrieves all identities for the user.
-        """
-        return [id_ for id_ in self.identities]
+    def generate_identity_with_manifest(self, password, sq1, sa1, sq2, sa2):
+        """Generates a new identity and a recovery manifest for a new user."""
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        public_key_pem = private_key.public_key().public_bytes(encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo).decode('utf-8')
+        private_key_pem = private_key.private_bytes(encoding=serialization.Encoding.PEM, format=serialization.PrivateFormat.TraditionalOpenSSL, encryption_algorithm=serialization.NoEncryption()).decode('utf-8')
+        
+        identity = {
+            "id": str(uuid.uuid4()), "name": "default", "type": "rsa",
+            "public_key": public_key_pem, "private_key": private_key_pem,
+            "created_at": datetime.now().isoformat()
+        }
+        identities_json = json.dumps([identity])
 
-    def get_identity_by_name(self, name: str) -> Optional[Dict[str, Any]]:
-        """
-        Retrieves a specific identity by its name.
-        """
-        for identity in self.identities:
-            if identity.get("name") == name:
-                return identity
-        return None
+        master_aes_key = Fernet.generate_key()
 
-    def remove_identity(self, identity_id: str) -> bool:
-        """
-        Removes an identity by its unique ID.
-        """
-        initial_count = len(self.identities)
-        self.identities = [id_ for id_ in self.identities if id_.get("id") != identity_id]
-        if len(self.identities) < initial_count:
-            self._save_identities()
-            logger.info(f"Removed identity: {identity_id}")
-            return True
-        return False
+        password_salt = generate_salt()
+        password_derived_key = derive_key_from_password(password, password_salt)
+        password_envelope = Fernet(password_derived_key).encrypt(master_aes_key)
+
+        sq1_derived_key = derive_key_from_password(sa1, sq1.encode('utf-8'))
+        sq1_envelope = Fernet(sq1_derived_key).encrypt(master_aes_key)
+
+        sq2_derived_key = derive_key_from_password(sa2, sq2.encode('utf-8'))
+        sq2_envelope = Fernet(sq2_derived_key).encrypt(master_aes_key)
+
+        manifest = {
+            "password_salt": password_salt.hex(),
+            "security_question_1": sq1,
+            "security_question_2": sq2,
+            "envelopes": {
+                "password": password_envelope.hex(),
+                "sq1": sq1_envelope.hex(),
+                "sq2": sq2_envelope.hex()
+            }
+        }
+        with open(self.manifest_path, 'w') as f:
+            json.dump(manifest, f, indent=2)
+
+        encrypted_identities = self._encrypt_identities(identities_json, master_aes_key)
+        with open(self.identity_storage_path, 'wb') as f:
+            f.write(encrypted_identities)
+            
+        return identity
+
+    def get_unlocked_private_key(self, password: str) -> Optional[str]:
+        """Gets the decrypted private key using the main password."""
+        master_key = self.get_master_key_from_password(password)
+        if not master_key:
+            return None
+        
+        try:
+            with open(self.identity_storage_path, 'rb') as f:
+                encrypted_data = f.read()
+            
+            decrypted_json = self._decrypt_identities(encrypted_data, master_key)
+            identities = json.loads(decrypted_json)
+            return identities[0].get('private_key')
+        except Exception as e:
+            logger.error(f"Failed to get unlocked private key for {self.user.username}: {e}")
+            return None
