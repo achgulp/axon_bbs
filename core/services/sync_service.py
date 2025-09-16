@@ -36,8 +36,9 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 
 # --- START FIX ---
-from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey, Alias
+from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey
 from .encryption_utils import generate_checksum, generate_short_id
+from .avatar_generator import generate_cow_avatar
 # --- END FIX ---
 
 logger = logging.getLogger(__name__)
@@ -266,19 +267,26 @@ class SyncService:
                 content = json.loads(decrypted_data)
                 
                 # --- START FIX ---
-                # Automatically create an alias for a new federated user
+                # Automatically create an inactive user profile for a new federated user.
                 author_pubkey = content.get('pubkey')
-                if author_pubkey:
-                    is_local = User.objects.filter(pubkey=author_pubkey).exists()
-                    alias_exists = Alias.objects.filter(pubkey=author_pubkey).exists()
-                    if not is_local and not alias_exists:
-                        try:
-                            short_id = generate_short_id(author_pubkey, length=8)
-                            new_nickname = f"Moo-{short_id}"
-                            Alias.objects.create(pubkey=author_pubkey, nickname=new_nickname)
-                            logger.info(f"Discovered new federated user. Created alias '{new_nickname}' for pubkey {author_pubkey[:12]}...")
-                        except Exception as alias_e:
-                            logger.error(f"Failed to create auto-alias for pubkey {author_pubkey[:12]}: {alias_e}")
+                if author_pubkey and not User.objects.filter(pubkey=author_pubkey).exists():
+                    try:
+                        short_id = generate_short_id(author_pubkey, length=8)
+                        new_nickname = f"Moo-{short_id}"
+                        
+                        avatar_content_file, avatar_filename = generate_cow_avatar(author_pubkey)
+                        
+                        new_user = User.objects.create(
+                            username=f"federated_{short_id}",
+                            nickname=new_nickname,
+                            pubkey=author_pubkey,
+                            is_active=False,
+                            password=User.objects.make_random_password()
+                        )
+                        new_user.avatar.save(avatar_filename, avatar_content_file, save=True)
+                        logger.info(f"Discovered new federated user. Created profile '{new_nickname}' with a unique cow avatar.")
+                    except Exception as user_create_e:
+                        logger.error(f"Failed to create federated user profile for pubkey {author_pubkey[:12]}: {user_create_e}")
                 # --- END FIX ---
                 
                 required_hashes = content.get('attachment_hashes', [])
