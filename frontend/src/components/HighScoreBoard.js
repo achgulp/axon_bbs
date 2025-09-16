@@ -8,11 +8,11 @@
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 // Full path: axon_bbs/frontend/src/components/HighScoreBoard.js
@@ -61,7 +61,6 @@ const HighScoreBoard = ({ applet, onBack }) => {
                 <th className="p-3 text-sm font-semibold text-gray-400 w-1/12 text-center">Rank</th>
                 <th className="p-3 text-sm font-semibold text-gray-400 w-3/12">Player</th>
                 <th className="p-3 text-sm font-semibold text-gray-400 w-2/12">Score</th>
-                {/* UPDATED: Added all new stat headers */}
                 <th className="p-3 text-sm font-semibold text-gray-400 w-1/12 text-center">Wins</th>
                 <th className="p-3 text-sm font-semibold text-gray-400 w-1/12 text-center">Losses</th>
                 <th className="p-3 text-sm font-semibold text-gray-400 w-1/12 text-center">Kills</th>
@@ -74,9 +73,15 @@ const HighScoreBoard = ({ applet, onBack }) => {
               {scores.map((score, index) => (
                 <tr key={index} className="border-b border-gray-700 last:border-b-0">
                   <td className="p-3 text-gray-200 font-bold text-center">{index + 1}</td>
-                  <td className="p-3 text-gray-300">{score.owner_nickname}</td>
+                  <td className="p-3 text-gray-300">
+                    {/* --- START FIX --- */}
+                    <div className="flex items-center gap-3">
+                      <img src={score.owner_avatar_url || '/default_avatar.png'} alt="Player Avatar" className="w-8 h-8 rounded-full bg-gray-700" />
+                      <span>{score.owner_nickname}</span>
+                    </div>
+                    {/* --- END FIX --- */}
+                  </td>
                   <td className="p-3 text-green-400 font-semibold">{score.score.toLocaleString()}</td>
-                  {/* UPDATED: Display all new stats, using renderStat helper for N/A */}
                   <td className="p-3 text-yellow-400 text-center">{renderStat(score.wins)}</td>
                   <td className="p-3 text-gray-400 text-center">{renderStat(score.losses)}</td>
                   <td className="p-3 text-cyan-400 text-center">{renderStat(score.kills)}</td>

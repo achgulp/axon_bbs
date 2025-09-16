@@ -94,6 +94,12 @@ class HighScoreListView(generics.ListAPIView):
     serializer_class = HighScoreSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    # --- START FIX ---
+    # The request context is now passed to the serializer so it can build full URLs.
+    def get_serializer_context(self):
+        return {'request': self.request}
+    # --- END FIX ---
+
     def get_queryset(self):
         applet_id = self.kwargs.get('applet_id')
         return HighScore.objects.filter(applet_id=applet_id).order_by('-score')[:25]
@@ -115,7 +121,7 @@ class PostAppletEventView(views.APIView):
             
             message_content = { "type": "message", "subject": subject, "body": body, "board": applet.event_board.name, "pubkey": user.pubkey }
             _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(message_content)
-            
+
             Message.objects.create(
                 board=applet.event_board, 
                 subject=subject, 

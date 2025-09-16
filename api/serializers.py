@@ -96,19 +96,15 @@ class MessageSerializer(serializers.ModelSerializer):
         return 'Anonymous'
     
     def get_author_avatar_url(self, obj):
-        # --- START FIX ---
-        # This logic is expanded to find avatars for federated users.
         user_to_check = obj.author
         if not user_to_check and obj.pubkey:
-            # If the message is from another server, find the user by their public key
             user_to_check = User.objects.filter(pubkey=obj.pubkey).first()
 
         if user_to_check and user_to_check.avatar:
             request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(user_to_check.avatar.url)
-            return user_to_check.avatar.url # Fallback for other contexts
-        # --- END FIX ---
+            return user_to_check.avatar.url
         return None
 
 class PrivateMessageSerializer(serializers.ModelSerializer):
@@ -171,11 +167,18 @@ class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
         return 'Unknown Recipient'
 
     def get_recipient_avatar_url(self, obj):
-        if obj.recipient and obj.recipient.avatar:
+        # --- START FIX ---
+        # This logic is expanded to find avatars for federated users.
+        user_to_check = obj.recipient
+        if not user_to_check and obj.recipient_pubkey:
+            user_to_check = User.objects.filter(pubkey=obj.recipient_pubkey).first()
+        
+        if user_to_check and user_to_check.avatar:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(obj.recipient.avatar.url)
-            return obj.recipient.avatar.url
+                return request.build_absolute_uri(user_to_check.avatar.url)
+            return user_to_check.avatar.url
+        # --- END FIX ---
         return None
 
 class ContentExtensionRequestSerializer(serializers.ModelSerializer):
@@ -194,9 +197,25 @@ class AppletSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 class HighScoreSerializer(serializers.ModelSerializer):
+    # --- START FIX ---
+    owner_avatar_url = serializers.SerializerMethodField()
+
     class Meta:
         model = HighScore
-        fields = ('owner_nickname', 'score', 'wins', 'losses', 'kills', 'deaths', 'assists', 'last_updated')
+        fields = ('owner_nickname', 'owner_avatar_url', 'score', 'wins', 'losses', 'kills', 'deaths', 'assists', 'last_updated')
+
+    def get_owner_avatar_url(self, obj):
+        """
+        Finds the user by their public key and returns their avatar URL.
+        """
+        user = User.objects.filter(pubkey=obj.owner_pubkey).first()
+        if user and user.avatar:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(user.avatar.url)
+            return user.avatar.url
+        return None
+    # --- END FIX ---
 
 class ModerationReportSerializer(serializers.ModelSerializer):
     reporting_user = serializers.StringRelatedField()

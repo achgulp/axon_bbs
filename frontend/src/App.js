@@ -20,13 +20,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from './apiClient';
 import LoginScreen from './components/LoginScreen';
 import RegisterScreen from './components/RegisterScreen';
-import RecoveryScreen from './components/RecoveryScreen'; // --- NEW: Import Recovery Screen ---
+import RecoveryScreen from './components/RecoveryScreen';
 import MessageList from './components/MessageList';
 import UnlockForm from './components/UnlockForm';
 import ProfileScreen from './components/ProfileScreen';
 import AppletView from './components/AppletView';
 import HighScoreBoard from './components/HighScoreBoard';
 import ModerationDashboard from './components/ModerationDashboard';
+// --- START FIX ---
+import PrivateMessageClient from './components/PrivateMessageClient'; // Import the new component
+// --- END FIX ---
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
@@ -43,7 +46,6 @@ const MessageBoardList = ({ onSelectBoard }) => {
       .then(response => setBoards(response.data))
       .catch(err => console.error(err));
   }, []);
-
   return (
     <div>
       <Header text="Message Boards" />
@@ -128,7 +130,6 @@ function App() {
     setNeedsUnlock(false);
   };
 
-  // --- MODIFIED: This block now handles navigation to the recovery view ---
   if (!token) {
     return (
       <div className="bg-gray-800 min-h-screen">
@@ -143,10 +144,12 @@ function App() {
     if (currentView === 'profile') {
       return <ProfileScreen />;
     }
+    // --- START FIX ---
+    // The placeholder is replaced with the new PrivateMessageClient component.
     if (currentView === 'pm') {
-      // PrivateMessageClient component would be here if included
-      return <div>Private Messaging Placeholder</div>;
+      return <PrivateMessageClient key={pmRecipient ? pmRecipient.pubkey : 'new'} initialRecipient={pmRecipient} />;
     }
+    // --- END FIX ---
     if (currentView === 'applets') {
       return <AppletView onLaunchGame={setLastPlayedGame} />;
     }

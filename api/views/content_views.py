@@ -21,9 +21,10 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 import logging
+import json
 
 from ..serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
-from core.models import MessageBoard, Message, IgnoredPubkey, FileAttachment, PrivateMessage
+from core.models import MessageBoard, Message, IgnoredPubkey, FileAttachment, PrivateMessage, User
 from core.services.service_manager import service_manager
 
 logger = logging.getLogger(__name__)
@@ -48,23 +49,17 @@ class MessageListView(generics.ListAPIView):
         return {'request': self.request}
 
     def get_queryset(self):
-        # --- START FIX ---
-        # First, ensure the user has access to this board before proceeding.
         board = get_object_or_404(MessageBoard, pk=self.kwargs['pk'])
         if self.request.user.access_level < board.required_access_level:
-            return Message.objects.none() # Return an empty queryset if access is denied
-        # --- END FIX ---
+            return Message.objects.none()
             
         ignored_pubkeys = IgnoredPubkey.objects.filter(user=self.request.user).values_list('pubkey', flat=True)
         return Message.objects.filter(board=board).exclude(pubkey__in=ignored_pubkeys).order_by('-created_at')
     
     def list(self, request, *args, **kwargs):
-        # --- START FIX ---
-        # Add an explicit check to return a 403 Forbidden error.
         board = get_object_or_404(MessageBoard, pk=self.kwargs['pk'])
         if request.user.access_level < board.required_access_level:
             return Response({"detail": "You do not have permission to view this board."}, status=status.HTTP_403_FORBIDDEN)
-        # --- END FIX ---
         return super().list(request, *args, **kwargs)
 
 
@@ -82,11 +77,8 @@ class PostMessageView(views.APIView):
         try:
             board, _ = MessageBoard.objects.get_or_create(name=board_name)
             
-            # --- START FIX ---
-            # Add access level check before allowing a post
             if user.access_level < board.required_access_level:
                 return Response({"error": "You do not have permission to post on this board."}, status=status.HTTP_403_FORBIDDEN)
-            # --- END FIX ---
 
             attachments = FileAttachment.objects.filter(id__in=attachment_ids, author=user)
             attachment_hashes = [att.manifest['content_hash'] for att in attachments]
@@ -116,8 +108,53 @@ class PostMessageView(views.APIView):
 
 class SendPrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
+
     def post(self, request, *args, **kwargs):
-        return Response(status=status.HTTP_501_NOT_IMPLEMENTED)
+        # --- START FIX ---
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        recipient_pubkey = request.data.get('recipient_pubkey')
+        subject = request.data.get('subject')
+        body = request.data.get('body')
+
+        if not all([recipient_pubkey, subject, body]):
+            return Response({"error": "Recipient, subject, and body are required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        sender = request.user
+        recipient = User.objects.filter(pubkey=recipient_pubkey).first()
+
+        try:
+            pm_content = {
+                "type": "pm_body",
+                "sender_pubkey": sender.pubkey,
+                "recipient_pubkey": recipient_pubkey,
+                "subject": subject,
+                "body": body,
+            }
+            
+            # Encrypt the message for the recipient AND the sender (for their outbox)
+            _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(
+                pm_content,
+                recipients_pubkeys=[recipient_pubkey, sender.pubkey]
+            )
+
+            PrivateMessage.objects.create(
+                author=sender,
+                recipient=recipient, # Can be null if recipient is not a local user
+                sender_pubkey=sender.pubkey,
+                recipient_pubkey=recipient_pubkey,
+                subject=subject,
+                manifest=manifest
+            )
+            
+            logger.info(f"User '{sender.username}' sent PM to pubkey '{recipient_pubkey[:12]}...'")
+            return Response({"status": "Private message sent successfully."}, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Failed to send PM from {sender.username}: {e}", exc_info=True)
+            return Response({"error": "An unexpected error occurred while sending the message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # --- END FIX ---
 
 
 class PrivateMessageListView(generics.ListAPIView):
@@ -125,7 +162,7 @@ class PrivateMessageListView(generics.ListAPIView):
     serializer_class = PrivateMessageSerializer
     
     def get_queryset(self):
-        return PrivateMessage.objects.filter(recipient=self.request.user)
+        return PrivateMessage.objects.filter(recipient=self.request.user).order_by('-created_at')
 
 
 class PrivateMessageOutboxView(generics.ListAPIView):
@@ -133,4 +170,4 @@ class PrivateMessageOutboxView(generics.ListAPIView):
     serializer_class = PrivateMessageOutboxSerializer
     
     def get_queryset(self):
-        return PrivateMessage.objects.filter(author=self.request.user)
+        return PrivateMessage.objects.filter(author=self.request.user).order_by('-created_at')
