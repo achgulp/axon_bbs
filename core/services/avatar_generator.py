@@ -30,38 +30,32 @@ def generate_cow_avatar(pubkey: str):
     seed = hashlib.sha256(pubkey.encode()).digest()
     
     # --- Color Palette Generation ---
-    # Use different parts of the hash for different colors
-    r = random.Random(seed) # Use a local random instance for deterministic color generation
-
-    # Main head color
+    r = random.Random(seed) 
     head_hue = r.randint(0, 359)
     head_saturation = r.randint(30, 60)
     head_lightness = r.randint(75, 90)
     head_color = f"hsl({head_hue}, {head_saturation}%, {head_lightness}%)"
 
-    # Spot color (contrast with head)
-    spot_hue = (head_hue + 180 + r.randint(-30, 30)) % 360 # Roughly opposite hue
+    spot_hue = (head_hue + 180 + r.randint(-30, 30)) % 360
     spot_saturation = r.randint(60, 90)
     spot_lightness = r.randint(30, 50)
     spot_color = f"hsl({spot_hue}, {spot_saturation}%, {spot_lightness}%)"
-
-    # Muzzle color (lighter, desaturated version of head or a neutral tone)
+    
     muzzle_color = f"hsl({head_hue}, {head_saturation // 2}%, {head_lightness + 5}%)"
-    if head_lightness > 80: # Ensure muzzle is not too bright if head is already very light
-        muzzle_color = "#E0E0E0" # Neutral light grey/off-white
+    if head_lightness > 80:
+        muzzle_color = "#E0E0E0"
 
-    # Horn color (fixed)
-    horn_color = "#A0522D" # SaddleBrown
+    horn_color = "#A0522D"
 
     # --- Create Image Canvas ---
-    img = Image.new('RGB', (128, 128), color='#FFFFFF') # White background
+    img = Image.new('RGB', (128, 128), color='#FFFFFF')
     draw = ImageDraw.Draw(img)
     
     # --- Draw Cow Features ---
-    
-    # Head (main circle)
     head_center_x, head_center_y = 64, 60
     head_radius = 45
+    
+    # Head (main circle)
     draw.ellipse([head_center_x - head_radius, head_center_y - head_radius, 
                   head_center_x + head_radius, head_center_y + head_radius], 
                  fill=head_color, outline='black', width=2)
@@ -73,89 +67,51 @@ def generate_cow_avatar(pubkey: str):
                   head_center_x + muzzle_width // 2, head_center_y + 15 + muzzle_height],
                  fill=muzzle_color, outline='black', width=2)
 
-    # Eyes (small black circles)
-    eye_radius = 4
-    draw.ellipse([head_center_x - 20 - eye_radius, head_center_y - 15 - eye_radius, 
-                  head_center_x - 20 + eye_radius, head_center_y - 15 + eye_radius], 
-                 fill='black')
-    draw.ellipse([head_center_x + 20 - eye_radius, head_center_y - 15 - eye_radius, 
-                  head_center_x + 20 + eye_radius, head_center_y - 15 + eye_radius], 
-                 fill='black')
+    # --- START FIX: Drawing order and ear position ---
 
-    # Nostrils (smaller black ovals on the muzzle)
-    nostril_width = 5
-    nostril_height = 8
-    draw.ellipse([head_center_x - 15 - nostril_width // 2, head_center_y + 25 - nostril_height // 2,
-                  head_center_x - 15 + nostril_width // 2, head_center_y + 25 + nostril_height // 2],
-                 fill='black')
-    draw.ellipse([head_center_x + 15 - nostril_width // 2, head_center_y + 25 - nostril_height // 2,
-                  head_center_x + 15 + nostril_width // 2, head_center_y + 25 + nostril_height // 2],
-                 fill='black')
-
-    # Smile (arc)
-    draw.arc([head_center_x - 20, head_center_y + 35,
-              head_center_x + 20, head_center_y + 55],
-             start=0, end=180, fill='black', width=2)
-
-    # Ears (triangular/leaf shape)
-    ear_base_y = head_center_y - head_radius + 10
-    ear_tip_y = head_center_y - head_radius - 15
-
-    # Left ear
-    draw.polygon([ (head_center_x - head_radius + 5, ear_base_y),
-                   (head_center_x - head_radius - 15, ear_base_y - 10),
-                   (head_center_x - head_radius + 20, ear_tip_y) ], 
-                 fill=head_color, outline='black', width=2)
-    
-    # Right ear
-    draw.polygon([ (head_center_x + head_radius - 5, ear_base_y),
-                   (head_center_x + head_radius + 15, ear_base_y - 10),
-                   (head_center_x + head_radius - 20, ear_tip_y) ], 
-                 fill=head_color, outline='black', width=2)
+    # Ears (moved closer to the head)
+    ear_color = '#E0B080'
+    draw.polygon([ (head_center_x - head_radius + 15, head_center_y - head_radius + 20),
+                   (head_center_x - head_radius - 10, head_center_y - head_radius),
+                   (head_center_x - head_radius + 5, head_center_y - head_radius - 10) ], 
+                 fill=ear_color, outline='black', width=2)
+    draw.polygon([ (head_center_x + head_radius - 15, head_center_y - head_radius + 20),
+                   (head_center_x + head_radius + 10, head_center_y - head_radius),
+                   (head_center_x + head_radius - 5, head_center_y - head_radius - 10) ], 
+                 fill=ear_color, outline='black', width=2)
     
     # Horns
-    horn_bottom_y = head_center_y - head_radius - 5
+    horn_bottom_y = head_center_y - head_radius + 5
     horn_tip_y = horn_bottom_y - 20
     horn_width = 8
+    draw.polygon([(head_center_x - 20, horn_bottom_y), (head_center_x - 20 - horn_width, horn_tip_y), (head_center_x - 20 + horn_width, horn_tip_y)], fill=horn_color, outline='black', width=1)
+    draw.polygon([(head_center_x + 20, horn_bottom_y), (head_center_x + 20 - horn_width, horn_tip_y), (head_center_x + 20 + horn_width, horn_tip_y)], fill=horn_color, outline='black', width=1)
 
-    # Left horn
-    draw.polygon([(head_center_x - 25, horn_bottom_y),
-                  (head_center_x - 25 - horn_width, horn_tip_y),
-                  (head_center_x - 25 + horn_width, horn_tip_y)],
-                 fill=horn_color, outline='black', width=1)
-    # Right horn
-    draw.polygon([(head_center_x + 25, horn_bottom_y),
-                  (head_center_x + 25 - horn_width, horn_tip_y),
-                  (head_center_x + 25 + horn_width, horn_tip_y)],
-                 fill=horn_color, outline='black', width=1)
-
-
-    # --- Generate Spots (within the head circle, avoiding muzzle area) ---
-    num_spots = r.randint(3, 6) # Fewer, larger spots for this style
+    # Generate Spots FIRST
+    num_spots = r.randint(3, 6)
     for _ in range(num_spots):
-        # Generate coordinates within the head circle but outside the muzzle
         while True:
             spot_x = r.randint(head_center_x - head_radius + 10, head_center_x + head_radius - 10)
-            spot_y = r.randint(head_center_y - head_radius + 10, head_center_y + head_radius - 10)
-            
-            # Check if within head and outside muzzle
+            spot_y = r.randint(head_center_y - head_radius + 10, head_center_y + 10) # Keep spots in upper area
             dist_to_head_center = ((spot_x - head_center_x)**2 + (spot_y - head_center_y)**2)**0.5
-            is_within_head = dist_to_head_center < head_radius - 5 # A little margin
-
-            is_over_muzzle = (head_center_x - muzzle_width // 2 < spot_x < head_center_x + muzzle_width // 2 and
-                              head_center_y + 15 < spot_y < head_center_y + 15 + muzzle_height)
-            
-            if is_within_head and not is_over_muzzle:
+            if dist_to_head_center < head_radius - 5:
                 break
+        spot_size_base = r.randint(20, 35)
+        spot_size_var = r.randint(-5, 5)
+        spot_w, spot_h = spot_size_base + spot_size_var, spot_size_base - spot_size_var
+        draw.ellipse([(spot_x - spot_w // 2, spot_y - spot_h // 2), (spot_x + spot_w // 2, spot_y + spot_h // 2)], fill=spot_color, outline='black', width=1)
 
-        spot_size_base = r.randint(20, 35) # Larger spots
-        spot_size_var = r.randint(-5, 5) # Slight variation
-        spot_w = spot_size_base + spot_size_var
-        spot_h = spot_size_base - spot_size_var # Slightly oval
+    # Eyes, Nostrils, and Smile are drawn LAST so they are always on top
+    eye_radius = 4
+    draw.ellipse([head_center_x - 20 - eye_radius, head_center_y - 15 - eye_radius, head_center_x - 20 + eye_radius, head_center_y - 15 + eye_radius], fill='black')
+    draw.ellipse([head_center_x + 20 - eye_radius, head_center_y - 15 - eye_radius, head_center_x + 20 + eye_radius, head_center_y - 15 + eye_radius], fill='black')
 
-        draw.ellipse([(spot_x - spot_w // 2, spot_y - spot_h // 2), 
-                      (spot_x + spot_w // 2, spot_y + spot_h // 2)], 
-                     fill=spot_color, outline='black', width=1)
+    nostril_width, nostril_height = 5, 8
+    draw.ellipse([head_center_x - 15 - nostril_width // 2, head_center_y + 25 - nostril_height // 2, head_center_x - 15 + nostril_width // 2, head_center_y + 25 + nostril_height // 2], fill='black')
+    draw.ellipse([head_center_x + 15 - nostril_width // 2, head_center_y + 25 - nostril_height // 2, head_center_x + 15 + nostril_width // 2, head_center_y + 25 + nostril_height // 2], fill='black')
+
+    draw.arc([head_center_x - 20, head_center_y + 35, head_center_x + 20, head_center_y + 55], start=0, end=180, fill='black', width=2)
+    # --- END FIX ---
     
     # --- Save Image to Buffer ---
     buffer = BytesIO()
@@ -165,4 +121,4 @@ def generate_cow_avatar(pubkey: str):
     checksum = generate_checksum(pubkey)
     filename = f"cow_{checksum[:12]}.png"
     
-    return ContentFile(buffer.getvalue(), name=filename), filename
+    return ContentFile(buffer.getvalue()), filename
