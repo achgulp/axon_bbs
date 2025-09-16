@@ -15,7 +15,6 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // Full path: axon_bbs/frontend/src/components/PrivateMessageClient.js
-
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
 import UnlockForm from './UnlockForm';
@@ -29,9 +28,7 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   
-  // --- START FIX ---
   const [recipientIdentifier, setRecipientIdentifier] = useState('');
-  // --- END FIX ---
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
 
@@ -77,10 +74,8 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
     setIsLoading(true);
     setError('');
     try {
-        // --- START FIX ---
         await apiClient.post('/api/pm/send/', { recipient_identifier: recipientIdentifier, subject, body });
         setRecipientIdentifier(''); 
-        // --- END FIX ---
         setSubject(''); 
         setBody('');
         setView('outbox');
@@ -173,12 +168,10 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
         <Header text="Compose Private Message" />
         <div className="bg-gray-800 p-4 rounded border border-gray-700">
             <form onSubmit={handleSendMessage}>
-                {/* --- START FIX --- */}
                 <div className="mb-4">
                     <label className="block text-gray-300 text-sm font-bold mb-2">Recipient</label>
                     <input type="text" placeholder="Enter username, nickname, or alias" value={recipientIdentifier} onChange={e => setRecipientIdentifier(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
-                {/* --- END FIX --- */}
                 <input type="text" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <textarea placeholder="Your message..." value={body} onChange={e => setBody(e.target.value)} required rows="8" className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}

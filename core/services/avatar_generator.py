@@ -13,9 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-#
-# File path: axon_bbs/core/services/avatar_generator.py
 
+# Full path: axon_bbs/core/services/avatar_generator.py
 import hashlib
 import random
 from PIL import Image, ImageDraw
