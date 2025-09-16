@@ -55,28 +55,25 @@ def generate_cow_avatar(pubkey: str):
     head_center_x, head_center_y = 64, 64
     head_radius = 45
 
-    # --- START FIX: Draw ears first and remove horns ---
-    
-    # Ears (rounded ovals, drawn behind the head)
-    ear_width = 30
-    ear_height = 40
+    # --- START FIX: Adjust ear position and spot clipping logic ---
+
+    # Ears (rounded ovals, moved up and angled)
+    ear_width, ear_height = 28, 40
     # Left Ear
-    draw.ellipse([head_center_x - head_radius - (ear_width / 2) + 5, head_center_y - (ear_height / 2), 
-                  head_center_x - head_radius + (ear_width / 2) + 5, head_center_y + (ear_height / 2)],
+    draw.ellipse([head_center_x - head_radius - 5, head_center_y - head_radius + 5, 
+                  head_center_x - head_radius + ear_width - 5, head_center_y - head_radius + ear_height + 5],
                  fill=head_color, outline='black', width=2)
-    draw.ellipse([head_center_x - head_radius, head_center_y - (ear_height / 2) + 10,
-                  head_center_x - head_radius + 10, head_center_y + (ear_height / 2) - 10],
+    draw.ellipse([head_center_x - head_radius + 2, head_center_y - head_radius + 15,
+                  head_center_x - head_radius + 12, head_center_y - head_radius + ear_height - 5],
                  fill=ear_inner_color)
 
     # Right Ear
-    draw.ellipse([head_center_x + head_radius - (ear_width / 2) - 5, head_center_y - (ear_height / 2),
-                  head_center_x + head_radius + (ear_width / 2) - 5, head_center_y + (ear_height / 2)],
+    draw.ellipse([head_center_x + head_radius - ear_width + 5, head_center_y - head_radius + 5,
+                  head_center_x + head_radius + 5, head_center_y - head_radius + ear_height + 5],
                  fill=head_color, outline='black', width=2)
-    draw.ellipse([head_center_x + head_radius - 10, head_center_y - (ear_height / 2) + 10,
-                  head_center_x + head_radius, head_center_y + (ear_height / 2) - 10],
+    draw.ellipse([head_center_x + head_radius - 12, head_center_y - head_radius + 15,
+                  head_center_x + head_radius - 2, head_center_y - head_radius + ear_height - 5],
                  fill=ear_inner_color)
-
-    # --- END FIX ---
     
     # Head (main circle, drawn on top of the ears for a clean look)
     draw.ellipse([head_center_x - head_radius, head_center_y - head_radius, 
@@ -93,17 +90,26 @@ def generate_cow_avatar(pubkey: str):
     # Generate Spots before drawing eyes/nostrils
     num_spots = r.randint(2, 5)
     for _ in range(num_spots):
+        # Improved logic to ensure spots do not clip outside the head
+        spot_radius = r.randint(10, 20)
         while True:
-            spot_x = r.randint(head_center_x - head_radius, head_center_x + head_radius)
-            spot_y = r.randint(head_center_y - head_radius, head_center_y + 10)
-            dist_to_head_center = ((spot_x - head_center_x)**2 + (spot_y - head_center_y)**2)**0.5
-            if dist_to_head_center < head_radius - 5:
-                break
-        spot_size_base = r.randint(20, 40)
-        spot_w, spot_h = spot_size_base, spot_size_base
-        draw.ellipse([(spot_x - spot_w // 2, spot_y - spot_h // 2), (spot_x + spot_w // 2, spot_y + spot_h // 2)], fill=spot_color, outline='black', width=1)
+            angle = r.uniform(0, 2 * 3.14159)
+            # Place the center of the spot well within the head circle
+            distance_from_center = r.uniform(0, head_radius - spot_radius)
+            spot_x = head_center_x + distance_from_center * math.cos(angle)
+            spot_y = head_center_y + distance_from_center * math.sin(angle)
+            
+            # Ensure spot doesn't overlap the muzzle area
+            is_over_muzzle = (head_center_y + 12 < spot_y + spot_radius)
 
-    # Eyes, Nostrils, and Smile are drawn last so they are always on top
+            if not is_over_muzzle:
+                break
+
+        draw.ellipse([(spot_x - spot_radius, spot_y - spot_radius), 
+                      (spot_x + spot_radius, spot_y + spot_radius)], 
+                     fill=spot_color, outline='black', width=1)
+    
+    # Eyes, Nostrils, and Smile are drawn LAST so they are always on top
     eye_radius = 5
     draw.ellipse([head_center_x - 20 - eye_radius, head_center_y - 10 - eye_radius, head_center_x - 20 + eye_radius, head_center_y - 10 + eye_radius], fill='black')
     draw.ellipse([head_center_x + 20 - eye_radius, head_center_y - 10 - eye_radius, head_center_x + 20 + eye_radius, head_center_y - 10 + eye_radius], fill='black')
@@ -113,6 +119,7 @@ def generate_cow_avatar(pubkey: str):
     draw.ellipse([head_center_x + 15 - nostril_width // 2, head_center_y + 28 - nostril_height // 2, head_center_x + 15 + nostril_width // 2, head_center_y + 28 + nostril_height // 2], fill='black')
 
     draw.arc([head_center_x - 18, head_center_y + 38, head_center_x + 18, head_center_y + 58], start=20, end=160, fill='black', width=2)
+    # --- END FIX ---
     
     # --- Save Image to Buffer ---
     buffer = BytesIO()
@@ -122,4 +129,4 @@ def generate_cow_avatar(pubkey: str):
     checksum = generate_checksum(pubkey)
     filename = f"cow_{checksum[:12]}.png"
     
-    return ContentFile(buffer.getvalue()), filename
+    return ContentFile(buffer.getvalue(), name=filename), filename
