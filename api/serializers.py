@@ -17,9 +17,12 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from core.models import MessageBoard, Message, Alias, User, ContentExtensionRequest, FileAttachment, PrivateMessage, Applet, HighScore, ModerationReport
+from core.models import MessageBoard, Message, User, ContentExtensionRequest, FileAttachment, PrivateMessage, Applet, HighScore, ModerationReport
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
+# --- START FIX ---
+from core.services.avatar_generator import generate_cow_avatar
+# --- END FIX ---
 import os
 import logging
 import json
@@ -53,6 +56,13 @@ class UserSerializer(serializers.ModelSerializer):
                 sa2=validated_data['security_answer_2']
             )
             user.pubkey = identity['public_key']
+            
+            # --- START FIX ---
+            # Generate and save a unique cow avatar upon registration
+            avatar_content_file, avatar_filename = generate_cow_avatar(user.pubkey)
+            user.avatar.save(avatar_filename, avatar_content_file, save=False)
+            # --- END FIX ---
+
             user.save()
             logger.info(f"Successfully created manifest-based identity for {user.username}")
         except Exception as e:
@@ -83,15 +93,15 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = ('id', 'subject', 'body', 'created_at', 'author_display', 'author_avatar_url', 'attachments', 'pubkey')
 
     def get_author_display(self, obj):
-        if obj.author:
-            return obj.author.nickname if obj.author.nickname else obj.author.username
+        user_to_check = obj.author
+        if not user_to_check and obj.pubkey:
+            user_to_check = User.objects.filter(pubkey=obj.pubkey).first()
+
+        if user_to_check:
+            return user_to_check.nickname if user_to_check.nickname else user_to_check.username
         elif obj.pubkey:
-            alias = Alias.objects.filter(pubkey=obj.pubkey).first()
-            if alias:
-                return alias.nickname
-            else:
-                short_id = generate_short_id(obj.pubkey, length=8)
-                return f"Moo-{short_id}" # --- CHANGED ---
+             short_id = generate_short_id(obj.pubkey, length=8)
+             return f"Moo-{short_id}"
         
         return 'Anonymous'
     
@@ -121,27 +131,23 @@ class PrivateMessageSerializer(serializers.ModelSerializer):
         if obj.author:
             return obj.author.nickname if obj.author.nickname else obj.author.username
         elif obj.sender_pubkey:
-            alias = Alias.objects.filter(pubkey=obj.sender_pubkey).first()
-            if alias:
-                return alias.nickname
-            else:
-                short_id = generate_short_id(obj.sender_pubkey, length=8)
-                return f"Moo-{short_id}" # --- CHANGED ---
+            user = User.objects.filter(pubkey=obj.sender_pubkey).first()
+            if user:
+                return user.nickname if user.nickname else user.username
+            short_id = generate_short_id(obj.sender_pubkey, length=8)
+            return f"Moo-{short_id}"
         return "Unknown Sender"
     
     def get_author_avatar_url(self, obj):
-        if obj.author and obj.author.avatar:
+        user_to_check = obj.author
+        if not user_to_check and obj.sender_pubkey:
+             user_to_check = User.objects.filter(pubkey=obj.sender_pubkey).first()
+
+        if user_to_check and user_to_check.avatar:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(obj.author.avatar.url)
-            return obj.author.avatar.url
-        if obj.sender_pubkey:
-            user = User.objects.filter(pubkey=obj.sender_pubkey).first()
-            if user and user.avatar:
-                request = self.context.get('request')
-                if request:
-                    return request.build_absolute_uri(user.avatar.url)
-                return user.avatar.url
+                return request.build_absolute_uri(user_to_check.avatar.url)
+            return user_to_check.avatar.url
         return None
 
 class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
@@ -155,20 +161,18 @@ class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_recipient_display(self, obj):
-        if obj.recipient:
-            return obj.recipient.nickname if obj.recipient.nickname else obj.recipient.username
+        user_to_check = obj.recipient
+        if not user_to_check and obj.recipient_pubkey:
+            user_to_check = User.objects.filter(pubkey=obj.recipient_pubkey).first()
+
+        if user_to_check:
+            return user_to_check.nickname if user_to_check.nickname else user_to_check.username
         elif obj.recipient_pubkey:
-            alias = Alias.objects.filter(pubkey=obj.recipient_pubkey).first()
-            if alias:
-                return alias.nickname
-            else:
-                short_id = generate_short_id(obj.recipient_pubkey, length=8)
-                return f"Moo-{short_id}" # --- CHANGED ---
+            short_id = generate_short_id(obj.recipient_pubkey, length=8)
+            return f"Moo-{short_id}"
         return 'Unknown Recipient'
 
     def get_recipient_avatar_url(self, obj):
-        # --- START FIX ---
-        # This logic is expanded to find avatars for federated users.
         user_to_check = obj.recipient
         if not user_to_check and obj.recipient_pubkey:
             user_to_check = User.objects.filter(pubkey=obj.recipient_pubkey).first()
@@ -178,7 +182,6 @@ class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
             if request:
                 return request.build_absolute_uri(user_to_check.avatar.url)
             return user_to_check.avatar.url
-        # --- END FIX ---
         return None
 
 class ContentExtensionRequestSerializer(serializers.ModelSerializer):
@@ -197,7 +200,6 @@ class AppletSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 class HighScoreSerializer(serializers.ModelSerializer):
-    # --- START FIX ---
     owner_avatar_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -205,9 +207,6 @@ class HighScoreSerializer(serializers.ModelSerializer):
         fields = ('owner_nickname', 'owner_avatar_url', 'score', 'wins', 'losses', 'kills', 'deaths', 'assists', 'last_updated')
 
     def get_owner_avatar_url(self, obj):
-        """
-        Finds the user by their public key and returns their avatar URL.
-        """
         user = User.objects.filter(pubkey=obj.owner_pubkey).first()
         if user and user.avatar:
             request = self.context.get('request')
@@ -215,7 +214,6 @@ class HighScoreSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(user.avatar.url)
             return user.avatar.url
         return None
-    # --- END FIX ---
 
 class ModerationReportSerializer(serializers.ModelSerializer):
     reporting_user = serializers.StringRelatedField()
