@@ -37,10 +37,6 @@ from .views import (
     SyncView,
     BitSyncHasContentView,
     BitSyncChunkView,
-    FileUploadView,
-    FileDownloadView,
-    DownloadContentView,
-    FileStatusView,
     GetPublicKeyView,
     SendPrivateMessageView,
     PrivateMessageListView,
@@ -52,11 +48,12 @@ from .views import (
     ReadAppletEventsView,
     AppletSharedStateView,
     AppletStateVersionView,
-    # --- NEW IMPORTS FOR MODERATION ---
+    # Moderation & Recovery Views
     ReportMessageView,
     ModeratorQueueView,
     ReviewReportView,
-    # --- END NEW IMPORTS ---
+    GetSecurityQuestionsView,
+    SubmitRecoveryView,
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -79,6 +76,10 @@ urlpatterns = [
     path('user/profile/', UserProfileView.as_view(), name='user-profile'),
     path('user/avatar/', UploadAvatarView.as_view(), name='user-avatar'),
 
+    # Recovery URLs
+    path('recovery/get_questions/', GetSecurityQuestionsView.as_view(), name='recovery-get-questions'),
+    path('recovery/submit/', SubmitRecoveryView.as_view(), name='recovery-submit'),
+    
     # Private Messaging
     path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),
     path('pm/list/', PrivateMessageListView.as_view(), name='pm-list'),
@@ -89,24 +90,15 @@ urlpatterns = [
     path('boards/<int:pk>/messages/', MessageListView.as_view(), name='message-list'),
     path('messages/post/', PostMessageView.as_view(), name='post-message'),
     path('user/ignore/', IgnorePubkeyView.as_view(), name='ignore-pubkey'),
-    
-    # --- NEW MODERATION URLS ---
     path('messages/report/', ReportMessageView.as_view(), name='report-message'),
     path('moderation/queue/', ModeratorQueueView.as_view(), name='mod-queue'),
     path('moderation/review/<int:report_id>/', ReviewReportView.as_view(), name='mod-review'),
-    # --- END NEW URLS ---
     
     # Admin & Moderator Actions
     path('admin/ban/', BanPubkeyView.as_view(), name='ban-pubkey'),
     path('content/request-extension/', RequestContentExtensionView.as_view(), name='request-extension'),
     path('content/review-extension/<int:pk>/', ReviewContentExtensionView.as_view(), name='review-extension'),
     path('content/unpin/', UnpinContentView.as_view(), name='unpin-content'),
-
-    # File & Content Handling
-    path('files/upload/', FileUploadView.as_view(), name='file-upload'),
-    path('files/download/<uuid:file_id>/', FileDownloadView.as_view(), name='file-download'),
-    path('files/status/<uuid:file_id>/', FileStatusView.as_view(), name='file-status'),
-    path('content/download/<str:content_hash>/', DownloadContentView.as_view(), name='content-download'),
 
     # Applet Framework
     path('applets/', AppletListView.as_view(), name='applet-list'),

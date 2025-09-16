@@ -89,20 +89,21 @@ class ServiceManager:
             logger.error(f"Database connection not ready, skipping agent initialization: {e}")
             return
 
-        agent_users = User.objects.filter(is_agent=True)
+        # --- MODIFIED: Query now checks for is_active=True as well ---
+        agent_users = User.objects.filter(is_agent=True, is_active=True)
+        
         if not agent_users.exists():
-            logger.info("No game agents configured to run.")
+            logger.info("No active game agents configured to run.")
             return
 
-        logger.info(f"Found {agent_users.count()} game agent(s) to start...")
+        logger.info(f"Found {agent_users.count()} active game agent(s) to start...")
         for agent_user in agent_users:
             self._load_and_start_agent(agent_user)
             
-    # --- NEW METHOD to start a single agent ---
     def start_agent(self, user):
         """Starts a new agent service that is not currently running."""
-        if not user.is_agent:
-            logger.warning(f"Cannot start agent for '{user.username}': 'is_agent' flag is false.")
+        if not user.is_agent or not user.is_active:
+            logger.warning(f"Cannot start agent for '{user.username}': 'is_agent' or 'is_active' flag is false.")
             return False
         if user.username in self.game_agents:
             logger.warning(f"Cannot start agent for '{user.username}': Service is already running.")
@@ -110,7 +111,6 @@ class ServiceManager:
         
         return self._load_and_start_agent(user)
 
-    # --- NEW METHOD to stop a single agent ---
     def stop_agent(self, username):
         """Stops a running agent service."""
         if username not in self.game_agents:

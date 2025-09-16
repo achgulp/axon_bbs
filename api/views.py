@@ -67,16 +67,14 @@ class UnlockIdentityView(views.APIView):
     def post(self, request, *args, **kwargs):
         user, password = request.user, request.data.get('password')
         if not password: return Response({"error": "Password is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
         try:
-            user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
-            salt_path = os.path.join(user_data_dir, 'salt.bin')
-            with open(salt_path, 'rb') as f: salt = f.read()
-            encryption_key = derive_key_from_password(password, salt)
-            identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
-            identity_service = IdentityService(identity_storage_path, encryption_key)
-            identity = identity_service.get_identity_by_name("default")
-            if not identity: return Response({"error": "No default identity found."}, status=status.HTTP_404_NOT_FOUND)
-            request.session['unencrypted_priv_key'] = identity['private_key']
+            identity_service = IdentityService(user=user)
+            private_key = identity_service.get_unlocked_private_key(password)
+            if not private_key:
+                raise DecryptionError("Failed to unlock with provided password.")
+            
+            request.session['unencrypted_priv_key'] = private_key
             logger.info(f"Identity unlocked for user {user.username}")
             return Response({"status": "identity unlocked"}, status=status.HTTP_200_OK)
         except DecryptionError as e:
@@ -91,114 +89,13 @@ class ImportIdentityView(views.APIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request, *args, **kwargs):
-        user = request.user
-        account_password = request.data.get('account_password')
-        key_file_password = request.data.get('key_file_password', None)
-        private_key_pem = request.data.get('private_key')
-        name = request.data.get('name', 'default')
-
-        if 'key_file' in request.FILES:
-            key_file = request.FILES['key_file']
-            try:
-                private_key_pem = key_file.read().decode('utf-8')
-            except Exception as e:
-                return Response({"error": f"Could not read the provided file: {e}"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not all([private_key_pem, account_password]):
-            return Response({"error": "A private key and your current account password are required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            try:
-                serialization.load_pem_private_key(
-                    private_key_pem.strip().encode(),
-                    password=key_file_password.encode() if key_file_password else None
-                )
-            except Exception as e:
-                logger.warning(f"Invalid PEM format or wrong key password for user {user.username}: {e}")
-                raise ValueError("Invalid private key format or incorrect key password.")
-
-            user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
-            salt_path = os.path.join(user_data_dir, 'salt.bin')
-            with open(salt_path, 'rb') as f: salt = f.read()
-            encryption_key = derive_key_from_password(account_password, salt)
-            identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
-            identity_service = IdentityService(identity_storage_path, encryption_key)
-
-            existing_identity = identity_service.get_identity_by_name(name)
-            if existing_identity:
-                identity_service.remove_identity(existing_identity['id'])
-
-            new_identity = identity_service.add_existing_identity(
-                name,
-                private_key_pem,
-                password=key_file_password
-            )
-
-            if name == "default":
-                user.pubkey = new_identity['public_key']
-                user.save()
-
-            return Response({"status": f"Identity '{name}' imported successfully."}, status=status.HTTP_201_CREATED)
-        except DecryptionError as e:
-            logger.warning(f"Failed import attempt for {user.username}: {e}")
-            return Response({"error": "Failed to import identity. Please check your account password."}, status=status.HTTP_401_UNAUTHORIZED)
-        except ValueError as e:
-             logger.warning(f"Failed to import identity for {user.username}: {e}")
-             return Response({"error": "Invalid private key format. Please ensure it is a valid PEM file and the key password is correct."}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
-            return Response({"error": "An unexpected server error occurred during import."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({"error": "Import functionality is not yet updated for the new identity system."}, status=status.HTTP_501_NOT_IMPLEMENTED)
 
 class ExportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        user = request.user
-        password = request.data.get('password')
-        name = request.data.get('name', 'default')
-
-        if not password:
-            return Response({"error": "Password is required to export and encrypt your key."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            user_data_dir = os.path.join(settings.BASE_DIR, 'data', 'user_data', user.username)
-            salt_path = os.path.join(user_data_dir, 'salt.bin')
-            with open(salt_path, 'rb') as f: salt = f.read()
-            encryption_key = derive_key_from_password(password, salt)
-            identity_storage_path = os.path.join(user_data_dir, 'identities.dat')
-            identity_service = IdentityService(identity_storage_path, encryption_key)
-            identity = identity_service.get_identity_by_name(name)
-
-            if not identity or 'private_key' not in identity:
-                return Response({"error": f"Could not find the '{name}' identity."}, status=status.HTTP_404_NOT_FOUND)
-
-            private_key_pem_from_storage = identity['private_key']
-
-            try:
-                key_object = serialization.load_pem_private_key(
-                    private_key_pem_from_storage.strip().encode(),
-                    password=None
-                )
-                encrypted_pem_output = key_object.private_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PrivateFormat.TraditionalOpenSSL,
-                    encryption_algorithm=serialization.BestAvailableEncryption(password.encode())
-                )
-            except Exception as e:
-                logger.error(f"FATAL: The stored private key for user {user.username} is corrupted and cannot be parsed: {e}")
-                raise ValueError("The stored private key is corrupted and cannot be exported.")
-
-            response = HttpResponse(encrypted_pem_output, content_type='application/x-pem-file')
-            response['Content-Disposition'] = f'attachment; filename="{user.username}_axon_key_encrypted.pem"'
-            return response
-        except DecryptionError as e:
-            logger.warning(f"Failed export attempt for {user.username}: {e}")
-            return Response({"error": "Failed to export identity. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
-        except ValueError as e:
-             return Response({"error": f"Could not export key: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        except Exception as e:
-            logger.error(f"Failed to import identity for {user.username}: {e}", exc_info=True)
-            return Response({"error": "An unexpected server error occurred during export."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({"error": "Export functionality is not yet updated for the new identity system."}, status=status.HTTP_501_NOT_IMPLEMENTED)
 
 class UpdateNicknameView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -307,293 +204,6 @@ class UploadAvatarView(views.APIView):
         except Exception as e:
             logger.error(f"Could not process avatar for {request.user.username}: {e}")
             return Response({"error": "Invalid image file. Please upload a valid PNG, JPG, or GIF."}, status=status.HTTP_400_BAD_REQUEST)
-
-class SendPrivateMessageView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request, *args, **kwargs):
-        identifier = request.data.get('recipient_identifier')
-        pubkey = request.data.get('recipient_pubkey')
-        subject = request.data.get('subject')
-        body = request.data.get('body')
-        sender = request.user
-        target_applet_id = request.data.get('target_applet_id')
-
-        if not all([identifier, subject, body]):
-            return Response({"error": "Recipient identifier, subject, and body are required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not request.session.get('unencrypted_priv_key') or not sender.pubkey:
-            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
-
-        recipient_pubkey = None
-        if pubkey:
-            recipient_pubkey = pubkey
-        else:
-            local_user = User.objects.filter(username__iexact=identifier).first()
-            alias = Alias.objects.filter(nickname__iexact=identifier).first()
-            if local_user and local_user.pubkey:
-                recipient_pubkey = local_user.pubkey
-            elif alias and alias.pubkey:
-                recipient_pubkey = alias.pubkey
-
-        if not recipient_pubkey:
-            return Response({"error": f"Recipient '{identifier}' not found or has no public key."}, status=status.HTTP_404_NOT_FOUND)
-
-        if not service_manager.bitsync_service:
-            return Response({"error": "BitSync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
-        try:
-            is_new_contact = not Alias.objects.filter(pubkey=recipient_pubkey).exists()
-            is_remote_user = not User.objects.filter(pubkey=recipient_pubkey).exists()
-
-            if is_new_contact and is_remote_user:
-                nickname_to_create = identifier
-                if not Alias.objects.filter(nickname__iexact=nickname_to_create).exists():
-                    Alias.objects.create(pubkey=recipient_pubkey, nickname=nickname_to_create)
-                    logger.info(f"Created new alias '{nickname_to_create}' for first-time contact.")
-                else:
-                    logger.warning(f"Did not create alias for {recipient_pubkey[:12]} because nickname '{nickname_to_create}' already exists.")
-
-            recipient_user = User.objects.filter(pubkey=recipient_pubkey).first()
-            
-            encrypted_for_recipient = encrypt_with_public_key(body, recipient_pubkey)
-            encrypted_for_sender = encrypt_with_public_key(body, sender.pubkey)
-            
-            e2e_body = { "recipient_copy": encrypted_for_recipient, "sender_copy": encrypted_for_sender }
-
-            pm_content = {
-                "type": "pm",
-                "sender_pubkey": sender.pubkey,
-                "recipient_pubkey": recipient_pubkey,
-                "subject": subject,
-                "body": e2e_body
-            }
-            
-            if target_applet_id:
-                pm_content['sub_type'] = 'applet_message'
-                pm_content['target_applet_id'] = target_applet_id
-            
-            content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(pm_content)
-            
-            PrivateMessage.objects.create(
-                author=sender,
-                recipient=recipient_user,
-                recipient_pubkey=recipient_pubkey,
-                sender_pubkey=sender.pubkey,
-                subject=subject,
-                manifest=manifest
-            )
-            logger.info(f"User {sender.username} sent E2E encrypted PM to key starting with {recipient_pubkey[:12]}...")
-            return Response({"status": "Message sent successfully."}, status=status.HTTP_201_CREATED)
-
-        except Exception as e:
-            logger.error(f"Failed to send private message for {sender.username}: {e}", exc_info=True)
-            return Response({"error": "Server error while sending message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class PrivateMessageListView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request, *args, **kwargs):
-        if not request.session.get('unencrypted_priv_key'):
-            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
-        
-        if not service_manager.sync_service:
-            return Response({"error": "Sync service is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
-        user_pubkey = request.user.pubkey
-        if not user_pubkey:
-            return Response({"error": "Current user does not have a public key."}, status=status.HTTP_400_BAD_REQUEST)
-            
-        received_messages = PrivateMessage.objects.filter(recipient_pubkey=user_pubkey).order_by('-created_at')
-        
-        decrypted_messages = []
-        user_privkey = request.session.get('unencrypted_priv_key')
-
-        for pm in received_messages:
-            try:
-                decrypted_content_bytes = service_manager.sync_service.get_decrypted_content(pm.manifest)
-                if decrypted_content_bytes:
-                    content = json.loads(decrypted_content_bytes.decode('utf-8'))
-                    e2e_body = content.get('body', {})
-                    if isinstance(e2e_body, dict) and 'recipient_copy' in e2e_body:
-                        pm.decrypted_body = decrypt_with_private_key(e2e_body['recipient_copy'], user_privkey)
-                    else: 
-                        pm.decrypted_body = str(e2e_body)
-                else:
-                    pm.decrypted_body = '[Content not available or still syncing]'
-            except Exception as e:
-                logger.error(f"Could not decrypt PM {pm.id} for user {request.user.username}: {e}")
-                pm.decrypted_body = '[Decryption Error]'
-            
-            decrypted_messages.append(pm)
-            
-        serializer = PrivateMessageSerializer(decrypted_messages, many=True)
-        return Response(serializer.data)
-
-class PrivateMessageOutboxView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request, *args, **kwargs):
-        if not request.session.get('unencrypted_priv_key'):
-            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
-        
-        if not service_manager.sync_service:
-            return Response({"error": "Sync service is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
-        sent_messages = PrivateMessage.objects.filter(author=request.user).order_by('-created_at')
-        
-        decrypted_messages = []
-        user_privkey = request.session.get('unencrypted_priv_key')
-
-        for pm in sent_messages:
-            try:
-                decrypted_content_bytes = service_manager.sync_service.get_decrypted_content(pm.manifest)
-                if decrypted_content_bytes:
-                    content = json.loads(decrypted_content_bytes.decode('utf-8'))
-                    e2e_body = content.get('body', {})
-                    if isinstance(e2e_body, dict) and 'sender_copy' in e2e_body:
-                        pm.decrypted_body = decrypt_with_private_key(e2e_body['sender_copy'], user_privkey)
-                    else: 
-                        pm.decrypted_body = str(e2e_body)
-                else:
-                    pm.decrypted_body = '[Content not available]'
-            except Exception as e:
-                logger.error(f"Could not decrypt sent PM {pm.id} for user {request.user.username}: {e}")
-                pm.decrypted_body = '[Decryption Error]'
-            
-            decrypted_messages.append(pm)
-            
-        serializer = PrivateMessageOutboxSerializer(decrypted_messages, many=True)
-        return Response(serializer.data)
-
-class FileUploadView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def post(self, request, *args, **kwargs):
-        if 'file' not in request.FILES:
-            return Response({"error": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        uploaded_file = request.FILES['file']
-        if not service_manager.bitsync_service:
-            return Response({"error": "Sync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        
-        try:
-            raw_data = uploaded_file.read()
-            file_content = {
-                "type": "file",
-                "filename": uploaded_file.name,
-                "content_type": uploaded_file.content_type,
-                "size": uploaded_file.size,
-                "data": base64.b64encode(raw_data).decode('ascii')
-            }
-            
-            temp_hash_data = json.dumps(file_content, sort_keys=True).encode('utf-8')
-            content_hash = hashlib.sha256(temp_hash_data).hexdigest()
-            
-            existing_attachment = FileAttachment.objects.filter(manifest__content_hash=content_hash).first()
-            if existing_attachment:
-                logger.info(f"Duplicate file upload for '{uploaded_file.name}'. Reusing existing attachment.")
-                serializer = FileAttachmentSerializer(existing_attachment)
-                return Response(serializer.data, status=status.HTTP_200_OK)
-
-            _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(file_content)
-
-            attachment = FileAttachment.objects.create(
-                author=request.user, filename=uploaded_file.name, content_type=uploaded_file.content_type,
-                size=uploaded_file.size, manifest=manifest
-            )
-            serializer = FileAttachmentSerializer(attachment)
-            logger.info(f"User {request.user.username} uploaded new file '{attachment.filename}' ({attachment.id})")
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        
-        except Exception as e:
-            logger.error(f"Failed to process file upload for {request.user.username}: {e}", exc_info=True)
-            return Response({"error": "Server error during file processing."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class FileDownloadView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    def get(self, request, file_id, *args, **kwargs):
-        if not request.session.get('unencrypted_priv_key'):
-            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
-        try:
-            attachment = FileAttachment.objects.get(id=file_id)
-        except FileAttachment.DoesNotExist:
-            raise Http404("File not found.")
-        if not service_manager.sync_service:
-            return Response({"error": "Sync service is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        try:
-            decrypted_data = service_manager.sync_service.get_decrypted_content(attachment.manifest)
-            if decrypted_data is None:
-                return Response({"error": "Failed to retrieve or decrypt file from the network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-            
-            content = json.loads(decrypted_data)
-            file_bytes = base64.b64decode(content['data'])
-
-            if not is_file_type_valid(file_bytes):
-                logger.warning(f"Blocked download of file '{attachment.filename}' ({attachment.id}) due to invalid file type.")
-                return Response({"error": "This file type is not permitted on the server."}, status=status.HTTP_403_FORBIDDEN)
-
-            response = HttpResponse(file_bytes, content_type=attachment.content_type)
-            response['Content-Disposition'] = f'attachment; filename="{attachment.filename}"'
-            return response
-        except Exception as e:
-            logger.error(f"Error during file download for file {file_id}: {e}", exc_info=True)
-            return Response({"error": "An error occurred while preparing the file for download."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class DownloadContentView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    def get(self, request, content_hash, *args, **kwargs):
-        if not request.session.get('unencrypted_priv_key'):
-            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
-        
-        if not service_manager.sync_service:
-            return Response({"error": "Sync service is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
-        manifest = None
-        models_to_check = [Message, FileAttachment, PrivateMessage, Applet]
-        for model in models_to_check:
-            manifest_field_name = 'code_manifest' if model is Applet else 'manifest'
-            filter_kwargs = {f'{manifest_field_name}__content_hash': content_hash}
-            
-            item = model.objects.filter(**filter_kwargs).first()
-            if item:
-                manifest = getattr(item, manifest_field_name)
-                break
-        
-        if not manifest:
-            raise Http404("Content with the specified hash not found.")
-
-        try:
-            decrypted_data = service_manager.sync_service.get_decrypted_content(manifest)
-            if decrypted_data is None:
-                return Response({"error": "Failed to retrieve or decrypt content from the network."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-            
-            logger.info(f"User '{request.user.username}' successfully decrypted and downloaded content with hash: {content_hash[:12]}...")
-
-            content_details = json.loads(decrypted_data.decode('utf-8'))
-            applet_code = content_details.get('code', '')
-            
-            return HttpResponse(applet_code, content_type='application/javascript')
-        except Exception as e:
-            logger.error(f"Error during generic content download for hash {content_hash}: {e}", exc_info=True)
-            return Response({"error": "An error occurred while preparing content for download."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class FileStatusView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request, file_id, *args, **kwargs):
-        try:
-            attachment = FileAttachment.objects.get(id=file_id)
-            if service_manager.bitsync_service.are_all_chunks_local(attachment.manifest):
-                return JsonResponse({"status": "available"})
-            else:
-                return JsonResponse({"status": "syncing"})
-        except FileAttachment.DoesNotExist:
-            raise Http404("File not found.")
-        except Exception as e:
-            logger.error(f"Error checking status for file {file_id}: {e}", exc_info=True)
-            return Response({"error": "Could not determine file status."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class MessageBoardListView(generics.ListAPIView):
     serializer_class = MessageBoardSerializer
@@ -765,6 +375,51 @@ class ReviewReportView(views.APIView):
             return Response({"status": "Report rejected."})
 
         return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
+
+class GetSecurityQuestionsView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        username = request.data.get('username')
+        if not username:
+            return Response({'error': 'Username is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(username=username)
+            identity_service = IdentityService(user=user)
+            questions = identity_service.get_security_questions()
+            if questions:
+                return Response(questions)
+            else:
+                return Response({"error": "User does not have manifest-based recovery configured."}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+class SubmitRecoveryView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        username = request.data.get('username')
+        answer_1 = request.data.get('answer_1')
+        answer_2 = request.data.get('answer_2')
+        new_password = request.data.get('new_password')
+
+        if not all([username, answer_1, answer_2, new_password]):
+            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(username=username)
+            identity_service = IdentityService(user=user)
+            
+            success = identity_service.recover_identity_with_answers(answer_1, answer_2, new_password)
+            
+            if success:
+                user.set_password(new_password)
+                user.save()
+                return Response({"status": "Password has been successfully reset."})
+            else:
+                return Response({"error": "Recovery failed. One or more answers were incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
 class RequestContentExtensionView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -1056,4 +711,4 @@ class AppletStateVersionView(views.APIView):
             shared_state = AppletSharedState.objects.get(applet_id=applet_id)
             return JsonResponse({"version": shared_state.version})
         except AppletSharedState.DoesNotExist:
-            raise Http4e
+            raise Http404

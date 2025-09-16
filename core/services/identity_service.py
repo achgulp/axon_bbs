@@ -22,7 +22,7 @@ import logging
 from typing import Dict, Any, List, Optional
 import uuid
 from datetime import datetime
-from .encryption_utils import encrypt_data, decrypt_data, derive_key_from_password, generate_salt
+from .encryption_utils import derive_key_from_password, generate_salt
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from cryptography.fernet import Fernet, InvalidToken
@@ -129,3 +129,58 @@ class IdentityService:
         except Exception as e:
             logger.error(f"Failed to get unlocked private key for {self.user.username}: {e}")
             return None
+
+    # --- NEW METHODS for password recovery ---
+    def get_security_questions(self) -> Optional[Dict[str, str]]:
+        """Reads the manifest and returns the user's security questions."""
+        try:
+            with open(self.manifest_path, 'r') as f:
+                manifest = json.load(f)
+            return {
+                "security_question_1": manifest.get("security_question_1"),
+                "security_question_2": manifest.get("security_question_2"),
+            }
+        except (FileNotFoundError, KeyError):
+            return None
+
+    def recover_identity_with_answers(self, sa1, sa2, new_password):
+        """Attempts to recover the master key and resets the password envelope."""
+        try:
+            with open(self.manifest_path, 'r') as f:
+                manifest = json.load(f)
+            
+            sq1 = manifest['security_question_1']
+            sq2 = manifest['security_question_2']
+
+            # Attempt to decrypt with answer 1
+            sq1_derived_key = derive_key_from_password(sa1, sq1.encode('utf-8'))
+            master_key_1 = Fernet(sq1_derived_key).decrypt(bytes.fromhex(manifest['envelopes']['sq1']))
+
+            # Attempt to decrypt with answer 2
+            sq2_derived_key = derive_key_from_password(sa2, sq2.encode('utf-8'))
+            master_key_2 = Fernet(sq2_derived_key).decrypt(bytes.fromhex(manifest['envelopes']['sq2']))
+
+            if master_key_1 != master_key_2:
+                raise DecryptionError("Recovery key mismatch.")
+
+            master_aes_key = master_key_1
+            
+            # Success! Now, create a new password envelope
+            new_password_salt = generate_salt()
+            new_password_derived_key = derive_key_from_password(new_password, new_password_salt)
+            new_password_envelope = Fernet(new_password_derived_key).encrypt(master_aes_key)
+
+            # Update the manifest with the new password salt and envelope
+            manifest['password_salt'] = new_password_salt.hex()
+            manifest['envelopes']['password'] = new_password_envelope.hex()
+
+            with open(self.manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2)
+            
+            return True
+        except (InvalidToken, DecryptionError):
+            logger.warning(f"Failed recovery attempt for {self.user.username}: one or more answers were incorrect.")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error during recovery for {self.user.username}: {e}")
+            return False

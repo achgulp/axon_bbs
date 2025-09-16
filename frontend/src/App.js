@@ -20,12 +20,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from './apiClient';
 import LoginScreen from './components/LoginScreen';
 import RegisterScreen from './components/RegisterScreen';
+import RecoveryScreen from './components/RecoveryScreen'; // --- NEW: Import Recovery Screen ---
 import MessageList from './components/MessageList';
 import UnlockForm from './components/UnlockForm';
 import ProfileScreen from './components/ProfileScreen';
 import AppletView from './components/AppletView';
 import HighScoreBoard from './components/HighScoreBoard';
-import ModerationDashboard from './components/ModerationDashboard'; // --- NEW: Import Dashboard ---
+import ModerationDashboard from './components/ModerationDashboard';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
@@ -62,7 +63,6 @@ const MessageBoardList = ({ onSelectBoard }) => {
   );
 };
 
-// ... (PrivateMessageClient component remains unchanged) ...
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
@@ -73,7 +73,6 @@ function App() {
   const [currentView, setCurrentView] = useState('boards');
   const [pmRecipient, setPmRecipient] = useState(null);
   const [lastPlayedGame, setLastPlayedGame] = useState(null);
-  // --- NEW: State to hold user profile data ---
   const [profile, setProfile] = useState(null);
 
   const setAuthToken = (newToken) => {
@@ -82,12 +81,11 @@ function App() {
     } else {
       localStorage.removeItem('token');
       setIdentityUnlocked(false);
-      setProfile(null); // Clear profile on logout
+      setProfile(null);
     }
     setToken(newToken);
   };
 
-  // --- NEW: Fetch profile when token is set ---
   useEffect(() => {
     const fetchProfile = () => {
         apiClient.get('/api/user/profile/')
@@ -130,14 +128,13 @@ function App() {
     setNeedsUnlock(false);
   };
 
+  // --- MODIFIED: This block now handles navigation to the recovery view ---
   if (!token) {
     return (
       <div className="bg-gray-800 min-h-screen">
-        {authView === 'login' ? (
-          <LoginScreen onLogin={setAuthToken} onNavigateToRegister={() => setAuthView('register')} />
-        ) : (
-          <RegisterScreen onRegisterSuccess={() => setAuthView('login')} onNavigateToLogin={() => setAuthView('login')} />
-        )}
+        {authView === 'login' && <LoginScreen onLogin={setAuthToken} onNavigateToRegister={() => setAuthView('register')} onNavigateToRecovery={() => setAuthView('recovery')} />}
+        {authView === 'register' && <RegisterScreen onRegisterSuccess={() => setAuthView('login')} onNavigateToLogin={() => setAuthView('login')} />}
+        {authView === 'recovery' && <RecoveryScreen onNavigateToLogin={() => setAuthView('login')} />}
       </div>
     );
   }
@@ -156,7 +153,6 @@ function App() {
     if (currentView === 'high_scores' && lastPlayedGame) {
       return <HighScoreBoard applet={lastPlayedGame} onBack={() => handleViewChange('applets')} />;
     }
-    // --- NEW: Render the moderation dashboard ---
     if (currentView === 'moderation') {
       return <ModerationDashboard />;
     }
@@ -189,7 +185,6 @@ function App() {
               >
                 High Scores
               </SideBarButton>
-              {/* --- NEW: Conditionally render Moderation button --- */}
               {profile?.is_moderator && (
                 <SideBarButton onClick={() => handleViewChange('moderation')}>Moderation</SideBarButton>
               )}
