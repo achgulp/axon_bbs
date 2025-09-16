@@ -21,6 +21,7 @@ from PIL import Image, ImageDraw
 from io import BytesIO
 from django.core.files.base import ContentFile
 from .encryption_utils import generate_checksum
+import math # <--- FIX: Added the missing import
 
 def generate_cow_avatar(pubkey: str):
     """
@@ -54,8 +55,6 @@ def generate_cow_avatar(pubkey: str):
     # --- Draw Cow Features ---
     head_center_x, head_center_y = 64, 64
     head_radius = 45
-
-    # --- START FIX: Adjust ear position and spot clipping logic ---
 
     # Ears (rounded ovals, moved up and angled)
     ear_width, ear_height = 28, 40
@@ -119,7 +118,6 @@ def generate_cow_avatar(pubkey: str):
     draw.ellipse([head_center_x + 15 - nostril_width // 2, head_center_y + 28 - nostril_height // 2, head_center_x + 15 + nostril_width // 2, head_center_y + 28 + nostril_height // 2], fill='black')
 
     draw.arc([head_center_x - 18, head_center_y + 38, head_center_x + 18, head_center_y + 58], start=20, end=160, fill='black', width=2)
-    # --- END FIX ---
     
     # --- Save Image to Buffer ---
     buffer = BytesIO()
@@ -129,4 +127,4 @@ def generate_cow_avatar(pubkey: str):
     checksum = generate_checksum(pubkey)
     filename = f"cow_{checksum[:12]}.png"
     
-    return ContentFile(buffer.getvalue(), name=filename), filename
+    return ContentFile(buffer.getvalue()), filename
