@@ -173,9 +173,12 @@ class UploadAvatarView(views.APIView):
                 }
             )
 
-            user.avatar.save(f'{user.username}_avatar.png', ContentFile(thumb_io.getvalue()), save=True)
-            user.save()
-
+            # --- START FIX ---
+            # The user model is now explicitly saved after the avatar is attached.
+            user.avatar.save(f'{user.username}_avatar.png', ContentFile(thumb_io.getvalue()), save=False)
+            user.save(update_fields=['avatar'])
+            # --- END FIX ---
+ 
             FederatedAction.objects.create(
                 action_type='update_profile',
                 pubkey_target=user.pubkey,

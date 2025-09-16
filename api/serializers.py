@@ -96,11 +96,19 @@ class MessageSerializer(serializers.ModelSerializer):
         return 'Anonymous'
     
     def get_author_avatar_url(self, obj):
-        if obj.author and obj.author.avatar:
+        # --- START FIX ---
+        # This logic is expanded to find avatars for federated users.
+        user_to_check = obj.author
+        if not user_to_check and obj.pubkey:
+            # If the message is from another server, find the user by their public key
+            user_to_check = User.objects.filter(pubkey=obj.pubkey).first()
+
+        if user_to_check and user_to_check.avatar:
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(obj.author.avatar.url)
-            return obj.author.avatar.url # Fallback
+                return request.build_absolute_uri(user_to_check.avatar.url)
+            return user_to_check.avatar.url # Fallback for other contexts
+        # --- END FIX ---
         return None
 
 class PrivateMessageSerializer(serializers.ModelSerializer):
