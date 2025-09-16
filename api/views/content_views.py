@@ -20,11 +20,12 @@ from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 import logging
 import json
 
 from ..serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
-from core.models import MessageBoard, Message, IgnoredPubkey, FileAttachment, PrivateMessage, User
+from core.models import MessageBoard, Message, IgnoredPubkey, FileAttachment, PrivateMessage, User, Alias
 from core.services.service_manager import service_manager
 
 logger = logging.getLogger(__name__)
@@ -110,19 +111,31 @@ class SendPrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        # --- START FIX ---
         if not request.session.get('unencrypted_priv_key'):
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
         
-        recipient_pubkey = request.data.get('recipient_pubkey')
+        # --- START FIX ---
+        identifier = request.data.get('recipient_identifier')
         subject = request.data.get('subject')
         body = request.data.get('body')
-
-        if not all([recipient_pubkey, subject, body]):
-            return Response({"error": "Recipient, subject, and body are required."}, status=status.HTTP_400_BAD_REQUEST)
-        
         sender = request.user
-        recipient = User.objects.filter(pubkey=recipient_pubkey).first()
+
+        if not all([identifier, subject, body]):
+            return Response({"error": "Recipient, subject, and body are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Lookup recipient's public key by identifier
+        recipient_pubkey = None
+        recipient = User.objects.filter(Q(username__iexact=identifier) | Q(nickname__iexact=identifier)).first()
+        if recipient and recipient.pubkey:
+            recipient_pubkey = recipient.pubkey
+        else:
+            alias = Alias.objects.filter(nickname__iexact=identifier).first()
+            if alias and alias.pubkey:
+                recipient_pubkey = alias.pubkey
+        
+        if not recipient_pubkey:
+            return Response({"error": f"Recipient '{identifier}' not found or has no public key."}, status=status.HTTP_404_NOT_FOUND)
+        # --- END FIX ---
 
         try:
             pm_content = {
@@ -133,7 +146,6 @@ class SendPrivateMessageView(views.APIView):
                 "body": body,
             }
             
-            # Encrypt the message for the recipient AND the sender (for their outbox)
             _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(
                 pm_content,
                 recipients_pubkeys=[recipient_pubkey, sender.pubkey]
@@ -141,7 +153,7 @@ class SendPrivateMessageView(views.APIView):
 
             PrivateMessage.objects.create(
                 author=sender,
-                recipient=recipient, # Can be null if recipient is not a local user
+                recipient=recipient,
                 sender_pubkey=sender.pubkey,
                 recipient_pubkey=recipient_pubkey,
                 subject=subject,
@@ -154,7 +166,6 @@ class SendPrivateMessageView(views.APIView):
         except Exception as e:
             logger.error(f"Failed to send PM from {sender.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred while sending the message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        # --- END FIX ---
 
 
 class PrivateMessageListView(generics.ListAPIView):

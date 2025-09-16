@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-// Full Path: axon_bbs/frontend/src/components/PrivateMessageClient.js
+// Full path: axon_bbs/frontend/src/components/PrivateMessageClient.js
 
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
@@ -29,8 +29,9 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   
-  // For composing
-  const [recipient, setRecipient] = useState('');
+  // --- START FIX ---
+  const [recipientIdentifier, setRecipientIdentifier] = useState('');
+  // --- END FIX ---
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
 
@@ -65,7 +66,7 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
 
   useEffect(() => {
     if (initialRecipient) {
-        setRecipient(initialRecipient.pubkey);
+        setRecipientIdentifier(initialRecipient.displayName);
         setView('compose');
     }
   }, [initialRecipient]);
@@ -76,8 +77,12 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
     setIsLoading(true);
     setError('');
     try {
-        await apiClient.post('/api/pm/send/', { recipient_pubkey: recipient, subject, body });
-        setRecipient(''); setSubject(''); setBody('');
+        // --- START FIX ---
+        await apiClient.post('/api/pm/send/', { recipient_identifier: recipientIdentifier, subject, body });
+        setRecipientIdentifier(''); 
+        // --- END FIX ---
+        setSubject(''); 
+        setBody('');
         setView('outbox');
     } catch(err) {
         if (err.response?.data?.error === 'identity_locked') {
@@ -94,8 +99,7 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
   const handleReply = () => {
     const original = selectedMessage;
     setView('compose');
-    // The sender of the message we are reading becomes the recipient of the reply
-    setRecipient(original.author_pubkey || original.sender_pubkey);
+    setRecipientIdentifier(original.author_display);
     setSubject(`Re: ${original.subject}`);
     const quoteHeader = `\n\nOn ${new Date(original.created_at).toLocaleString()}, ${original.author_display} wrote:\n`;
     const quotedBody = (original.decrypted_body || '').split('\n').map(line => `> ${line}`).join('\n');
@@ -105,7 +109,7 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
   const handleForward = () => {
     const original = selectedMessage;
     setView('compose');
-    setRecipient(''); // User must enter a new recipient
+    setRecipientIdentifier(''); // User must enter a new recipient
     setSubject(`Fwd: ${original.subject}`);
     const forwardedBody = (original.decrypted_body || '').split('\n').map(line => `> ${line}`).join('\n');
     setBody(`\n\n--- Forwarded Message ---\nFrom: ${original.author_display}\nDate: ${new Date(original.created_at).toLocaleString()}\nSubject: ${original.subject}\n\n${forwardedBody}`);
@@ -140,7 +144,7 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
 
   const renderReadMessage = () => {
     const msg = selectedMessage;
-    const isInboxMessage = msg.author_display; // Only inbox messages have an author_display
+    const isInboxMessage = msg.author_display;
     return (
         <div>
             <div className="flex justify-between items-center mb-4">
@@ -169,10 +173,12 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
         <Header text="Compose Private Message" />
         <div className="bg-gray-800 p-4 rounded border border-gray-700">
             <form onSubmit={handleSendMessage}>
+                {/* --- START FIX --- */}
                 <div className="mb-4">
-                    <label className="block text-gray-300 text-sm font-bold mb-2">Recipient Public Key</label>
-                    <textarea value={recipient} onChange={e => setRecipient(e.target.value)} required rows="3" className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs" />
+                    <label className="block text-gray-300 text-sm font-bold mb-2">Recipient</label>
+                    <input type="text" placeholder="Enter username, nickname, or alias" value={recipientIdentifier} onChange={e => setRecipientIdentifier(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
+                {/* --- END FIX --- */}
                 <input type="text" placeholder="Subject" value={subject} onChange={e => setSubject(e.target.value)} required className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <textarea placeholder="Your message..." value={body} onChange={e => setBody(e.target.value)} required rows="8" className="w-full py-2 px-3 bg-gray-700 text-gray-200 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
@@ -201,7 +207,7 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
                     <button onClick={() => setView(view === 'inbox' ? 'outbox' : 'inbox')} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2">
                         View {view === 'inbox' ? 'Outbox' : 'Inbox'}
                     </button>
-                    <button onClick={() => { setView('compose'); setSubject(''); setBody(''); setRecipient(''); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    <button onClick={() => { setView('compose'); setSubject(''); setBody(''); setRecipientIdentifier(''); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                         New Message
                     </button>
                 </div>

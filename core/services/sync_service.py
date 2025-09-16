@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/services/sync_service.py
@@ -35,8 +35,10 @@ from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 
-from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey
-from .encryption_utils import generate_checksum
+# --- START FIX ---
+from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey, Alias
+from .encryption_utils import generate_checksum, generate_short_id
+# --- END FIX ---
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +68,7 @@ class SyncService:
                 else:
                     logger.warning("Sync service cannot run without a configured local instance identity. Will check again in %s seconds.", self.poll_interval)
             except Exception as e:
-                  logger.error(f"Error in sync service poll loop: {e}", exc_info=True)
+                logger.error(f"Error in sync service poll loop: {e}", exc_info=True)
             
             time.sleep(self.poll_interval)
     
@@ -263,6 +265,22 @@ class SyncService:
             if content_type == 'message':
                 content = json.loads(decrypted_data)
                 
+                # --- START FIX ---
+                # Automatically create an alias for a new federated user
+                author_pubkey = content.get('pubkey')
+                if author_pubkey:
+                    is_local = User.objects.filter(pubkey=author_pubkey).exists()
+                    alias_exists = Alias.objects.filter(pubkey=author_pubkey).exists()
+                    if not is_local and not alias_exists:
+                        try:
+                            short_id = generate_short_id(author_pubkey, length=8)
+                            new_nickname = f"Moo-{short_id}"
+                            Alias.objects.create(pubkey=author_pubkey, nickname=new_nickname)
+                            logger.info(f"Discovered new federated user. Created alias '{new_nickname}' for pubkey {author_pubkey[:12]}...")
+                        except Exception as alias_e:
+                            logger.error(f"Failed to create auto-alias for pubkey {author_pubkey[:12]}: {alias_e}")
+                # --- END FIX ---
+                
                 required_hashes = content.get('attachment_hashes', [])
                 if required_hashes:
                     existing_attachments = FileAttachment.objects.filter(manifest__content_hash__in=required_hashes)
@@ -376,7 +394,7 @@ class SyncService:
                     if chunk_save_path:
                          os.makedirs(os.path.dirname(chunk_save_path), exist_ok=True)
                          with open(chunk_save_path, 'wb') as f:
-                             f.write(chunk_data)
+                            f.write(chunk_data)
                     logger.info(f"  - Chunk {chunk_index + 1}/{num_chunks} for '{item_name}' downloaded.")
                 else: 
                      logger.error(f"   - Failed to download/verify chunk {chunk_index + 1} for '{item_name}'. Will retry on next sync.")
@@ -400,7 +418,6 @@ class SyncService:
     def _decrypt_data(self, encrypted_data: bytes, manifest: dict) -> bytes | None:
         if not encrypted_data: return None
         try:
-            # FIX: Add a null check for self.local_instance
             if not self.local_instance or not self.local_instance.pubkey:
                 logger.warning("Local instance or its public key is not loaded, cannot decrypt content.")
                 return None
@@ -433,4 +450,3 @@ class SyncService:
         if encrypted_data:
             return self._decrypt_data(encrypted_data, manifest)
         return None
-
