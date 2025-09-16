@@ -41,7 +41,7 @@ class User(AbstractUser):
     is_moderator = models.BooleanField(default=False, help_text="Grants moderator permissions.")
     karma = models.IntegerField(default=10, help_text="User's reputation score.")
     last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this user.")
-   
+    
     groups = models.ManyToManyField(
         'auth.Group',
         verbose_name='groups',
@@ -247,7 +247,6 @@ class FederatedAction(models.Model):
     action_details = models.JSONField(default=dict, help_text="Additional details, e.g., {'is_temporary': true, 'duration_hours': 72}")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='approved')
-    # --- NEW FIELD ---
     is_logged = models.BooleanField(default=False, help_text="True if this action has been logged by the moderation agent.")
 
     def __str__(self):
@@ -260,18 +259,21 @@ class ModerationReport(models.Model):
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
     ]
-    reported_message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='reports')
+    # --- START FIX ---
+    # Changed on_delete to SET_NULL to prevent the report from being deleted
+    # when the message is deleted. It now also allows null=True.
+    reported_message = models.ForeignKey(Message, on_delete=models.SET_NULL, null=True, related_name='reports')
+    # --- END FIX ---
     reporting_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reports_filed')
     comment = models.TextField(blank=True, help_text="Reason for the report.")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reports_reviewed')
     reviewed_at = models.DateTimeField(null=True, blank=True)
-    # --- NEW FIELD ---
     is_logged = models.BooleanField(default=False, help_text="True if this report's outcome has been logged.")
 
     def __str__(self):
-        return f"Report by {self.reporting_user.username} on message {self.reported_message.id}"
+        return f"Report by {self.reporting_user.username} on message {self.reported_message.id if self.reported_message else '[deleted]'}"
 
 class AppletCategory(models.Model):
     name = models.CharField(max_length=50, unique=True)

@@ -111,25 +111,34 @@ class ReviewReportView(views.APIView):
             return Response({"error": "Report not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
 
         if action == 'approve':
+            # --- START FIX ---
+            # The order of operations has been corrected.
+            # We now save the report and user karma *before* deleting the message.
             report.status = 'approved'
             report.reviewed_by = request.user
             report.reviewed_at = timezone.now()
             
             reporter = report.reporting_user
             reporter.karma = reporter.karma + 5
-            reporter.save()
+            reporter.save() # Save karma update
             
             message_to_delete = report.reported_message
-            if message_to_delete.manifest:
+            
+            # Save the report *before* the message deletion cascades and deletes it.
+            report.save()
+
+            if message_to_delete and message_to_delete.manifest:
                 FederatedAction.objects.create(
                     action_type='DELETE_CONTENT',
                     content_hash_target=message_to_delete.manifest.get('content_hash'),
                     action_details={'reason': f'Content removed by {request.user.username} based on user report: {report.comment}'}
                 )
             
-            message_to_delete.delete()
-            report.save()
+            if message_to_delete:
+                message_to_delete.delete()
+            
             return Response({"status": "Report approved and message deleted."})
+            # --- END FIX ---
 
         elif action == 'reject':
             report.status = 'rejected'
