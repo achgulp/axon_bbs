@@ -24,7 +24,6 @@ from django.utils import timezone
 from datetime import timedelta
 
 from core.models import User, Message, MessageBoard, ModerationReport, FederatedAction, TrustedInstance, BannedPubkey
-from .service_manager import service_manager
 from .bitsync_service import BitSyncService
 
 logger = logging.getLogger(__name__)
@@ -52,7 +51,7 @@ class ModeratorAgentService:
     def _initialize_agent(self):
         try:
             self.agent_user = User.objects.get(username=self.agent_username, is_agent=True)
-            self.log_board = MessageBoard.objects.get(name=self.log_board_name)
+            self.log_board, _ = MessageBoard.objects.get_or_create(name=self.log_board_name)
             
             local_instance = TrustedInstance.objects.filter(is_trusted_peer=False).first()
             if local_instance:
@@ -61,29 +60,26 @@ class ModeratorAgentService:
             self.is_initialized = True
             logger.info(f"Moderator Agent '{self.agent_username}' initialized. Logging to board '{self.log_board_name}'.")
             return True
-        except (User.DoesNotExist, MessageBoard.DoesNotExist, TrustedInstance.DoesNotExist) as e:
+        except (User.DoesNotExist, TrustedInstance.DoesNotExist) as e:
             logger.warning(f"Moderator Agent cannot initialize yet: {e}")
             return False
 
     def _run(self):
-        time.sleep(15)
+        time.sleep(15) # Wait for server to be fully ready
         while not self.shutdown_event.is_set():
             if not self.is_initialized:
                 self._initialize_agent()
             
             if self.is_initialized:
                 try:
-                    # Log local moderation actions
                     self.process_completed_reports()
                     self.process_federated_actions()
-                    # --- NEW: Process incoming logs from peers ---
                     self.process_incoming_logs()
                 except Exception as e:
                     logger.error(f"Error in Moderator Agent loop: {e}", exc_info=True)
 
             self.shutdown_event.wait(self.poll_interval)
 
-    # --- NEW METHOD to process logs from other BBSes ---
     def process_incoming_logs(self):
         """Reads the moderation board for events from other agents and applies them locally."""
         incoming_logs = Message.objects.filter(
@@ -132,11 +128,14 @@ class ModeratorAgentService:
             log_message.save()
 
     def process_completed_reports(self):
+        """Finds local moderation reports that have been approved/rejected and logs them."""
         reports_to_log = ModerationReport.objects.filter(is_logged=False).exclude(status='pending')
         for report in reports_to_log:
             moderator = report.reviewed_by
             timestamp_to_log = report.reviewed_at if report.reviewed_at else timezone.now()
             
+            # --- START FIX ---
+            # Add checks to ensure `report.reported_message` exists before trying to access its attributes.
             log_entry = {
                 "log_type": "REPORT_REVIEWED",
                 "moderator_nickname": moderator.nickname if moderator else "System",
@@ -146,18 +145,20 @@ class ModeratorAgentService:
                     "report_id": report.id,
                     "reporter_nickname": report.reporting_user.nickname,
                     "decision": report.status,
-                    "target_message_subject": report.reported_message.subject,
-                    "target_message_hash": report.reported_message.manifest.get('content_hash')
+                    "target_message_subject": report.reported_message.subject if report.reported_message else "[Message Deleted]",
+                    "target_message_hash": report.reported_message.manifest.get('content_hash') if report.reported_message and report.reported_message.manifest else "N/A"
                 }
             }
+            # --- END FIX ---
             self._post_log_entry(f"Report Reviewed: {report.id}", log_entry)
             report.is_logged = True
             report.save()
 
     def process_federated_actions(self):
+        """Finds local federated actions (like bans) and logs them."""
         actions_to_log = FederatedAction.objects.filter(is_logged=False, status='approved', created_at__isnull=False)
         for action in actions_to_log:
-             log_entry = {
+            log_entry = {
                 "log_type": "FEDERATED_ACTION",
                 "moderator_bbs_pubkey": self.host_pubkey,
                 "timestamp": action.created_at.isoformat(),
@@ -169,9 +170,9 @@ class ModeratorAgentService:
                     "action_details": action.action_details
                 }
             }
-             self._post_log_entry(f"Federated Action: {action.action_type}", log_entry)
-             action.is_logged = True
-             action.save()
+            self._post_log_entry(f"Federated Action: {action.action_type}", log_entry)
+            action.is_logged = True
+            action.save()
 
     def _post_log_entry(self, subject, body_data):
         if not self.agent_user or not self.log_board:
@@ -195,6 +196,6 @@ class ModeratorAgentService:
             subject=subject,
             body=body_json,
             manifest=manifest,
-            agent_status='processed'
+            agent_status='processed' # The agent's own logs are pre-processed
         )
         logger.info(f"Moderator Agent logged event: {subject}")
