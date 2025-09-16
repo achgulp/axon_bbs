@@ -46,18 +46,30 @@ def generate_cow_avatar(pubkey: str):
     draw = ImageDraw.Draw(img)
     
     # --- Draw Cow Features ---
-    # Head
-    draw.ellipse([(30, 20), (98, 80)], fill='#FFFFFF', outline='black', width=2)
+    # Head (slightly smaller to make room for ears)
+    draw.ellipse([(35, 30), (93, 85)], fill='#FFFFFF', outline='black', width=2)
+    
+    # --- START FIX ---
+    # Add Ears
+    ear_color = '#E0B080' # A fleshy color
+    draw.polygon([(35, 35), (20, 20), (45, 15)], fill=ear_color, outline='black', width=1) # Left ear
+    draw.polygon([(93, 35), (108, 20), (83, 15)], fill=ear_color, outline='black', width=1) # Right ear
+
+    # Define a custom "cow nose" shape (muzzle)
+    nose_color = '#F0D0B0' # Lighter, pinkish
+    draw.ellipse([(40, 60), (88, 85)], fill=nose_color, outline='black', width=2) # Muzzle
+    
+    # Nostrils within the muzzle
+    draw.ellipse([(50, 68), (58, 76)], fill='black', outline='black', width=1) # Left nostril
+    draw.ellipse([(70, 68), (78, 76)], fill='black', outline='black', width=1) # Right nostril
+    # --- END FIX ---
+
     # Body
     draw.ellipse([(10, 60), (118, 120)], fill='#FFFFFF', outline='black', width=2)
     
     # Eyes
     draw.ellipse([(45, 40), (55, 50)], fill='black')
     draw.ellipse([(73, 40), (83, 50)], fill='black')
-    
-    # Nostrils
-    draw.ellipse([(50, 65), (60, 75)], fill=body_color, outline='black', width=1)
-    draw.ellipse([(68, 65), (78, 75)], fill=body_color, outline='black', width=1)
     
     # --- Generate Spots ---
     # Use the seed to create a predictable random sequence for spots
@@ -73,7 +85,7 @@ def generate_cow_avatar(pubkey: str):
         draw.ellipse([(spot_x, spot_y), (spot_x + spot_w, spot_y + spot_h)], fill=spot_color)
 
     # Bell
-    draw.rectangle([(60, 80), (68, 88)], fill=bell_color, outline='black')
+    draw.rectangle([(60, 88), (68, 96)], fill=bell_color, outline='black') # Adjusted bell position
     
     # --- Save Image to Buffer ---
     buffer = BytesIO()
@@ -83,7 +95,4 @@ def generate_cow_avatar(pubkey: str):
     checksum = generate_checksum(pubkey)
     filename = f"cow_{checksum[:12]}.png"
     
-    # --- START FIX ---
-    # The function now correctly returns a tuple of two values.
-    return ContentFile(buffer.getvalue()), filename
-    # --- END FIX ---
+    return ContentFile(buffer.getvalue(), name=filename), filename
