@@ -13,8 +13,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-
 # Full path: axon_bbs/api/serializers.py
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
@@ -29,7 +27,6 @@ import json
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# --- MODIFIED: UserSerializer now handles security questions for new registration flow ---
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     security_question_1 = serializers.CharField(write_only=True, required=True)
@@ -94,7 +91,7 @@ class MessageSerializer(serializers.ModelSerializer):
                 return alias.nickname
             else:
                 short_id = generate_short_id(obj.pubkey, length=8)
-                return f"User-{short_id}"
+                return f"Moo-{short_id}" # --- CHANGED ---
         
         return 'Anonymous'
     
@@ -125,7 +122,7 @@ class PrivateMessageSerializer(serializers.ModelSerializer):
                 return alias.nickname
             else:
                 short_id = generate_short_id(obj.sender_pubkey, length=8)
-                return f"User-{short_id}"
+                return f"Moo-{short_id}" # --- CHANGED ---
         return "Unknown Sender"
     
     def get_author_avatar_url(self, obj):
@@ -162,7 +159,7 @@ class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
                 return alias.nickname
             else:
                 short_id = generate_short_id(obj.recipient_pubkey, length=8)
-                return f"User-{short_id}"
+                return f"Moo-{short_id}" # --- CHANGED ---
         return 'Unknown Recipient'
 
     def get_recipient_avatar_url(self, obj):

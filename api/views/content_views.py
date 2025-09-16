@@ -19,6 +19,7 @@
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
+from django.shortcuts import get_object_or_404
 import logging
 
 from ..serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
@@ -47,9 +48,25 @@ class MessageListView(generics.ListAPIView):
         return {'request': self.request}
 
     def get_queryset(self):
-        board_id = self.kwargs['pk']
+        # --- START FIX ---
+        # First, ensure the user has access to this board before proceeding.
+        board = get_object_or_404(MessageBoard, pk=self.kwargs['pk'])
+        if self.request.user.access_level < board.required_access_level:
+            return Message.objects.none() # Return an empty queryset if access is denied
+        # --- END FIX ---
+            
         ignored_pubkeys = IgnoredPubkey.objects.filter(user=self.request.user).values_list('pubkey', flat=True)
-        return Message.objects.filter(board_id=board_id).exclude(pubkey__in=ignored_pubkeys).order_by('-created_at')
+        return Message.objects.filter(board=board).exclude(pubkey__in=ignored_pubkeys).order_by('-created_at')
+    
+    def list(self, request, *args, **kwargs):
+        # --- START FIX ---
+        # Add an explicit check to return a 403 Forbidden error.
+        board = get_object_or_404(MessageBoard, pk=self.kwargs['pk'])
+        if request.user.access_level < board.required_access_level:
+            return Response({"detail": "You do not have permission to view this board."}, status=status.HTTP_403_FORBIDDEN)
+        # --- END FIX ---
+        return super().list(request, *args, **kwargs)
+
 
 class PostMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -64,6 +81,13 @@ class PostMessageView(views.APIView):
         
         try:
             board, _ = MessageBoard.objects.get_or_create(name=board_name)
+            
+            # --- START FIX ---
+            # Add access level check before allowing a post
+            if user.access_level < board.required_access_level:
+                return Response({"error": "You do not have permission to post on this board."}, status=status.HTTP_403_FORBIDDEN)
+            # --- END FIX ---
+
             attachments = FileAttachment.objects.filter(id__in=attachment_ids, author=user)
             attachment_hashes = [att.manifest['content_hash'] for att in attachments]
             
@@ -91,7 +115,6 @@ class PostMessageView(views.APIView):
             return Response({"error": "Server error while posting message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class SendPrivateMessageView(views.APIView):
-    # This view would need to be implemented
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request, *args, **kwargs):
         return Response(status=status.HTTP_501_NOT_IMPLEMENTED)
@@ -102,7 +125,6 @@ class PrivateMessageListView(generics.ListAPIView):
     serializer_class = PrivateMessageSerializer
     
     def get_queryset(self):
-        # This is a placeholder implementation
         return PrivateMessage.objects.filter(recipient=self.request.user)
 
 
@@ -111,5 +133,4 @@ class PrivateMessageOutboxView(generics.ListAPIView):
     serializer_class = PrivateMessageOutboxSerializer
     
     def get_queryset(self):
-        # This is a placeholder implementation
         return PrivateMessage.objects.filter(author=self.request.user)
