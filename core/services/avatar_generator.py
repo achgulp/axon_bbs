@@ -79,7 +79,11 @@ def generate_cow_avatar(pubkey: str):
     buffer = BytesIO()
     img.save(buffer, format='PNG')
     
-    # --- Return Django ContentFile ---
+    # --- Return Django ContentFile and the filename ---
     checksum = generate_checksum(pubkey)
     filename = f"cow_{checksum[:12]}.png"
-    return ContentFile(buffer.getvalue(), name=filename)
+    
+    # --- START FIX ---
+    # The function now correctly returns a tuple of two values.
+    return ContentFile(buffer.getvalue()), filename
+    # --- END FIX ---
