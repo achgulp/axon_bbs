@@ -17,21 +17,20 @@
 # Full path: axon_bbs/core/services/avatar_generator.py
 import hashlib
 import random
+import math
 from PIL import Image, ImageDraw
 from io import BytesIO
 from django.core.files.base import ContentFile
 from .encryption_utils import generate_checksum
-import math # <--- FIX: Added the missing import
 
 def generate_cow_avatar(pubkey: str):
     """
     Generates a unique, deterministic cartoon cow avatar based on a user's public key.
     """
-    # Use a hash of the pubkey to seed the generator for deterministic results
     seed = hashlib.sha256(pubkey.encode()).digest()
+    r = random.Random(seed)
     
     # --- Color Palette Generation ---
-    r = random.Random(seed) 
     head_hue = r.randint(0, 359)
     head_saturation = r.randint(30, 60)
     head_lightness = r.randint(75, 90)
@@ -44,9 +43,9 @@ def generate_cow_avatar(pubkey: str):
     
     muzzle_color = f"hsl({head_hue}, {head_saturation // 2}%, {head_lightness + 5}%)"
     if head_lightness > 80:
-        muzzle_color = "#F5E6D3" # Creamy off-white
+        muzzle_color = "#F5E6D3"
 
-    ear_inner_color = "#E0B080" # Fleshy pink/tan
+    ear_inner_color = "#E0B080"
 
     # --- Create Image Canvas ---
     img = Image.new('RGB', (128, 128), color='#FFFFFF')
@@ -56,59 +55,62 @@ def generate_cow_avatar(pubkey: str):
     head_center_x, head_center_y = 64, 64
     head_radius = 45
 
-    # Ears (rounded ovals, moved up and angled)
+    # Ears
     ear_width, ear_height = 28, 40
-    # Left Ear
-    draw.ellipse([head_center_x - head_radius - 5, head_center_y - head_radius + 5, 
-                  head_center_x - head_radius + ear_width - 5, head_center_y - head_radius + ear_height + 5],
-                 fill=head_color, outline='black', width=2)
-    draw.ellipse([head_center_x - head_radius + 2, head_center_y - head_radius + 15,
-                  head_center_x - head_radius + 12, head_center_y - head_radius + ear_height - 5],
-                 fill=ear_inner_color)
-
-    # Right Ear
-    draw.ellipse([head_center_x + head_radius - ear_width + 5, head_center_y - head_radius + 5,
-                  head_center_x + head_radius + 5, head_center_y - head_radius + ear_height + 5],
-                 fill=head_color, outline='black', width=2)
-    draw.ellipse([head_center_x + head_radius - 12, head_center_y - head_radius + 15,
-                  head_center_x + head_radius - 2, head_center_y - head_radius + ear_height - 5],
-                 fill=ear_inner_color)
+    draw.ellipse([head_center_x - head_radius - 5, head_center_y - head_radius + 5, head_center_x - head_radius + ear_width - 5, head_center_y - head_radius + ear_height + 5], fill=head_color, outline='black', width=2)
+    draw.ellipse([head_center_x - head_radius + 2, head_center_y - head_radius + 15, head_center_x - head_radius + 12, head_center_y - head_radius + ear_height - 5], fill=ear_inner_color)
+    draw.ellipse([head_center_x + head_radius - ear_width + 5, head_center_y - head_radius + 5, head_center_x + head_radius + 5, head_center_y - head_radius + ear_height + 5], fill=head_color, outline='black', width=2)
+    draw.ellipse([head_center_x + head_radius - 12, head_center_y - head_radius + 15, head_center_x + head_radius - 2, head_center_y - head_radius + ear_height - 5], fill=ear_inner_color)
     
-    # Head (main circle, drawn on top of the ears for a clean look)
-    draw.ellipse([head_center_x - head_radius, head_center_y - head_radius, 
-                  head_center_x + head_radius, head_center_y + head_radius], 
-                 fill=head_color, outline='black', width=2)
+    # Head
+    draw.ellipse([head_center_x - head_radius, head_center_y - head_radius, head_center_x + head_radius, head_center_y + head_radius], fill=head_color, outline='black', width=2)
     
-    # Muzzle (oval)
+    # Muzzle
     muzzle_width = 60
     muzzle_height = 35
-    draw.ellipse([head_center_x - muzzle_width // 2, head_center_y + 12,
-                  head_center_x + muzzle_width // 2, head_center_y + 12 + muzzle_height],
-                 fill=muzzle_color, outline='black', width=2)
+    draw.ellipse([head_center_x - muzzle_width // 2, head_center_y + 12, head_center_x + muzzle_width // 2, head_center_y + 12 + muzzle_height], fill=muzzle_color, outline='black', width=2)
 
-    # Generate Spots before drawing eyes/nostrils
-    num_spots = r.randint(2, 5)
-    for _ in range(num_spots):
-        # Improved logic to ensure spots do not clip outside the head
-        spot_radius = r.randint(10, 20)
+    # --- START FIX: Reworked Spot Generation ---
+    num_spots = r.choice([1, 1, 1, 2, 2]) # Make one spot more common
+    spot_sizes = [r.randint(15, 22), r.randint(8, 14)] # One large, one small
+    r.shuffle(spot_sizes)
+
+    for i in range(num_spots):
+        spot_radius = spot_sizes[i]
+        
         while True:
-            angle = r.uniform(0, 2 * 3.14159)
-            # Place the center of the spot well within the head circle
-            distance_from_center = r.uniform(0, head_radius - spot_radius)
+            # Place spots towards the periphery, not in the center
+            angle = r.uniform(0, 2 * math.pi)
+            distance_from_center = r.uniform(head_radius * 0.4, head_radius - spot_radius - 2) # Keep spots away from the edge
             spot_x = head_center_x + distance_from_center * math.cos(angle)
             spot_y = head_center_y + distance_from_center * math.sin(angle)
             
             # Ensure spot doesn't overlap the muzzle area
             is_over_muzzle = (head_center_y + 12 < spot_y + spot_radius)
-
             if not is_over_muzzle:
                 break
-
-        draw.ellipse([(spot_x - spot_radius, spot_y - spot_radius), 
-                      (spot_x + spot_radius, spot_y + spot_radius)], 
-                     fill=spot_color, outline='black', width=1)
+        
+        # Decide if the spot is an ellipse or a polygon
+        if r.choice([True, False]):
+            # Draw a slightly irregular ellipse
+            spot_w = spot_radius * 2 * r.uniform(0.8, 1.2)
+            spot_h = spot_radius * 2 * r.uniform(0.8, 1.2)
+            draw.ellipse([(spot_x - spot_w / 2, spot_y - spot_h / 2), (spot_x + spot_w / 2, spot_y + spot_h / 2)], fill=spot_color, outline='black', width=1)
+        else:
+            # Draw a random polygon
+            points = []
+            num_vertices = r.randint(3, 6)
+            for j in range(num_vertices):
+                angle_vert = (2 * math.pi / num_vertices) * j
+                radius_vert = spot_radius * r.uniform(0.7, 1.3)
+                px = spot_x + radius_vert * math.cos(angle_vert)
+                py = spot_y + radius_vert * math.sin(angle_vert)
+                points.append((px, py))
+            draw.polygon(points, fill=spot_color, outline='black', width=1)
     
-    # Eyes, Nostrils, and Smile are drawn LAST so they are always on top
+    # --- END FIX ---
+
+    # Eyes, Nostrils, and Smile are drawn LAST
     eye_radius = 5
     draw.ellipse([head_center_x - 20 - eye_radius, head_center_y - 10 - eye_radius, head_center_x - 20 + eye_radius, head_center_y - 10 + eye_radius], fill='black')
     draw.ellipse([head_center_x + 20 - eye_radius, head_center_y - 10 - eye_radius, head_center_x + 20 + eye_radius, head_center_y - 10 + eye_radius], fill='black')
