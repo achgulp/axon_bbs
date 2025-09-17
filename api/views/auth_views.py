@@ -19,7 +19,7 @@
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from PIL import Image
@@ -27,11 +27,9 @@ from django.core.files.base import ContentFile
 import io
 import base64
 import logging
-# --- MODIFICATION START ---
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import UnsupportedAlgorithm
 from rest_framework_simplejwt.tokens import RefreshToken
-# --- MODIFICATION END ---
 
 
 from ..serializers import UserSerializer
@@ -49,52 +47,48 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = (permissions.AllowAny,)
     serializer_class = UserSerializer
 
-    # --- MODIFICATION START ---
-    # Override the create method to handle the federated user conflict
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
+            # --- MODIFICATION: Added nickname to serializer context ---
             self.perform_create(serializer)
             headers = self.get_success_headers(serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         except IntegrityError as e:
+            username = serializer.validated_data.get('username')
             # Check if the error is due to a unique nickname on an inactive account
-            nickname = serializer.validated_data.get('nickname')
-            if nickname and User.objects.filter(nickname__iexact=nickname, is_active=False).exists():
+            if User.objects.filter(username__iexact=username, is_active=False).exists():
                 return Response(
-                    {"error": "nickname_exists_as_federated", "detail": "This nickname is reserved by a federated user. You can claim this account if you have the private key."},
+                    {"error": "username_exists_as_federated", "detail": "This username is reserved by a federated user. You can claim this account if you have the private key."},
                     status=status.HTTP_409_CONFLICT
                 )
-            # Otherwise, it's likely a username conflict or other issue
+            # Otherwise, it's likely a different conflict
             return Response({"error": "registration_failed", "detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    # --- MODIFICATION END ---
 
 
-# --- NEW VIEW ---
 class ClaimAccountView(views.APIView):
     permission_classes = [permissions.AllowAny]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, *args, **kwargs):
-        nickname = request.data.get('nickname')
+        username = request.data.get('username')
         new_password = request.data.get('new_password')
         key_file = request.FILES.get('key_file')
 
-        if not all([nickname, new_password, key_file]):
-            return Response({"error": "Nickname, new password, and private key file are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([username, new_password, key_file]):
+            return Response({"error": "Username, new password, and private key file are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            user = User.objects.get(nickname__iexact=nickname, is_active=False)
+            user = User.objects.get(username__iexact=username, is_active=False)
         except User.DoesNotExist:
-            return Response({"error": "No inactive, federated user found with that nickname."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "No inactive, federated user found with that username."}, status=status.HTTP_404_NOT_FOUND)
 
         try:
             private_key_pem = key_file.read()
             private_key = serialization.load_pem_private_key(private_key_pem, password=None)
             derived_public_key = private_key.public_key()
             
-            # Normalize the derived public key to the same format stored in the DB
             derived_public_key_pem = derived_public_key.public_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -103,18 +97,13 @@ class ClaimAccountView(views.APIView):
             if derived_public_key_pem != user.pubkey.strip():
                 return Response({"error": "Private key does not match the public key on record for this user."}, status=status.HTTP_403_FORBIDDEN)
 
-            # --- Key is valid, proceed with account activation ---
-            
-            # 1. Activate user and set their new password
             user.is_active = True
             user.set_password(new_password)
             user.save()
 
-            # 2. Create the encrypted identity file storage for the user on this server
             identity_service = IdentityService(user=user)
             identity_service.create_storage_from_key(new_password, private_key_pem.decode('utf-8'))
 
-            # 3. Log the user in by generating JWT tokens
             refresh = RefreshToken.for_user(user)
             
             return Response({
@@ -126,10 +115,8 @@ class ClaimAccountView(views.APIView):
         except (ValueError, TypeError, UnsupportedAlgorithm) as e:
             return Response({"error": f"Invalid private key file format: {e}"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            logger.error(f"Unexpected error during account claim for {nickname}: {e}", exc_info=True)
+            logger.error(f"Unexpected error during account claim for {username}: {e}", exc_info=True)
             return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-# --- END NEW VIEW ---
 
 
 class LogoutView(views.APIView):
@@ -169,11 +156,33 @@ class ImportIdentityView(views.APIView):
     def post(self, request, *args, **kwargs):
         return Response({"error": "Import functionality is not yet updated for the new identity system."}, status=status.HTTP_501_NOT_IMPLEMENTED)
 
+# --- MODIFICATION START ---
 class ExportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        return Response({"error": "Export functionality is not yet updated for the new identity system."}, status=status.HTTP_501_NOT_IMPLEMENTED)
+        password = request.data.get('password')
+        if not password:
+            return Response({"error": "Password is required to export your key."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            identity_service = IdentityService(user=request.user)
+            private_key_pem = identity_service.get_unlocked_private_key(password)
+            
+            if not private_key_pem:
+                raise DecryptionError("Failed to unlock key for export.")
+
+            response = HttpResponse(private_key_pem, content_type='application/x-pem-file')
+            response['Content-Disposition'] = f'attachment; filename="{request.user.username}_axon_identity.pem"'
+            return response
+
+        except DecryptionError:
+            return Response({"error": "Export failed. The password provided was incorrect."}, status=status.HTTP_403_FORBIDDEN)
+        except Exception as e:
+            logger.error(f"Failed to export identity for {request.user.username}: {e}", exc_info=True)
+            return Response({"error": "An unexpected server error occurred during export."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+# --- MODIFICATION END ---
+
 
 class UpdateNicknameView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -263,11 +272,8 @@ class UploadAvatarView(views.APIView):
                 }
             )
 
-            # --- START FIX ---
-            # The user model is now explicitly saved after the avatar is attached.
             user.avatar.save(f'{user.username}_avatar.png', ContentFile(thumb_io.getvalue()), save=False)
             user.save(update_fields=['avatar'])
-            # --- END FIX ---
  
             FederatedAction.objects.create(
                 action_type='update_profile',
