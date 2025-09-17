@@ -18,7 +18,9 @@
 // Full path: axon_bbs/frontend/src/components/ModerationDashboard.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
-import AuthenticatedImage from './AuthenticatedImage'; // --- MODIFICATION: Import new component ---
+// --- MODIFICATION START ---
+// The AuthenticatedImage component is no longer needed.
+// --- MODIFICATION END ---
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const ModerationDashboard = ({ displayTimezone }) => {
@@ -136,7 +138,7 @@ useEffect(() => {
                             {update.pending_avatar_url ? (
                                 <div>
                                     <p className="text-sm text-yellow-400 mb-2">New avatar for review:</p>
-                                    <AuthenticatedImage 
+                                    <img 
                                         src={update.pending_avatar_url} 
                                         alt="Pending avatar" 
                                         className="w-32 h-32 rounded-full border-2 border-yellow-500" 
