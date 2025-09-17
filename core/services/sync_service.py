@@ -8,8 +8,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -298,8 +298,6 @@ class SyncService:
                         new_user.avatar.save(avatar_filename, avatar_content_file, save=True)
                         logger.info(f"Discovered new federated user. Created profile '{new_nickname}' with a unique cow avatar.")
 
-                        # --- NEW LOGIC START ---
-                        # After creating a new user, check for and apply any pending profile updates for them.
                         pending_actions = FederatedAction.objects.filter(
                             pubkey_target=new_user.pubkey,
                             action_type='update_profile'
@@ -316,7 +314,6 @@ class SyncService:
                                 avatar_hash = details.get('avatar_hash')
                                 if avatar_hash:
                                     self._apply_avatar_from_hash(new_user, avatar_hash)
-                        # --- NEW LOGIC END ---
 
                     except Exception as user_create_e:
                         logger.error(f"Failed to create federated user profile for pubkey {author_pubkey[:12]}: {user_create_e}")
@@ -348,7 +345,7 @@ class SyncService:
                 
                 pending_actions = FederatedAction.objects.filter(
                     action_type='update_profile',
-                    content_hash_target=content_hash
+                    action_details__avatar_hash=content_hash
                 )
                 for action in pending_actions:
                     user_to_update = User.objects.filter(pubkey=action.pubkey_target).first()
@@ -522,7 +519,18 @@ class SyncService:
                 logger.warning(f"Could not decrypt data for avatar {attachment.filename}.")
                 return
             
-            content_file = ContentFile(decrypted_data, name=attachment.filename)
+            # --- MODIFICATION START ---
+            try:
+                # The decrypted data is a JSON string, we need to parse it.
+                payload = json.loads(decrypted_data.decode('utf-8'))
+                # The actual image data is Base64 encoded inside the JSON.
+                image_bytes = base64.b64decode(payload.get('data'))
+                content_file = ContentFile(image_bytes, name=attachment.filename)
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                logger.error(f"Failed to parse payload for avatar {attachment.filename}: {e}")
+                return
+            # --- MODIFICATION END ---
+
             user.avatar.save(attachment.filename, content_file, save=True)
             logger.info(f"Successfully applied new federated avatar for user {user.username}.")
         except Exception as e:
