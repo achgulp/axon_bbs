@@ -71,7 +71,6 @@ function App() {
   const [pmRecipient, setPmRecipient] = useState(null);
   const [lastPlayedGame, setLastPlayedGame] = useState(null);
   const [profile, setProfile] = useState(null);
-  // --- NEW: State for Timezone ---
   const [displayTimezone, setDisplayTimezone] = useState('UTC');
 
   const setAuthToken = (newToken) => {
@@ -90,7 +89,6 @@ useEffect(() => {
             .then(response => setProfile(response.data))
             .catch(err => console.error("Could not fetch user profile", err));
     };
-    // --- NEW: Fetch Timezone ---
     const fetchTimezone = () => {
         apiClient.get('/api/config/timezone/')
             .then(response => {
@@ -103,7 +101,7 @@ useEffect(() => {
     if (token) {
       fetchProfile();
     }
-    fetchTimezone(); // Fetch timezone regardless of login state
+    fetchTimezone(); 
   }, [token]);
   const handleLogout = async () => {
     try {
@@ -146,19 +144,19 @@ useEffect(() => {
       return <ProfileScreen />;
     }
     if (currentView === 'pm') {
-      return <PrivateMessageClient key={pmRecipient ? pmRecipient.pubkey : 'new'} initialRecipient={pmRecipient} />;
+      return <PrivateMessageClient key={pmRecipient ? pmRecipient.pubkey : 'new'} initialRecipient={pmRecipient} displayTimezone={displayTimezone} />;
     }
     if (currentView === 'applets') {
       return <AppletView onLaunchGame={setLastPlayedGame} />;
     }
     if (currentView === 'high_scores' && lastPlayedGame) {
-      return <HighScoreBoard applet={lastPlayedGame} onBack={() => handleViewChange('applets')} />;
+      return <HighScoreBoard applet={lastPlayedGame} onBack={() => handleViewChange('applets')} displayTimezone={displayTimezone} />;
     }
     if (currentView === 'moderation') {
-      return <ModerationDashboard />;
+      return <ModerationDashboard displayTimezone={displayTimezone} />;
     }
     if (selectedBoard) {
-      return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} onStartPrivateMessage={handleStartPrivateMessage} />;
+      return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} onStartPrivateMessage={handleStartPrivateMessage} displayTimezone={displayTimezone} />;
     }
     return <MessageBoardList onSelectBoard={handleSelectBoard} />;
   };

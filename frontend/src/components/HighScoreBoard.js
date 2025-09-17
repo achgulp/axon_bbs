@@ -8,8 +8,8 @@
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -18,16 +18,14 @@
 // Full path: axon_bbs/frontend/src/components/HighScoreBoard.js
 import React, { useState, useEffect } from 'react';
 import apiClient from '../apiClient';
-
-const HighScoreBoard = ({ applet, onBack }) => {
+const HighScoreBoard = ({ applet, onBack, displayTimezone }) => {
   const [scores, setScores] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
   // Helper to display a stat or 'N/A' if it's null/undefined
   const renderStat = (stat) => (stat !== null && stat !== undefined ? stat : 'N/A');
-
-  useEffect(() => {
+useEffect(() => {
     setIsLoading(true);
     apiClient.get(`/api/high_scores/${applet.id}/`)
       .then(response => {
@@ -39,8 +37,7 @@ const HighScoreBoard = ({ applet, onBack }) => {
       })
       .finally(() => setIsLoading(false));
   }, [applet]);
-
-  return (
+return (
     <div>
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold text-gray-200">High Scores: {applet.name}</h2>
@@ -74,12 +71,10 @@ const HighScoreBoard = ({ applet, onBack }) => {
                 <tr key={index} className="border-b border-gray-700 last:border-b-0">
                   <td className="p-3 text-gray-200 font-bold text-center">{index + 1}</td>
                   <td className="p-3 text-gray-300">
-                    {/* --- START FIX --- */}
                     <div className="flex items-center gap-3">
                       <img src={score.owner_avatar_url || '/default_avatar.png'} alt="Player Avatar" className="w-8 h-8 rounded-full bg-gray-700" />
                       <span>{score.owner_nickname}</span>
                     </div>
-                    {/* --- END FIX --- */}
                   </td>
                   <td className="p-3 text-green-400 font-semibold">{score.score.toLocaleString()}</td>
                   <td className="p-3 text-yellow-400 text-center">{renderStat(score.wins)}</td>
@@ -87,7 +82,7 @@ const HighScoreBoard = ({ applet, onBack }) => {
                   <td className="p-3 text-cyan-400 text-center">{renderStat(score.kills)}</td>
                   <td className="p-3 text-red-400 text-center">{renderStat(score.deaths)}</td>
                   <td className="p-3 text-blue-400 text-center">{renderStat(score.assists)}</td>
-                  <td className="p-3 text-gray-400">{new Date(score.last_updated).toLocaleDateString()}</td>
+                  <td className="p-3 text-gray-400">{new Date(score.last_updated).toLocaleString([], { timeZone: displayTimezone })}</td>
                 </tr>
               ))}
             </tbody>

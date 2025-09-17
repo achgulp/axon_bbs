@@ -8,8 +8,8 @@
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -19,13 +19,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
-const ModerationDashboard = () => {
+const ModerationDashboard = ({ displayTimezone }) => {
   const [reports, setReports] = useState([]);
   const [profileUpdates, setProfileUpdates] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('reports');
-
   const fetchReports = useCallback(() => {
     apiClient.get('/api/moderation/queue/')
       .then(response => setReports(response.data))
@@ -34,7 +33,6 @@ const ModerationDashboard = () => {
         setError("Could not load the message report queue.");
       });
   }, []);
-  
   const fetchProfileUpdates = useCallback(() => {
     apiClient.get('/api/moderation/profile_queue/')
       .then(response => setProfileUpdates(response.data))
@@ -43,8 +41,7 @@ const ModerationDashboard = () => {
         setError("Could not load the profile update queue.");
       });
   }, []);
-
-  useEffect(() => {
+useEffect(() => {
     setIsLoading(true);
     const fetchAll = async () => {
         await Promise.all([
@@ -55,7 +52,6 @@ const ModerationDashboard = () => {
     };
     fetchAll();
   }, [fetchReports, fetchProfileUpdates]);
-
   const handleReviewReport = async (reportId, action) => {
     try {
       await apiClient.post(`/api/moderation/review/${reportId}/`, { action });
@@ -65,7 +61,6 @@ const ModerationDashboard = () => {
       alert(`Could not ${action} the report. Please try again.`);
     }
   };
-  
   const handleReviewProfile = async (actionId, action) => {
       try {
           await apiClient.post(`/api/moderation/profile_review/${actionId}/`, { action });
@@ -83,9 +78,9 @@ const ModerationDashboard = () => {
         <div className="space-y-6">
             {reports.map(report => (
                 <div key={report.id} className="bg-gray-800 p-4 rounded border border-gray-700">
-                <div className="border-b border-gray-600 pb-3 mb-3">
+                    <div className="border-b border-gray-600 pb-3 mb-3">
                     <p className="text-sm text-gray-400">
-                    Reported by: <span className="font-semibold text-gray-300">{report.reporting_user}</span> on {new Date(report.created_at).toLocaleString()}
+                    Reported by: <span className="font-semibold text-gray-300">{report.reporting_user}</span> on {new Date(report.created_at).toLocaleString([], { timeZone: displayTimezone })}
                     </p>
                     <p className="text-sm text-gray-400">
                     Reporter's Comment: <span className="text-yellow-400 italic">"{report.comment || 'No comment provided.'}"</span>
@@ -115,7 +110,6 @@ const ModerationDashboard = () => {
         </div>
     )
   );
-
   const renderProfileApprovals = () => (
     profileUpdates.length === 0 ? (
         <p className="text-gray-400">The profile approval queue is empty.</p>
@@ -125,7 +119,7 @@ const ModerationDashboard = () => {
                 <div key={update.id} className="bg-gray-800 p-4 rounded border border-gray-700">
                     <div className="border-b border-gray-600 pb-3 mb-3">
                         <p className="text-sm text-gray-400">
-                            Request by: <span className="font-semibold text-gray-300">{update.user_info.username}</span> on {new Date(update.created_at).toLocaleString()}
+                            Request by: <span className="font-semibold text-gray-300">{update.user_info.username}</span> on {new Date(update.created_at).toLocaleString([], { timeZone: displayTimezone })}
                         </p>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -136,7 +130,6 @@ const ModerationDashboard = () => {
                         </div>
                         <div>
                             <h4 className="font-bold text-gray-300 mb-2">Avatar Change</h4>
-                            {/* --- MODIFICATION START --- */}
                             {update.pending_avatar_url ? (
                                 <div>
                                     <p className="text-sm text-yellow-400 mb-2">New avatar for review:</p>
@@ -145,8 +138,7 @@ const ModerationDashboard = () => {
                             ) : (
                                 <p className="text-sm text-gray-400">No new avatar submitted.</p>
                             )}
-                            {/* --- MODIFICATION END --- */}
-                        </div>
+                    </div>
                     </div>
                     <div className="flex justify-end gap-4 mt-4">
                         <button onClick={() => handleReviewProfile(update.id, 'deny')} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
@@ -161,8 +153,7 @@ const ModerationDashboard = () => {
         </div>
     )
   );
-
-  return (
+return (
     <div>
       <Header text="Moderation Dashboard" />
       <div className="mb-4 border-b border-gray-600">

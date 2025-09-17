@@ -8,8 +8,8 @@
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -20,9 +20,8 @@ import apiClient from '../apiClient';
 import UnlockForm from './UnlockForm';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
-
-const PrivateMessageClient = ({ initialRecipient = null }) => {
-  const [view, setView] = useState('inbox'); // inbox, outbox, read, compose
+const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
+  const [view, setView] = useState('inbox');
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,7 +33,6 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
 
   const [needsUnlock, setNeedsUnlock] = useState(false);
   const [postUnlockAction, setPostUnlockAction] = useState(null);
-
   const fetchMessages = useCallback(async () => {
     setIsLoading(true);
     setError('');
@@ -54,21 +52,17 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
       setIsLoading(false);
     }
   }, [view]);
-
-  useEffect(() => {
+useEffect(() => {
     if (view === 'inbox' || view === 'outbox') {
       fetchMessages();
     }
   }, [view, fetchMessages]);
-
-  useEffect(() => {
+useEffect(() => {
     if (initialRecipient) {
         setRecipientIdentifier(initialRecipient.displayName);
         setView('compose');
     }
   }, [initialRecipient]);
-
-
   const handleSendMessage = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -90,13 +84,12 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
         setIsLoading(false);
     }
   };
-
   const handleReply = () => {
     const original = selectedMessage;
     setView('compose');
     setRecipientIdentifier(original.author_display);
     setSubject(`Re: ${original.subject}`);
-    const quoteHeader = `\n\nOn ${new Date(original.created_at).toLocaleString()}, ${original.author_display} wrote:\n`;
+    const quoteHeader = `\n\nOn ${new Date(original.created_at).toLocaleString([], { timeZone: displayTimezone })}, ${original.author_display} wrote:\n`;
     const quotedBody = (original.decrypted_body || '').split('\n').map(line => `> ${line}`).join('\n');
     setBody(quoteHeader + quotedBody + '\n');
   };
@@ -107,9 +100,8 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
     setRecipientIdentifier(''); // User must enter a new recipient
     setSubject(`Fwd: ${original.subject}`);
     const forwardedBody = (original.decrypted_body || '').split('\n').map(line => `> ${line}`).join('\n');
-    setBody(`\n\n--- Forwarded Message ---\nFrom: ${original.author_display}\nDate: ${new Date(original.created_at).toLocaleString()}\nSubject: ${original.subject}\n\n${forwardedBody}`);
+    setBody(`\n\n--- Forwarded Message ---\nFrom: ${original.author_display}\nDate: ${new Date(original.created_at).toLocaleString([], { timeZone: displayTimezone })}\nSubject: ${original.subject}\n\n${forwardedBody}`);
   };
-
   const renderMessageList = () => (
     <div className="bg-gray-800 rounded border border-gray-700">
       <table className="w-full text-left table-auto">
@@ -128,7 +120,7 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
                 <img src={(msg.author_avatar_url || msg.recipient_avatar_url) || '/default_avatar.png'} alt="avatar" className="w-8 h-8 rounded-full bg-gray-700" />
                 {msg.author_display || msg.recipient_display}
               </td>
-              <td className="p-3 text-gray-400">{new Date(msg.created_at).toLocaleString()}</td>
+              <td className="p-3 text-gray-400">{new Date(msg.created_at).toLocaleString([], { timeZone: displayTimezone })}</td>
             </tr>
           ))}
         </tbody>
@@ -136,7 +128,6 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
       {messages.length === 0 && <p className="text-gray-400 text-center p-4">Your {view} is empty.</p>}
     </div>
   );
-
   const renderReadMessage = () => {
     const msg = selectedMessage;
     const isInboxMessage = msg.author_display;
@@ -155,7 +146,7 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
                 <h3 className="text-xl font-bold text-white mb-1">{msg.subject}</h3>
                 <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
                     <img src={(msg.author_avatar_url || msg.recipient_avatar_url) || '/default_avatar.png'} alt="avatar" className="w-6 h-6 rounded-full bg-gray-700" />
-                    <span>{isInboxMessage ? `From: ${msg.author_display}` : `To: ${msg.recipient_display}`} on {new Date(msg.created_at).toLocaleString()}</span>
+                    <span>{isInboxMessage ? `From: ${msg.author_display}` : `To: ${msg.recipient_display}`} on {new Date(msg.created_at).toLocaleString([], { timeZone: displayTimezone })}</span>
                 </div>
                 <p className="text-gray-300 whitespace-pre-wrap p-2 border-t border-gray-700 mt-2">{msg.decrypted_body || 'Message content is encrypted and could not be displayed.'}</p>
             </div>
@@ -183,7 +174,6 @@ const PrivateMessageClient = ({ initialRecipient = null }) => {
         </div>
     </div>
   );
-
   const renderContent = () => {
     if (selectedMessage) return renderReadMessage();
     if (view === 'compose') return renderCompose();

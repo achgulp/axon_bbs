@@ -8,8 +8,8 @@
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -19,13 +19,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
 import UnlockForm from './UnlockForm';
-import ReportModal from './ReportModal'; // --- NEW: Import the modal ---
+import ReportModal from './ReportModal'; 
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
-
 const AttachmentItem = ({ attachment, onDownload }) => {
   const [status, setStatus] = useState('checking');
-
   const fetchStatus = useCallback(() => {
     apiClient.get(`/api/files/status/${attachment.id}/`)
       .then(response => {
@@ -36,8 +34,7 @@ const AttachmentItem = ({ attachment, onDownload }) => {
         setStatus('error');
       });
   }, [attachment.id]);
-
-  useEffect(() => {
+useEffect(() => {
     fetchStatus();
     const interval = setInterval(() => {
       if (status === 'syncing') {
@@ -46,8 +43,7 @@ const AttachmentItem = ({ attachment, onDownload }) => {
     }, 5000);
     return () => clearInterval(interval);
   }, [status, fetchStatus]);
-
-  return (
+return (
     <li key={attachment.id} className="flex items-center gap-4">
       <span className="text-gray-200">{attachment.filename}</span>
       <span className="text-gray-400 text-sm">({Math.round(attachment.size / 1024)} KB)</span>
@@ -64,7 +60,7 @@ const AttachmentItem = ({ attachment, onDownload }) => {
   );
 };
 
-const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
+const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) => {
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [showPostForm, setShowPostForm] = useState(false);
@@ -77,17 +73,14 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [attachments, setAttachments] = useState([]);
-  // --- NEW: State for the report modal ---
   const [showReportModal, setShowReportModal] = useState(false);
-
   const fetchMessages = useCallback(async () => {
     try {
       const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
       setMessages(response.data);
     } catch (err) { console.error("Failed to fetch messages:", err); }
   }, [board.id]);
-
-  useEffect(() => { fetchMessages(); }, [fetchMessages]);
+useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
   const handlePostMessage = useCallback(async () => {
     setError('');
@@ -106,7 +99,6 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
       }
     }
   }, [subject, body, board.name, attachments, fetchMessages]);
-
   const handleFileUpload = async () => {
     if (!selectedFile) { setUploadError('Please select a file first.'); return; }
     setIsUploading(true); setUploadError('');
@@ -122,7 +114,6 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
       setIsUploading(false);
     }
   };
-
   const handleFileDownload = useCallback(async (fileId, filename) => {
     try {
       const response = await apiClient.get(`/api/files/download/${fileId}/`, {
@@ -146,12 +137,11 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
       }
     }
   }, []);
-
   const handleReply = () => {
     if (!selectedMessage) return;
     const quotedBody = selectedMessage.body.split('\n').map(line => `> ${line}`).join('\n');
     setSubject(`Re: ${selectedMessage.subject}`);
-    setBody(`\n\nOn ${new Date(selectedMessage.created_at).toLocaleString()}, ${selectedMessage.author_display} wrote:\n${quotedBody}`);
+    setBody(`\n\nOn ${new Date(selectedMessage.created_at).toLocaleString([], { timeZone: displayTimezone })}, ${selectedMessage.author_display} wrote:\n${quotedBody}`);
     setSelectedMessage(null);
     setShowPostForm(true);
   };
@@ -163,14 +153,11 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
       setPostUnlockAction(null);
     }
   };
-
-  // --- NEW: Function to handle submitting a report ---
   const handleReportSubmit = async (message_id, comment) => {
     try {
         await apiClient.post('/api/messages/report/', { message_id, comment });
     } catch (err) {
         console.error("Failed to submit report:", err);
-        // Throw the error so the modal can display it
         throw new Error(err.response?.data?.error || 'An unexpected error occurred.');
     }
   };
@@ -178,7 +165,6 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
   if (selectedMessage) {
     return (
       <div>
-        {/* --- NEW: Render the ReportModal component --- */}
         <ReportModal 
             message={selectedMessage}
             show={showReportModal} 
@@ -196,7 +182,6 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
                 <button onClick={() => onStartPrivateMessage(selectedMessage.pubkey, selectedMessage.author_display)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
                     Send Private Message
                 </button>
-                {/* --- NEW: Report Button --- */}
                 <button onClick={() => setShowReportModal(true)} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
                     Report
                 </button>
@@ -206,7 +191,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
           <h3 className="text-xl font-bold text-white mb-1">{selectedMessage.subject}</h3>
           <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
             <img src={selectedMessage.author_avatar_url || '/default_avatar.png'} alt="author avatar" className="w-6 h-6 rounded-full bg-gray-700" />
-            <span>by {selectedMessage.author_display} on {new Date(selectedMessage.created_at).toLocaleString()}</span>
+            <span>by {selectedMessage.author_display} on {new Date(selectedMessage.created_at).toLocaleString([], { timeZone: displayTimezone })}</span>
           </div>
           <p className="text-gray-300 whitespace-pre-wrap mb-4">{selectedMessage.body}</p>
           
@@ -292,7 +277,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage }) => {
                   <img src={msg.author_avatar_url || '/default_avatar.png'} alt="author avatar" className="w-8 h-8 rounded-full bg-gray-700" />
                   {msg.author_display}
                 </td>
-                <td className="p-3 text-gray-400">{new Date(msg.created_at).toLocaleString()}</td>
+                <td className="p-3 text-gray-400">{new Date(msg.created_at).toLocaleString([], { timeZone: displayTimezone })}</td>
               </tr>
             ))}
           </tbody>
