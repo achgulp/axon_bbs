@@ -48,26 +48,39 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = UserSerializer
 
     # --- MODIFICATION START ---
-    # This logic now correctly handles the IntegrityError from the database
-    # and checks if the conflict is with a claimable federated user.
+    # This logic now explicitly checks for conflicts before validation.
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            self.perform_create(serializer)
-            headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-        except IntegrityError:
-            nickname = serializer.validated_data.get('nickname')
-            if nickname and User.objects.filter(nickname__iexact=nickname, is_active=False).exists():
+        username = request.data.get('username')
+        nickname = request.data.get('nickname')
+
+        # Check for nickname conflict
+        conflicting_user_by_nickname = User.objects.filter(nickname__iexact=nickname).first()
+        if conflicting_user_by_nickname:
+            if not conflicting_user_by_nickname.is_active:
                 return Response(
                     {"error": "nickname_exists_as_federated", "detail": f"The nickname '{nickname}' is reserved by a federated user. You can claim this account if you have the private key."},
                     status=status.HTTP_409_CONFLICT
                 )
-            return Response(
-                {"error": "A user with that username or nickname already exists."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            else:
+                return Response({"error": "A user with that nickname already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check for username conflict
+        conflicting_user_by_username = User.objects.filter(username__iexact=username).first()
+        if conflicting_user_by_username:
+             if not conflicting_user_by_username.is_active:
+                 return Response(
+                    {"error": "username_exists_as_federated", "detail": f"The username '{username}' is reserved. Try claiming by nickname."},
+                    status=status.HTTP_409_CONFLICT
+                )
+             else:
+                return Response({"error": "A user with that username already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # If no conflicts, proceed with registration.
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
     # --- MODIFICATION END ---
 
 
