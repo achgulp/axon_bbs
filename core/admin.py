@@ -30,10 +30,8 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization
 from django.conf import settings
-# --- MODIFICATION START ---
 from django.utils.html import format_html
 from .services.avatar_generator import generate_cow_avatar
-# --- MODIFICATION END ---
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
 
@@ -74,14 +72,12 @@ rekey_content_action.short_description = "Re-key content for all trusted peers"
 class UserAdmin(BaseUserAdmin):
     list_display = ('username', 'email', 'access_level', 'is_moderator', 'karma', 'is_staff', 'is_banned', 'is_agent', 'pubkey_checksum')
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'is_banned', 'is_agent', 'is_moderator')
-    # --- MODIFICATION START ---
-    readonly_fields = BaseUserAdmin.readonly_fields + ('pubkey_checksum', 'last_moderated_at', 'avatar_preview')
+    readonly_fields = BaseUserAdmin.readonly_fields + ('pubkey_checksum', 'last_moderated_at', 'avatar_preview', 'avatar_path')
     
     def get_fieldsets(self, request, obj=None):
         if not obj:
             return self.add_fieldsets
 
-        # Define a base set of fieldsets
         fieldsets = [
             (None, {"fields": ("username", "password")}),
             ("Personal info", {"fields": ("nickname", "first_name", "last_name", "email")}),
@@ -89,18 +85,20 @@ class UserAdmin(BaseUserAdmin):
             ("BBS Stats", {"fields": ("access_level", "karma", "last_moderated_at")}),
             ("Important dates", {"fields": ("last_login", "date_joined")}),
         ]
-        # Add avatar and pubkey fields if the user has a pubkey (i.e., is not a brand new, unsaved user)
         if obj.pubkey:
-             fieldsets.insert(2, ("Avatar & Identity", {"fields": ('avatar_preview', 'pubkey')}))
+             fieldsets.insert(2, ("Avatar & Identity", {"fields": ('avatar_preview', 'avatar_path', 'pubkey')}))
         
         return tuple(fieldsets)
 
     @admin.display(description='Current Avatar')
     def avatar_preview(self, obj):
-        if obj.avatar:
+        if obj.avatar and obj.avatar.url:
             return format_html('<img src="{}" width="128" height="128" style="border-radius: 50%;" />', obj.avatar.url)
         return "No avatar set."
-    # --- MODIFICATION END ---
+
+    @admin.display(description='Avatar File Path')
+    def avatar_path(self, obj):
+        return obj.avatar.name if obj.avatar else "N/A"
 
     @admin.display(description='Pubkey Checksum')
     def pubkey_checksum(self, obj):
@@ -131,7 +129,6 @@ class UserAdmin(BaseUserAdmin):
                 else:
                     self.message_user(request, f"Failed to reload agent service for '{user.username}'. See logs.", level='ERROR')
     
-    # --- NEW ACTION ---
     @admin.action(description="Reset selected users' avatar to default")
     def reset_avatar(self, request, queryset):
         updated_count = 0
@@ -156,7 +153,6 @@ class UserAdmin(BaseUserAdmin):
         
         if updated_count > 0:
             self.message_user(request, f"Successfully reset avatars for {updated_count} user(s).", level='SUCCESS')
-    # --- END NEW ACTION ---
 
     actions = ['update_agent_status', 'reset_avatar']
 

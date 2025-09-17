@@ -38,7 +38,6 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        # --- MODIFICATION START ---
         # Get a set of all file paths currently being used as user avatars.
         # The User.avatar field stores paths like 'avatars/cow_....png'.
         active_avatar_paths = set(User.objects.exclude(avatar__exact='').values_list('avatar', flat=True))
@@ -55,7 +54,6 @@ class Command(BaseCommand):
             expected_avatar_path = os.path.join('avatars', attachment.filename)
             if expected_avatar_path not in active_avatar_paths:
                 orphaned_attachments.append(attachment)
-        # --- MODIFICATION END ---
         
         count = len(orphaned_attachments)
 
