@@ -18,6 +18,10 @@
 # Full path: axon_bbs/api/views/moderation_views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
+# --- MODIFICATION START ---
+from django.http import HttpResponse, Http404
+from core.services.service_manager import service_manager
+# --- MODIFICATION END ---
 from django.utils import timezone
 from datetime import timedelta
 from django.apps import apps
@@ -25,9 +29,33 @@ import logging
 
 from ..serializers import ContentExtensionRequestSerializer, ModerationReportSerializer, FederatedActionProfileUpdateSerializer
 from ..permissions import IsModeratorOrAdmin
-from core.models import IgnoredPubkey, BannedPubkey, FederatedAction, Message, ModerationReport, ContentExtensionRequest
+from core.models import IgnoredPubkey, BannedPubkey, FederatedAction, Message, ModerationReport, ContentExtensionRequest, FileAttachment
 
 logger = logging.getLogger(__name__)
+
+
+# --- NEW VIEW ---
+class PreviewContentView(views.APIView):
+    permission_classes = [IsModeratorOrAdmin]
+
+    def get(self, request, content_hash, *args, **kwargs):
+        try:
+            attachment = FileAttachment.objects.get(manifest__content_hash=content_hash)
+            
+            # Identity must be unlocked to decrypt content
+            if 'unencrypted_priv_key' not in request.session:
+                 return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+
+            decrypted_data = service_manager.sync_service.get_decrypted_content(attachment.manifest)
+
+            if decrypted_data:
+                return HttpResponse(decrypted_data, content_type=attachment.content_type)
+            else:
+                raise Http404("Could not decrypt or find content.")
+
+        except FileAttachment.DoesNotExist:
+            raise Http404("Content not found.")
+# --- END NEW VIEW ---
 
 
 class IgnorePubkeyView(views.APIView):
@@ -111,9 +139,6 @@ class ReviewReportView(views.APIView):
             return Response({"error": "Report not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
 
         if action == 'approve':
-            # --- START FIX ---
-            # The order of operations has been corrected.
-            # We now save the report and user karma *before* deleting the message.
             report.status = 'approved'
             report.reviewed_by = request.user
             report.reviewed_at = timezone.now()
@@ -124,7 +149,6 @@ class ReviewReportView(views.APIView):
             
             message_to_delete = report.reported_message
             
-            # Save the report *before* the message deletion cascades and deletes it.
             report.save()
 
             if message_to_delete and message_to_delete.manifest:
@@ -138,7 +162,6 @@ class ReviewReportView(views.APIView):
                 message_to_delete.delete()
             
             return Response({"status": "Report approved and message deleted."})
-            # --- END FIX ---
 
         elif action == 'reject':
             report.status = 'rejected'
@@ -176,8 +199,6 @@ class ReviewProfileUpdateView(views.APIView):
         elif action == 'deny':
             profile_action.status = 'denied'
             profile_action.save()
-            # Optionally, you could revert the user's profile change here.
-            # For now, denying just prevents federation.
             return Response({"status": "Profile update denied."}, status=status.HTTP_200_OK)
 
         return Response({"error": "Invalid action. Must be 'approve' or 'deny'."}, status=status.HTTP_400_BAD_REQUEST)
@@ -224,14 +245,11 @@ class UnpinContentView(views.APIView):
     def post(self, request, *args, **kwargs):
         content_id, content_type = request.data.get('content_id'), request.data.get('content_type')
         if not all([content_id, content_type]): return Response({"error": "content_id and content_type are required."}, status=status.HTTP_400_BAD_REQUEST)
-        # --- START FIX ---
-        # Corrected the indentation of the try...except block
         try:
             model = apps.get_model('core', content_type.capitalize())
             content_obj = model.objects.get(pk=content_id)
         except (LookupError, model.DoesNotExist):
             return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
-        # --- END FIX ---
         if content_obj.pinned_by and content_obj.pinned_by.is_staff and not request.user.is_staff: return Response({"error": "Moderators cannot unpin content pinned by an Admin."}, status=status.HTTP_403_FORBIDDEN)
         
         if content_obj.is_pinned and content_obj.manifest and content_obj.manifest.get('content_hash'):

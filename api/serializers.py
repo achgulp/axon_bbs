@@ -30,10 +30,7 @@ User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-    # --- MODIFICATION START ---
-    # Made nickname required for the serializer to process it
     nickname = serializers.CharField(required=True)
-    # --- MODIFICATION END ---
     security_question_1 = serializers.CharField(write_only=True, required=True)
     security_answer_1 = serializers.CharField(write_only=True, required=True)
     security_question_2 = serializers.CharField(write_only=True, required=True)
@@ -44,8 +41,6 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('username', 'password', 'nickname', 'security_question_1', 'security_answer_1', 'security_question_2', 'security_answer_2')
 
     def create(self, validated_data):
-        # The User model's custom manager now handles nickname assignment.
-        # This serializer's job is just to pass the validated data along.
         user = User.objects.create_user(
             username=validated_data['username'],
             password=validated_data['password'],
@@ -228,10 +223,12 @@ class ModerationReportSerializer(serializers.ModelSerializer):
 
 class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
     user_info = serializers.SerializerMethodField()
+    # --- NEW FIELD ---
+    pending_avatar_url = serializers.SerializerMethodField()
     
     class Meta:
         model = FederatedAction
-        fields = ('id', 'created_at', 'action_details', 'user_info')
+        fields = ('id', 'created_at', 'action_details', 'user_info', 'pending_avatar_url')
 
     def get_user_info(self, obj):
         user = User.objects.filter(pubkey=obj.pubkey_target).first()
@@ -248,3 +245,15 @@ class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
             "current_nickname": user.nickname,
             "current_avatar_url": avatar_url
         }
+    
+    # --- NEW METHOD ---
+    def get_pending_avatar_url(self, obj):
+        avatar_hash = obj.action_details.get('avatar_hash')
+        if not avatar_hash:
+            return None
+        
+        request = self.context.get('request')
+        if request:
+            # Construct a URL to the new preview endpoint
+            return request.build_absolute_uri(f'/api/moderation/preview_content/{avatar_hash}/')
+        return None

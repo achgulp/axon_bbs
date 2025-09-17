@@ -56,8 +56,9 @@ from .views import (
     SubmitRecoveryView,
     PendingProfileUpdatesQueueView,
     ReviewProfileUpdateView,
-    # --- NEW: Claim Account View ---
     ClaimAccountView,
+    # --- NEW: Preview View ---
+    PreviewContentView,
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -76,7 +77,6 @@ urlpatterns = [
     path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
     path('identity/export/', ExportIdentityView.as_view(), name='export-identity'),
     path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
-    # --- NEW: Claim Account URL ---
     path('identity/claim/', ClaimAccountView.as_view(), name='claim-identity'),
     path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
     path('user/profile/', UserProfileView.as_view(), name='user-profile'),
@@ -101,6 +101,8 @@ urlpatterns = [
     path('moderation/review/<int:report_id>/', ReviewReportView.as_view(), name='mod-review'),
     path('moderation/profile_queue/', PendingProfileUpdatesQueueView.as_view(), name='mod-profile-queue'),
     path('moderation/profile_review/<uuid:action_id>/', ReviewProfileUpdateView.as_view(), name='mod-profile-review'),
+    # --- NEW: Preview URL ---
+    path('moderation/preview_content/<str:content_hash>/', PreviewContentView.as_view(), name='preview-content'),
     
     # Admin & Moderator Actions
     path('admin/ban/', BanPubkeyView.as_view(), name='ban-pubkey'),

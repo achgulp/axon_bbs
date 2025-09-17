@@ -136,11 +136,16 @@ const ModerationDashboard = () => {
                         </div>
                         <div>
                             <h4 className="font-bold text-gray-300 mb-2">Avatar Change</h4>
-                            {update.action_details.avatar_hash ? (
-                                <p className="text-sm text-gray-400">New avatar submitted for review. (Preview not yet available)</p>
+                            {/* --- MODIFICATION START --- */}
+                            {update.pending_avatar_url ? (
+                                <div>
+                                    <p className="text-sm text-yellow-400 mb-2">New avatar for review:</p>
+                                    <img src={update.pending_avatar_url} alt="Pending avatar" className="w-32 h-32 rounded-full border-2 border-yellow-500" />
+                                </div>
                             ) : (
-                                <p className="text-sm text-gray-400">No avatar change requested.</p>
+                                <p className="text-sm text-gray-400">No new avatar submitted.</p>
                             )}
+                            {/* --- MODIFICATION END --- */}
                         </div>
                     </div>
                     <div className="flex justify-end gap-4 mt-4">

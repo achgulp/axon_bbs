@@ -8,8 +8,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -30,6 +30,10 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization
 from django.conf import settings
+# --- MODIFICATION START ---
+from django.utils.html import format_html
+from .services.avatar_generator import generate_cow_avatar
+# --- MODIFICATION END ---
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
 
@@ -70,28 +74,33 @@ rekey_content_action.short_description = "Re-key content for all trusted peers"
 class UserAdmin(BaseUserAdmin):
     list_display = ('username', 'email', 'access_level', 'is_moderator', 'karma', 'is_staff', 'is_banned', 'is_agent', 'pubkey_checksum')
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'is_banned', 'is_agent', 'is_moderator')
-    readonly_fields = BaseUserAdmin.readonly_fields + ('pubkey_checksum', 'last_moderated_at',)
+    # --- MODIFICATION START ---
+    readonly_fields = BaseUserAdmin.readonly_fields + ('pubkey_checksum', 'last_moderated_at', 'avatar_preview')
     
     def get_fieldsets(self, request, obj=None):
         if not obj:
             return self.add_fieldsets
 
-        if request.user.is_superuser:
-            return (
-                (None, {"fields": ("username", "password")}),
-                ("Personal info", {"fields": ("nickname", "first_name", "last_name", "email", "pubkey")}),
-                ("Permissions & Roles", {"fields": ("is_active", "is_staff", "is_superuser", "is_moderator", "is_agent", "is_banned")}),
-                ("BBS Stats", {"fields": ("access_level", "karma", "last_moderated_at")}),
-                ("Important dates", {"fields": ("last_login", "date_joined")}),
-            )
-        else:
-            fieldsets = list(super().get_fieldsets(request, obj))
-            fieldsets.append(
-                ("BBS Info", {
-                    "fields": ("nickname", "pubkey", "access_level", "karma", "is_moderator", "is_agent", "is_banned", "last_moderated_at")
-                })
-            )
-            return fieldsets
+        # Define a base set of fieldsets
+        fieldsets = [
+            (None, {"fields": ("username", "password")}),
+            ("Personal info", {"fields": ("nickname", "first_name", "last_name", "email")}),
+            ("Permissions & Roles", {"fields": ("is_active", "is_staff", "is_superuser", "is_moderator", "is_agent", "is_banned")}),
+            ("BBS Stats", {"fields": ("access_level", "karma", "last_moderated_at")}),
+            ("Important dates", {"fields": ("last_login", "date_joined")}),
+        ]
+        # Add avatar and pubkey fields if the user has a pubkey (i.e., is not a brand new, unsaved user)
+        if obj.pubkey:
+             fieldsets.insert(2, ("Avatar & Identity", {"fields": ('avatar_preview', 'pubkey')}))
+        
+        return tuple(fieldsets)
+
+    @admin.display(description='Current Avatar')
+    def avatar_preview(self, obj):
+        if obj.avatar:
+            return format_html('<img src="{}" width="128" height="128" style="border-radius: 50%;" />', obj.avatar.url)
+        return "No avatar set."
+    # --- MODIFICATION END ---
 
     @admin.display(description='Pubkey Checksum')
     def pubkey_checksum(self, obj):
@@ -121,8 +130,35 @@ class UserAdmin(BaseUserAdmin):
                     self.message_user(request, f"Successfully reloaded agent service for '{user.username}'.", level='SUCCESS')
                 else:
                     self.message_user(request, f"Failed to reload agent service for '{user.username}'. See logs.", level='ERROR')
+    
+    # --- NEW ACTION ---
+    @admin.action(description="Reset selected users' avatar to default")
+    def reset_avatar(self, request, queryset):
+        updated_count = 0
+        for user in queryset:
+            if not user.pubkey:
+                self.message_user(request, f"Cannot reset avatar for '{user.username}': No public key found.", level='WARNING')
+                continue
+            
+            try:
+                # Delete the old avatar file from storage
+                if user.avatar:
+                    user.avatar.delete(save=False)
 
-    actions = ['update_agent_status']
+                # Generate a new cow avatar
+                avatar_content_file, avatar_filename = generate_cow_avatar(user.pubkey)
+                
+                # Save the new avatar
+                user.avatar.save(avatar_filename, avatar_content_file, save=True)
+                updated_count += 1
+            except Exception as e:
+                self.message_user(request, f"Failed to reset avatar for '{user.username}': {e}", level='ERROR')
+        
+        if updated_count > 0:
+            self.message_user(request, f"Successfully reset avatars for {updated_count} user(s).", level='SUCCESS')
+    # --- END NEW ACTION ---
+
+    actions = ['update_agent_status', 'reset_avatar']
 
 @admin.register(ModerationReport)
 class ModerationReportAdmin(admin.ModelAdmin):
