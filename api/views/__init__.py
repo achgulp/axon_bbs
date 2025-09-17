@@ -58,7 +58,10 @@ from .moderation_views import (
     UnpinContentView,
     PendingProfileUpdatesQueueView,
     ReviewProfileUpdateView,
-    PreviewContentView,
+    # --- MODIFICATION START ---
+    # Replaced the old PreviewContentView with the new token-based view
+    ServeTemporaryAvatarView,
+    # --- MODIFICATION END ---
 )
 
 from .applet_views import (
