@@ -18,6 +18,8 @@
 // Full path: axon_bbs/frontend/src/components/ModerationDashboard.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
+import AuthenticatedImage from './AuthenticatedImage'; // --- MODIFICATION: Import new component ---
+
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const ModerationDashboard = ({ displayTimezone }) => {
   const [reports, setReports] = useState([]);
@@ -130,15 +132,21 @@ useEffect(() => {
                         </div>
                         <div>
                             <h4 className="font-bold text-gray-300 mb-2">Avatar Change</h4>
+                            {/* --- MODIFICATION START --- */}
                             {update.pending_avatar_url ? (
                                 <div>
                                     <p className="text-sm text-yellow-400 mb-2">New avatar for review:</p>
-                                    <img src={update.pending_avatar_url} alt="Pending avatar" className="w-32 h-32 rounded-full border-2 border-yellow-500" />
+                                    <AuthenticatedImage 
+                                        src={update.pending_avatar_url} 
+                                        alt="Pending avatar" 
+                                        className="w-32 h-32 rounded-full border-2 border-yellow-500" 
+                                    />
                                 </div>
                             ) : (
                                 <p className="text-sm text-gray-400">No new avatar submitted.</p>
                             )}
-                    </div>
+                            {/* --- MODIFICATION END --- */}
+                        </div>
                     </div>
                     <div className="flex justify-end gap-4 mt-4">
                         <button onClick={() => handleReviewProfile(update.id, 'deny')} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">

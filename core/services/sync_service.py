@@ -343,10 +343,13 @@ class SyncService:
                 )
                 logger.info(f"Successfully saved new file: '{final_manifest.get('filename')}'")
                 
+                # --- MODIFICATION START ---
+                # Correctly query the JSONField for the avatar hash.
                 pending_actions = FederatedAction.objects.filter(
                     action_type='update_profile',
                     action_details__avatar_hash=content_hash
                 )
+                # --- MODIFICATION END ---
                 for action in pending_actions:
                     user_to_update = User.objects.filter(pubkey=action.pubkey_target).first()
                     if user_to_update:
@@ -519,17 +522,13 @@ class SyncService:
                 logger.warning(f"Could not decrypt data for avatar {attachment.filename}.")
                 return
             
-            # --- MODIFICATION START ---
             try:
-                # The decrypted data is a JSON string, we need to parse it.
                 payload = json.loads(decrypted_data.decode('utf-8'))
-                # The actual image data is Base64 encoded inside the JSON.
                 image_bytes = base64.b64decode(payload.get('data'))
                 content_file = ContentFile(image_bytes, name=attachment.filename)
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 logger.error(f"Failed to parse payload for avatar {attachment.filename}: {e}")
                 return
-            # --- MODIFICATION END ---
 
             user.avatar.save(attachment.filename, content_file, save=True)
             logger.info(f"Successfully applied new federated avatar for user {user.username}.")
