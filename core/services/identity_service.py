@@ -113,12 +113,10 @@ class IdentityService:
             
         return identity
 
-    # --- NEW METHOD ---
     def create_storage_from_key(self, password: str, private_key_pem: str):
         """
         Creates and encrypts the identity files for a claimed account,
-        using the user's provided private key and new password.
-        This does not create security questions.
+        using the user's provided private key and new password. This does not create security questions.
         """
         identity = {
             "id": str(uuid.uuid4()), "name": "default", "type": "rsa",
@@ -149,7 +147,6 @@ class IdentityService:
             f.write(encrypted_identities)
         
         logger.info(f"Identity storage created for claimed account: {self.user.username}")
-    # --- END NEW METHOD ---
 
     def get_unlocked_private_key(self, password: str) -> Optional[str]:
         """Gets the decrypted private key using the main password."""
@@ -220,4 +217,46 @@ class IdentityService:
             return False
         except Exception as e:
             logger.error(f"Unexpected error during recovery for {self.user.username}: {e}")
+            return False
+
+    def reset_security_questions(self, password: str, sq1: str, sa1: str, sq2: str, sa2: str) -> bool:
+        """
+        Uses the user's current password to get the master key, then creates new
+        security question envelopes.
+        """
+        try:
+            # Step 1: Get the master key using the current password
+            master_aes_key = self.get_master_key_from_password(password)
+            if not master_aes_key:
+                return False
+
+            # Step 2: Load the existing manifest
+            with open(self.manifest_path, 'r') as f:
+                manifest = json.load(f)
+
+            # Step 3: Create new envelopes for the new questions/answers
+            sq1_derived_key = derive_key_from_password(sa1, sq1.encode('utf-8'))
+            sq1_envelope = Fernet(sq1_derived_key).encrypt(master_aes_key)
+
+            sq2_derived_key = derive_key_from_password(sa2, sq2.encode('utf-8'))
+            sq2_envelope = Fernet(sq2_derived_key).encrypt(master_aes_key)
+
+            # Step 4: Update the manifest
+            manifest['security_question_1'] = sq1
+            manifest['security_question_2'] = sq2
+            manifest['envelopes']['sq1'] = sq1_envelope.hex()
+            manifest['envelopes']['sq2'] = sq2_envelope.hex()
+
+            # Step 5: Save the updated manifest
+            with open(self.manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2)
+
+            return True
+
+        except DecryptionError:
+            # This will be raised by get_master_key_from_password if the password is wrong
+            logger.warning(f"Failed to reset security questions for {self.user.username}: incorrect password provided.")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error resetting security questions for {self.user.username}: {e}")
             return False

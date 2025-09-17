@@ -30,6 +30,7 @@ import logging
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import UnsupportedAlgorithm
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.conf import settings
 
 
 from ..serializers import UserSerializer
@@ -86,13 +87,11 @@ class ClaimAccountView(views.APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, *args, **kwargs):
-        # --- MODIFICATION START ---
         nickname_to_claim = request.data.get('nickname')
         new_username = request.data.get('username')
         new_password = request.data.get('new_password')
         key_file = request.FILES.get('key_file')
         key_file_password = request.data.get('key_file_password', None)
-
 
         if not all([nickname_to_claim, new_username, new_password, key_file]):
             return Response({"error": "Username, nickname, new password, and private key file are required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -105,7 +104,6 @@ class ClaimAccountView(views.APIView):
         # Check if the desired new username is already taken by a different active user
         if User.objects.filter(username__iexact=new_username).exclude(pk=user_to_claim.pk).exists():
             return Response({"error": f"The username '{new_username}' is already in use by another account."}, status=status.HTTP_409_CONFLICT)
-        # --- MODIFICATION END ---
 
         try:
             private_key_pem = key_file.read()
@@ -125,10 +123,8 @@ class ClaimAccountView(views.APIView):
             if derived_public_key_pem != user_to_claim.pubkey.strip():
                 return Response({"error": "Private key does not match the public key on record for this user."}, status=status.HTTP_403_FORBIDDEN)
 
-            # --- MODIFICATION START ---
-            # Key is valid, proceed with account activation and UPDATES
             user_to_claim.username = new_username
-            user_to_claim.nickname = nickname_to_claim # Ensure canonical nickname is saved
+            user_to_claim.nickname = nickname_to_claim 
             user_to_claim.is_active = True
             user_to_claim.set_password(new_password)
             user_to_claim.save()
@@ -137,7 +133,6 @@ class ClaimAccountView(views.APIView):
             identity_service.create_storage_from_key(new_password, private_key_pem.decode('utf-8'))
 
             refresh = RefreshToken.for_user(user_to_claim)
-            # --- MODIFICATION END ---
             
             return Response({
                 'status': 'Account claimed successfully.',
@@ -259,6 +254,7 @@ class UserProfileView(views.APIView):
             "avatar_url": request.build_absolute_uri(user.avatar.url) if user.avatar else None,
             "karma": user.karma,
             "is_moderator": user.is_moderator,
+            "timezone": user.timezone,
         })
 
 class UploadAvatarView(views.APIView):
@@ -385,3 +381,86 @@ class SubmitRecoveryView(views.APIView):
                 return Response({"error": "Recovery failed. One or more answers were incorrect."}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+class ChangePasswordView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        old_password = request.data.get('old_password')
+        new_password = request.data.get('new_password')
+
+        if not all([old_password, new_password]):
+            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not user.check_password(old_password):
+            return Response({"error": "Your current password was incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            identity_service = IdentityService(user=user)
+            # This re-uses the recovery mechanism to re-encrypt the master key with the new password
+            success = identity_service.recover_identity_with_answers(None, None, new_password, use_password=True)
+            if not success:
+                 raise Exception("Failed to re-key identity manifest with new password.")
+
+            user.set_password(new_password)
+            user.save()
+            return Response({"status": "Password changed successfully."})
+
+        except Exception as e:
+            logger.error(f"Error changing password for {user.username}: {e}")
+            return Response({"error": "An unexpected error occurred while changing the password."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class ResetSecurityQuestionsView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        password = request.data.get('current_password')
+        sq1 = request.data.get('security_question_1')
+        sa1 = request.data.get('security_answer_1')
+        sq2 = request.data.get('security_question_2')
+        sa2 = request.data.get('security_answer_2')
+
+        if not all([password, sq1, sa1, sq2, sa2]):
+            return Response({"error": "All fields are required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            identity_service = IdentityService(user=user)
+            success = identity_service.reset_security_questions(password, sq1, sa1, sq2, sa2)
+
+            if success:
+                return Response({"status": "Security questions have been reset successfully."})
+            else:
+                return Response({"error": "Could not reset security questions. Please check your password."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error resetting security questions for {user.username}: {e}")
+            return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class UpdateTimezoneView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        timezone = request.data.get('timezone')
+        
+        if not timezone:
+            return Response({"error": "Timezone is a required field."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # A full implementation would validate against a list of IANA timezones
+        user.timezone = timezone
+        user.save(update_fields=['timezone'])
+        
+        return Response({"status": "Timezone updated successfully."})
+
+
+class GetDisplayTimezoneView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        # If the user is logged in and has a specific timezone set, use that.
+        if request.user.is_authenticated and request.user.timezone:
+            return Response({'timezone': request.user.timezone})
+        
+        # Otherwise, fall back to the admin-defined default.
+        return Response({'timezone': settings.DISPLAY_TIMEZONE})

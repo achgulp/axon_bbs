@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/axon_project/settings.py
@@ -30,10 +30,6 @@ if not SECRET_KEY:
 
 DEBUG = True
 
-# --- CHANGE START ---
-# Hardcoded .onion addresses have been removed. The list is now built dynamically.
-# It will include the default hosts plus any address you define in the
-# [cite_start]ONION_ADDRESS environment variable in your .env file. [cite: 225]
 ALLOWED_HOSTS = [
     '127.0.0.1',
     'localhost',
@@ -43,7 +39,6 @@ ALLOWED_HOSTS = [
 ONION_ADDRESS = os.environ.get('ONION_ADDRESS')
 if ONION_ADDRESS:
     ALLOWED_HOSTS.append(ONION_ADDRESS)
-# --- CHANGE END ---
 
 
 # --- Application definition ---
@@ -150,8 +145,7 @@ REST_FRAMEWORK = {
     )
 }
 
-# --- NEW: Simple JWT Configuration ---
-# This extends the default 5-minute token lifespan to prevent frequent logouts.
+# --- Simple JWT Configuration ---
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
@@ -198,6 +192,10 @@ TOR_SOCKS_HOST = "127.0.0.1"
 TOR_SOCKS_PORT = 9050
 BITSYNC_MAX_CONCURRENT_FILES = 3
 DEFAULT_CONTENT_LIFESPAN_DAYS = 30
+# --- NEW SETTING ---
+# The timezone used to display dates and times on the frontend.
+# This should be a valid IANA timezone name (e.g., 'America/New_York', 'Europe/London').
+DISPLAY_TIMEZONE = os.environ.get('DISPLAY_TIMEZONE', 'UTC')
 
 
 # --- Logging Configuration ---

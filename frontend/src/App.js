@@ -28,7 +28,6 @@ import AppletView from './components/AppletView';
 import HighScoreBoard from './components/HighScoreBoard';
 import ModerationDashboard from './components/ModerationDashboard';
 import PrivateMessageClient from './components/PrivateMessageClient';
-
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const SideBarButton = ({ onClick, children, disabled, className = '' }) => (
   <button onClick={onClick} disabled={disabled} className={`w-full text-left py-2 px-4 rounded hover:bg-gray-700 text-gray-300 transition duration-150 ease-in-out disabled:text-gray-500 disabled:cursor-not-allowed ${className}`}>
@@ -52,7 +51,7 @@ return (
             onClick={() => onSelectBoard(board.id, board.name)}
             className="w-full text-left p-3 rounded bg-gray-800 hover:bg-gray-700 border border-gray-700"
           >
-           <h3 className="font-bold text-gray-200">{board.name}</h3>
+            <h3 className="font-bold text-gray-200">{board.name}</h3>
             <p className="text-sm text-gray-400">{board.description}</p>
           </button>
         ))}
@@ -72,6 +71,9 @@ function App() {
   const [pmRecipient, setPmRecipient] = useState(null);
   const [lastPlayedGame, setLastPlayedGame] = useState(null);
   const [profile, setProfile] = useState(null);
+  // --- NEW: State for Timezone ---
+  const [displayTimezone, setDisplayTimezone] = useState('UTC');
+
   const setAuthToken = (newToken) => {
     if (newToken) {
       localStorage.setItem('token', newToken);
@@ -88,9 +90,20 @@ useEffect(() => {
             .then(response => setProfile(response.data))
             .catch(err => console.error("Could not fetch user profile", err));
     };
+    // --- NEW: Fetch Timezone ---
+    const fetchTimezone = () => {
+        apiClient.get('/api/config/timezone/')
+            .then(response => {
+                setDisplayTimezone(response.data.timezone);
+                console.log("Display timezone set to:", response.data.timezone);
+            })
+            .catch(err => console.error("Could not fetch display timezone", err));
+    };
+
     if (token) {
       fetchProfile();
     }
+    fetchTimezone(); // Fetch timezone regardless of login state
   }, [token]);
   const handleLogout = async () => {
     try {
@@ -158,14 +171,14 @@ useEffect(() => {
         <div className="w-full md:w-60 bg-gray-800 p-4 border-r border-gray-700 flex-shrink-0">
           <div className="flex items-center text-2xl font-bold text-white mb-6">
             <img src="/axon.png" alt="Axon logo" className="h-12 w-12 mr-3"/>
-           <h2>Axon BBS</h2>
+            <h2>Axon BBS</h2>
           </div>
           <nav className="space-y-2">
             <div className="p-2">
               <h3 className="font-semibold text-gray-400 mb-2">Menu</h3>
               <SideBarButton onClick={() => handleViewChange('boards')}>Message Boards</SideBarButton>
               <SideBarButton onClick={() => handleViewChange('pm')}>Private Mail</SideBarButton>
-               <SideBarButton onClick={() => handleViewChange('applets')}>Applets</SideBarButton>
+              <SideBarButton onClick={() => handleViewChange('applets')}>Applets</SideBarButton>
               <SideBarButton 
                 onClick={() => handleViewChange('high_scores')}
                 disabled={!lastPlayedGame}
@@ -175,13 +188,13 @@ useEffect(() => {
               </SideBarButton>
               {profile?.is_moderator && (
                 <SideBarButton onClick={() => handleViewChange('moderation')}>Moderation</SideBarButton>
-               )}
+              )}
             </div>
             <div className="p-2">
               <h3 className="font-semibold text-gray-400 mb-2">User</h3>
               <SideBarButton
                 onClick={() => setNeedsUnlock(true)}
-                 className={isIdentityUnlocked ? 'text-green-400' : 'text-yellow-400'}
+                className={isIdentityUnlocked ? 'text-green-400' : 'text-yellow-400'}
               >
                 {isIdentityUnlocked ? '✓ Identity Unlocked' : '✗ Unlock Identity'}
               </SideBarButton>

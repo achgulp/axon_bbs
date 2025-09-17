@@ -32,6 +32,10 @@ from .auth_views import (
     GetSecurityQuestionsView,
     SubmitRecoveryView,
     ClaimAccountView,
+    ChangePasswordView,
+    ResetSecurityQuestionsView,
+    GetDisplayTimezoneView,
+    UpdateTimezoneView,
 )
 
 from .content_views import (
@@ -54,9 +58,7 @@ from .moderation_views import (
     UnpinContentView,
     PendingProfileUpdatesQueueView,
     ReviewProfileUpdateView,
-    # --- START FIX ---
     PreviewContentView,
-    # --- END FIX ---
 )
 
 from .applet_views import (

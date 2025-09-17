@@ -41,6 +41,8 @@ class User(AbstractUser):
     is_moderator = models.BooleanField(default=False, help_text="Grants moderator permissions.")
     karma = models.IntegerField(default=10, help_text="User's reputation score.")
     last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this user.")
+    # --- NEW FIELD ---
+    timezone = models.CharField(max_length=50, blank=True, null=True, help_text="User's preferred display timezone (IANA name).")
     
     groups = models.ManyToManyField(
         'auth.Group',
@@ -259,11 +261,7 @@ class ModerationReport(models.Model):
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
     ]
-    # --- START FIX ---
-    # Changed on_delete to SET_NULL to prevent the report from being deleted
-    # when the message is deleted. It now also allows null=True.
     reported_message = models.ForeignKey(Message, on_delete=models.SET_NULL, null=True, related_name='reports')
-    # --- END FIX ---
     reporting_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reports_filed')
     comment = models.TextField(blank=True, help_text="Reason for the report.")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')

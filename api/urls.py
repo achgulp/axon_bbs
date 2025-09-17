@@ -57,8 +57,12 @@ from .views import (
     PendingProfileUpdatesQueueView,
     ReviewProfileUpdateView,
     ClaimAccountView,
-    # --- NEW: Preview View ---
     PreviewContentView,
+    # Credential Management & Config Views
+    ChangePasswordView,
+    ResetSecurityQuestionsView,
+    GetDisplayTimezoneView,
+    UpdateTimezoneView,
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -66,11 +70,12 @@ from rest_framework_simplejwt.views import (
 )
 
 urlpatterns = [
-    # Auth
+    # Auth & Config
     path('register/', RegisterView.as_view(), name='register'),
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
+    path('config/timezone/', GetDisplayTimezoneView.as_view(), name='get-timezone'),
     
     # Identity & User Profile
     path('identity/unlock/', UnlockIdentityView.as_view(), name='unlock-identity'),
@@ -78,9 +83,12 @@ urlpatterns = [
     path('identity/export/', ExportIdentityView.as_view(), name='export-identity'),
     path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
     path('identity/claim/', ClaimAccountView.as_view(), name='claim-identity'),
-    path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
     path('user/profile/', UserProfileView.as_view(), name='user-profile'),
+    path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
     path('user/avatar/', UploadAvatarView.as_view(), name='user-avatar'),
+    path('user/timezone/', UpdateTimezoneView.as_view(), name='update-timezone'),
+    path('user/change_password/', ChangePasswordView.as_view(), name='change-password'),
+    path('user/reset_security_questions/', ResetSecurityQuestionsView.as_view(), name='reset-security-questions'),
 
     # Recovery URLs
     path('recovery/get_questions/', GetSecurityQuestionsView.as_view(), name='recovery-get-questions'),
@@ -101,7 +109,6 @@ urlpatterns = [
     path('moderation/review/<int:report_id>/', ReviewReportView.as_view(), name='mod-review'),
     path('moderation/profile_queue/', PendingProfileUpdatesQueueView.as_view(), name='mod-profile-queue'),
     path('moderation/profile_review/<uuid:action_id>/', ReviewProfileUpdateView.as_view(), name='mod-profile-review'),
-    # --- NEW: Preview URL ---
     path('moderation/preview_content/<str:content_hash>/', PreviewContentView.as_view(), name='preview-content'),
     
     # Admin & Moderator Actions
