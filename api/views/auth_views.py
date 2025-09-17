@@ -47,36 +47,32 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = (permissions.AllowAny,)
     serializer_class = UserSerializer
 
+    # --- MODIFICATION START ---
+    # The conflict check is now performed before validation to ensure our custom
+    # response is sent, triggering the "claim" workflow on the frontend.
     def create(self, request, *args, **kwargs):
+        username = request.data.get('username')
+        nickname = request.data.get('nickname')
+
+        # Pre-check for federated user conflict before validation
+        if nickname and User.objects.filter(nickname__iexact=nickname, is_active=False).exists():
+            return Response(
+                {"error": "nickname_exists_as_federated", "detail": f"The nickname '{nickname}' is reserved by a federated user. You can claim this account if you have the private key."},
+                status=status.HTTP_409_CONFLICT
+            )
+        if username and User.objects.filter(username__iexact=username, is_active=False).exists():
+                return Response(
+                {"error": "username_exists_as_federated", "detail": f"The username '{username}' is reserved by a federated user. Try claiming the account via its nickname instead."},
+                status=status.HTTP_409_CONFLICT
+            )
+        
+        # If no federated user conflict, proceed with normal registration validation
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            self.perform_create(serializer)
-            headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-        except IntegrityError as e:
-            # --- MODIFICATION START ---
-            # More robust check for both username and nickname conflicts with federated users.
-            username = serializer.validated_data.get('username')
-            nickname = serializer.validated_data.get('nickname')
-            
-            # Case 1: Nickname conflicts with an inactive federated user
-            if nickname and User.objects.filter(nickname__iexact=nickname, is_active=False).exists():
-                return Response(
-                    {"error": "nickname_exists_as_federated", "detail": f"The nickname '{nickname}' is reserved by a federated user. You can claim this account if you have the private key."},
-                    status=status.HTTP_409_CONFLICT
-                )
-            
-            # Case 2: Username conflicts with an inactive federated user's auto-generated username
-            if username and User.objects.filter(username__iexact=username, is_active=False).exists():
-                 return Response(
-                    {"error": "username_exists_as_federated", "detail": f"The username '{username}' is reserved by a federated user. Try claiming the account via its nickname instead."},
-                    status=status.HTTP_409_CONFLICT
-                )
-
-            # Otherwise, it's a standard username/nickname conflict
-            return Response({"error": "registration_failed", "detail": "A user with that username or nickname already exists."}, status=status.HTTP_400_BAD_REQUEST)
-            # --- MODIFICATION END ---
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+    # --- MODIFICATION END ---
 
 
 class ClaimAccountView(views.APIView):
