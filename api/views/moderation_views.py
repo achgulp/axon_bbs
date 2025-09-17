@@ -18,10 +18,8 @@
 # Full path: axon_bbs/api/views/moderation_views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
-# --- MODIFICATION START ---
 from django.http import HttpResponse, Http404
 from core.services.service_manager import service_manager
-# --- MODIFICATION END ---
 from django.utils import timezone
 from datetime import timedelta
 from django.apps import apps
@@ -34,7 +32,6 @@ from core.models import IgnoredPubkey, BannedPubkey, FederatedAction, Message, M
 logger = logging.getLogger(__name__)
 
 
-# --- NEW VIEW ---
 class PreviewContentView(views.APIView):
     permission_classes = [IsModeratorOrAdmin]
 
@@ -42,11 +39,11 @@ class PreviewContentView(views.APIView):
         try:
             attachment = FileAttachment.objects.get(manifest__content_hash=content_hash)
             
-            # Identity must be unlocked to decrypt content
-            if 'unencrypted_priv_key' not in request.session:
-                 return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
-
+            # --- MODIFICATION START ---
+            # Removed the incorrect check for the user's unlocked identity.
+            # The SyncService handles decryption using the server's key.
             decrypted_data = service_manager.sync_service.get_decrypted_content(attachment.manifest)
+            # --- MODIFICATION END ---
 
             if decrypted_data:
                 return HttpResponse(decrypted_data, content_type=attachment.content_type)
@@ -55,7 +52,6 @@ class PreviewContentView(views.APIView):
 
         except FileAttachment.DoesNotExist:
             raise Http404("Content not found.")
-# --- END NEW VIEW ---
 
 
 class IgnorePubkeyView(views.APIView):
@@ -92,7 +88,7 @@ class BanPubkeyView(views.APIView):
             defaults={'is_temporary': is_temporary, 'expires_at': expires_at, 'federated_action_id': action.id}
         )
 
-        status_msg = f"Pubkey temporarily banned until {expires_at.strftime('%Y-%m-%d %H:%M:%S %Z')}." if is_temporary else "Pubkey permanently banned."
+        status_msg = f"Pubkey temporarily banned until {expires_at.strftime('%Y-%m-%d %H:%M:%S %Z')}" if is_temporary else "Pubkey permanently banned."
         return Response({"status": status_msg}, status=status.HTTP_200_OK)
 
 class ReportMessageView(views.APIView):

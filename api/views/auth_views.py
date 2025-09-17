@@ -199,14 +199,11 @@ class ExportIdentityView(views.APIView):
             if not private_key_pem:
                 raise DecryptionError("Failed to unlock key for export.")
 
-            # --- MODIFICATION START ---
-            # Load the unencrypted key object from the PEM string
             private_key_obj = serialization.load_pem_private_key(
                 private_key_pem.encode(),
                 password=None
             )
 
-            # Re-serialize the key object, this time with password-based encryption
             encrypted_pem_bytes = private_key_obj.private_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.PKCS8Encrypted,
@@ -215,7 +212,6 @@ class ExportIdentityView(views.APIView):
             
             response = HttpResponse(encrypted_pem_bytes, content_type='application/x-pem-file')
             response['Content-Disposition'] = f'attachment; filename="{request.user.username}_axon_identity_encrypted.pem"'
-            # --- MODIFICATION END ---
             return response
 
         except DecryptionError:
@@ -413,17 +409,24 @@ class ChangePasswordView(views.APIView):
 
         try:
             identity_service = IdentityService(user=user)
-            # This re-uses the recovery mechanism to re-encrypt the master key with the new password
-            success = identity_service.recover_identity_with_answers(None, None, new_password, use_password=True)
+            # --- MODIFICATION START ---
+            # Correctly call the modified service method
+            success = identity_service.recover_identity_with_answers(
+                sa1=old_password, 
+                sa2=None, 
+                new_password=new_password, 
+                use_password=True
+            )
+            # --- MODIFICATION END ---
             if not success:
-                 raise Exception("Failed to re-key identity manifest with new password.")
+                 raise Exception("Failed to re-key identity manifest.")
 
             user.set_password(new_password)
             user.save()
             return Response({"status": "Password changed successfully."})
 
         except Exception as e:
-            logger.error(f"Error changing password for {user.username}: {e}")
+            logger.error(f"Error changing password for {user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred while changing the password."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ResetSecurityQuestionsView(views.APIView):

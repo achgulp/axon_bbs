@@ -177,29 +177,40 @@ class IdentityService:
         except (FileNotFoundError, KeyError):
             return None
 
-    def recover_identity_with_answers(self, sa1, sa2, new_password):
-        """Attempts to recover the master key and resets the password envelope."""
+    # --- MODIFICATION START ---
+    def recover_identity_with_answers(self, sa1, sa2, new_password, use_password=False):
+        """
+        Attempts to recover the master key and resets the password envelope.
+        Can be used for password change (use_password=True) or security question recovery.
+        """
         try:
             with open(self.manifest_path, 'r') as f:
                 manifest = json.load(f)
             
-            sq1 = manifest['security_question_1']
-            sq2 = manifest['security_question_2']
+            master_aes_key = None
 
-            # Attempt to decrypt with answer 1
-            sq1_derived_key = derive_key_from_password(sa1, sq1.encode('utf-8'))
-            master_key_1 = Fernet(sq1_derived_key).decrypt(bytes.fromhex(manifest['envelopes']['sq1']))
+            if use_password:
+                # For a password change, sa1 will contain the old password
+                master_aes_key = self.get_master_key_from_password(sa1)
+            else:
+                # For security question recovery
+                sq1 = manifest['security_question_1']
+                sq2 = manifest['security_question_2']
 
-            # Attempt to decrypt with answer 2
-            sq2_derived_key = derive_key_from_password(sa2, sq2.encode('utf-8'))
-            master_key_2 = Fernet(sq2_derived_key).decrypt(bytes.fromhex(manifest['envelopes']['sq2']))
+                sq1_derived_key = derive_key_from_password(sa1, sq1.encode('utf-8'))
+                master_key_1 = Fernet(sq1_derived_key).decrypt(bytes.fromhex(manifest['envelopes']['sq1']))
 
-            if master_key_1 != master_key_2:
-                raise DecryptionError("Recovery key mismatch.")
+                sq2_derived_key = derive_key_from_password(sa2, sq2.encode('utf-8'))
+                master_key_2 = Fernet(sq2_derived_key).decrypt(bytes.fromhex(manifest['envelopes']['sq2']))
 
-            master_aes_key = master_key_1
-            
-            # Success! Now, create a new password envelope
+                if master_key_1 != master_key_2:
+                    raise DecryptionError("Recovery key mismatch.")
+                master_aes_key = master_key_1
+
+            if not master_aes_key:
+                return False
+
+            # Success! Now, create a new password envelope with the new password
             new_password_salt = generate_salt()
             new_password_derived_key = derive_key_from_password(new_password, new_password_salt)
             new_password_envelope = Fernet(new_password_derived_key).encrypt(master_aes_key)
@@ -213,11 +224,12 @@ class IdentityService:
             
             return True
         except (InvalidToken, DecryptionError):
-            logger.warning(f"Failed recovery attempt for {self.user.username}: one or more answers were incorrect.")
+            logger.warning(f"Failed recovery/re-key attempt for {self.user.username}.")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error during recovery for {self.user.username}: {e}")
+            logger.error(f"Unexpected error during recovery/re-key for {self.user.username}: {e}")
             return False
+    # --- MODIFICATION END ---
 
     def reset_security_questions(self, password: str, sq1: str, sa1: str, sq2: str, sa2: str) -> bool:
         """
