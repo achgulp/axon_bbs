@@ -59,8 +59,7 @@ from .moderation_views import (
     PendingProfileUpdatesQueueView,
     ReviewProfileUpdateView,
     # --- MODIFICATION START ---
-    # Replaced the old PreviewContentView with the new token-based view
-    ServeTemporaryAvatarView,
+    # The ServeTemporaryAvatarView is no longer needed with the new workflow.
     # --- MODIFICATION END ---
 )
 

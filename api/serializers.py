@@ -8,8 +8,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -249,15 +249,15 @@ class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
         }
     
     def get_pending_avatar_url(self, obj):
-        avatar_hash = obj.action_details.get('avatar_hash')
-        if not avatar_hash:
+        # --- MODIFICATION START ---
+        # Look for the correct key and build a direct media URL
+        temp_filename = obj.action_details.get('pending_avatar_filename')
+        if not temp_filename:
             return None
         
         request = self.context.get('request')
         if request:
-            # Create a short-lived, signed token containing the content hash
-            signer = TimestampSigner()
-            signed_hash = signer.sign(avatar_hash)
-            # Construct a URL to the new temporary serving view
-            return request.build_absolute_uri(f'/api/moderation/preview_token/{signed_hash}/')
+            media_url = getattr(settings, 'MEDIA_URL', '/media/')
+            return request.build_absolute_uri(os.path.join(media_url, 'pending_avatars', temp_filename))
         return None
+        # --- MODIFICATION END ---

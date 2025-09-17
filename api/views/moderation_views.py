@@ -24,42 +24,17 @@ from django.utils import timezone
 from datetime import timedelta
 from django.apps import apps
 import logging
-from django.core.signing import TimestampSigner, SignatureExpired, BadSignature
+# --- MODIFICATION START ---
+import os
+import base64
+from django.conf import settings
+# --- MODIFICATION END ---
 
 from ..serializers import ContentExtensionRequestSerializer, ModerationReportSerializer, FederatedActionProfileUpdateSerializer
 from ..permissions import IsModeratorOrAdmin
-from core.models import IgnoredPubkey, BannedPubkey, FederatedAction, Message, ModerationReport, ContentExtensionRequest, FileAttachment
+from core.models import IgnoredPubkey, BannedPubkey, FederatedAction, Message, ModerationReport, ContentExtensionRequest, FileAttachment, User
 
 logger = logging.getLogger(__name__)
-
-
-class ServeTemporaryAvatarView(views.APIView):
-    """
-    Serves a decrypted file using a short-lived signed token.
-    This is unauthenticated because the token itself proves authorization.
-    """
-    permission_classes = [permissions.AllowAny]
-
-    def get(self, request, token, *args, **kwargs):
-        signer = TimestampSigner()
-        try:
-            # The token is valid for 1 hour
-            content_hash = signer.unsign(token, max_age=3600)
-            
-            attachment = FileAttachment.objects.get(manifest__content_hash=content_hash)
-            
-            # The SyncService handles decryption using the server's key.
-            decrypted_data = service_manager.sync_service.get_decrypted_content(attachment.manifest)
-
-            if decrypted_data:
-                return HttpResponse(decrypted_data, content_type=attachment.content_type)
-            else:
-                raise Http404("Could not decrypt or find content.")
-
-        except SignatureExpired:
-            return Response({"error": "Preview link has expired."}, status=status.HTTP_410_GONE)
-        except (BadSignature, FileAttachment.DoesNotExist):
-            raise Http404("Invalid preview link or content not found.")
 
 
 class IgnorePubkeyView(views.APIView):
@@ -196,14 +171,68 @@ class ReviewProfileUpdateView(views.APIView):
         except FederatedAction.DoesNotExist:
             return Response({"error": "Profile update request not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
 
+        # --- MODIFICATION START ---
+        user = User.objects.get(pubkey=profile_action.pubkey_target)
+        details = profile_action.action_details
+        temp_filename = details.get('pending_avatar_filename')
+
+        pending_dir = os.path.join(settings.MEDIA_ROOT, 'pending_avatars')
+        source_path = os.path.join(pending_dir, temp_filename) if temp_filename else None
+
         if action == 'approve':
+            final_avatar_path = None
+            if source_path and os.path.exists(source_path):
+                # This is an avatar update
+                final_dir = os.path.join(settings.MEDIA_ROOT, 'avatars')
+                os.makedirs(final_dir, exist_ok=True)
+                
+                final_filename = f"{user.username}_avatar.png"
+                final_path = os.path.join(final_dir, final_filename)
+                
+                # Move the file from pending to final destination
+                os.rename(source_path, final_path)
+                
+                # Update the user's profile to point to the new file
+                user.avatar.name = os.path.join('avatars', final_filename)
+                
+                # Now, create the FileAttachment and manifest for federation
+                with open(final_path, 'rb') as f:
+                    image_bytes = f.read()
+
+                file_content = {
+                    "type": "file", "filename": final_filename, "content_type": 'image/png',
+                    "size": len(image_bytes), "data": base64.b64encode(image_bytes).decode('ascii')
+                }
+                _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(file_content)
+                
+                FileAttachment.objects.update_or_create(
+                    author=user, filename=final_filename,
+                    defaults={
+                        'content_type': 'image/png', 'size': len(image_bytes), 'manifest': manifest
+                    }
+                )
+                details['avatar_hash'] = manifest.get('content_hash')
+
+            # Update nickname regardless
+            user.nickname = details.get('nickname', user.nickname)
+            user.save()
+            
+            # Update the action for federation
             profile_action.status = 'approved'
+            profile_action.action_details = details # Save the new avatar_hash
             profile_action.save()
+            
             return Response({"status": "Profile update approved and will be federated."}, status=status.HTTP_200_OK)
+            
         elif action == 'deny':
+            # If the update is denied, delete the temporary file
+            if source_path and os.path.exists(source_path):
+                os.remove(source_path)
+                
             profile_action.status = 'denied'
             profile_action.save()
             return Response({"status": "Profile update denied."}, status=status.HTTP_200_OK)
+        # --- MODIFICATION END ---
 
         return Response({"error": "Invalid action. Must be 'approve' or 'deny'."}, status=status.HTTP_400_BAD_REQUEST)
 

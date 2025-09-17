@@ -57,7 +57,6 @@ from .views import (
     PendingProfileUpdatesQueueView,
     ReviewProfileUpdateView,
     ClaimAccountView,
-    ServeTemporaryAvatarView,
     # Credential Management & Config Views
     ChangePasswordView,
     ResetSecurityQuestionsView,
@@ -109,7 +108,9 @@ urlpatterns = [
     path('moderation/review/<int:report_id>/', ReviewReportView.as_view(), name='mod-review'),
     path('moderation/profile_queue/', PendingProfileUpdatesQueueView.as_view(), name='mod-profile-queue'),
     path('moderation/profile_review/<uuid:action_id>/', ReviewProfileUpdateView.as_view(), name='mod-profile-review'),
-    path('moderation/preview_token/<str:token>/', ServeTemporaryAvatarView.as_view(), name='serve-temporary-avatar'),
+    # --- MODIFICATION START ---
+    # The temporary token preview URL is no longer needed with the new workflow.
+    # --- MODIFICATION END ---
     
     # Admin & Moderator Actions
     path('admin/ban/', BanPubkeyView.as_view(), name='ban-pubkey'),
