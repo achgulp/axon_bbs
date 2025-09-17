@@ -20,9 +20,7 @@ from django.conf import settings
 from core.models import MessageBoard, Message, User, ContentExtensionRequest, FileAttachment, PrivateMessage, Applet, HighScore, ModerationReport, FederatedAction
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
-# --- START FIX ---
 from core.services.avatar_generator import generate_cow_avatar
-# --- END FIX ---
 import os
 import logging
 import json
@@ -39,13 +37,19 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('username', 'password', 'security_question_1', 'security_answer_1', 'security_question_2', 'security_answer_2')
+        # --- MODIFICATION START ---
+        fields = ('username', 'password', 'nickname', 'security_question_1', 'security_answer_1', 'security_question_2', 'security_answer_2')
+        # --- MODIFICATION END ---
 
     def create(self, validated_data):
+        # --- MODIFICATION START ---
+        # User is now created with all fields at once to ensure constraints are checked
         user = User.objects.create_user(
             username=validated_data['username'],
             password=validated_data['password'],
+            nickname=validated_data.get('nickname')
         )
+        # --- MODIFICATION END ---
         try:
             identity_service = IdentityService(user=user)
             identity = identity_service.generate_identity_with_manifest(
@@ -57,18 +61,15 @@ class UserSerializer(serializers.ModelSerializer):
             )
             user.pubkey = identity['public_key']
             
-            # --- START FIX ---
-            # Generate and save a unique cow avatar upon registration
             avatar_content_file, avatar_filename = generate_cow_avatar(user.pubkey)
             user.avatar.save(avatar_filename, avatar_content_file, save=False)
-            # --- END FIX ---
 
             user.save()
             logger.info(f"Successfully created manifest-based identity for {user.username}")
         except Exception as e:
             logger.error(f"Failed to create identity for {user.username}. Rolling back user creation. Error: {e}")
             user.delete()
-            raise serializers.ValidationError("Failed to create identity during registration.")
+            raise serializers.ValidationError({"identity_error": "Failed to create identity during registration."})
         return user
 
 class MessageBoardSerializer(serializers.ModelSerializer):
@@ -224,7 +225,6 @@ class ModerationReportSerializer(serializers.ModelSerializer):
         model = ModerationReport
         fields = ('id', 'reported_message', 'reporting_user', 'comment', 'status', 'created_at', 'reviewed_by', 'reviewed_at')
 
-# --- NEW SERIALIZER ---
 class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
     user_info = serializers.SerializerMethodField()
     
@@ -247,4 +247,3 @@ class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
             "current_nickname": user.nickname,
             "current_avatar_url": avatar_url
         }
-# --- END NEW SERIALIZER ---

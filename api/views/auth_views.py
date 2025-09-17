@@ -51,20 +51,32 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            # --- MODIFICATION: Added nickname to serializer context ---
             self.perform_create(serializer)
             headers = self.get_success_headers(serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         except IntegrityError as e:
+            # --- MODIFICATION START ---
+            # More robust check for both username and nickname conflicts with federated users.
             username = serializer.validated_data.get('username')
-            # Check if the error is due to a unique nickname on an inactive account
-            if User.objects.filter(username__iexact=username, is_active=False).exists():
+            nickname = serializer.validated_data.get('nickname')
+            
+            # Case 1: Nickname conflicts with an inactive federated user
+            if nickname and User.objects.filter(nickname__iexact=nickname, is_active=False).exists():
                 return Response(
-                    {"error": "username_exists_as_federated", "detail": "This username is reserved by a federated user. You can claim this account if you have the private key."},
+                    {"error": "nickname_exists_as_federated", "detail": f"The nickname '{nickname}' is reserved by a federated user. You can claim this account if you have the private key."},
                     status=status.HTTP_409_CONFLICT
                 )
-            # Otherwise, it's likely a different conflict
-            return Response({"error": "registration_failed", "detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Case 2: Username conflicts with an inactive federated user's auto-generated username
+            if username and User.objects.filter(username__iexact=username, is_active=False).exists():
+                 return Response(
+                    {"error": "username_exists_as_federated", "detail": f"The username '{username}' is reserved by a federated user. Try claiming the account via its nickname instead."},
+                    status=status.HTTP_409_CONFLICT
+                )
+
+            # Otherwise, it's a standard username/nickname conflict
+            return Response({"error": "registration_failed", "detail": "A user with that username or nickname already exists."}, status=status.HTTP_400_BAD_REQUEST)
+            # --- MODIFICATION END ---
 
 
 class ClaimAccountView(views.APIView):
@@ -72,17 +84,17 @@ class ClaimAccountView(views.APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, *args, **kwargs):
-        username = request.data.get('username')
+        nickname = request.data.get('nickname')
         new_password = request.data.get('new_password')
         key_file = request.FILES.get('key_file')
 
-        if not all([username, new_password, key_file]):
-            return Response({"error": "Username, new password, and private key file are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([nickname, new_password, key_file]):
+            return Response({"error": "Nickname, new password, and private key file are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            user = User.objects.get(username__iexact=username, is_active=False)
+            user = User.objects.get(nickname__iexact=nickname, is_active=False)
         except User.DoesNotExist:
-            return Response({"error": "No inactive, federated user found with that username."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "No inactive, federated user found with that nickname."}, status=status.HTTP_404_NOT_FOUND)
 
         try:
             private_key_pem = key_file.read()
@@ -115,7 +127,7 @@ class ClaimAccountView(views.APIView):
         except (ValueError, TypeError, UnsupportedAlgorithm) as e:
             return Response({"error": f"Invalid private key file format: {e}"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            logger.error(f"Unexpected error during account claim for {username}: {e}", exc_info=True)
+            logger.error(f"Unexpected error during account claim for {nickname}: {e}", exc_info=True)
             return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -156,7 +168,6 @@ class ImportIdentityView(views.APIView):
     def post(self, request, *args, **kwargs):
         return Response({"error": "Import functionality is not yet updated for the new identity system."}, status=status.HTTP_501_NOT_IMPLEMENTED)
 
-# --- MODIFICATION START ---
 class ExportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -181,7 +192,6 @@ class ExportIdentityView(views.APIView):
         except Exception as e:
             logger.error(f"Failed to export identity for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected server error occurred during export."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-# --- MODIFICATION END ---
 
 
 class UpdateNicknameView(views.APIView):
