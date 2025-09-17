@@ -8,8 +8,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -27,11 +27,18 @@ from django.core.files.base import ContentFile
 import io
 import base64
 import logging
+# --- MODIFICATION START ---
+from cryptography.hazmat.primitives import serialization
+from cryptography.exceptions import UnsupportedAlgorithm
+from rest_framework_simplejwt.tokens import RefreshToken
+# --- MODIFICATION END ---
+
 
 from ..serializers import UserSerializer
 from core.models import TrustedInstance, FileAttachment, FederatedAction
 from core.services.identity_service import IdentityService, DecryptionError
 from core.services.service_manager import service_manager
+from core.services.encryption_utils import generate_checksum
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -41,6 +48,89 @@ class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (permissions.AllowAny,)
     serializer_class = UserSerializer
+
+    # --- MODIFICATION START ---
+    # Override the create method to handle the federated user conflict
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        except IntegrityError as e:
+            # Check if the error is due to a unique nickname on an inactive account
+            nickname = serializer.validated_data.get('nickname')
+            if nickname and User.objects.filter(nickname__iexact=nickname, is_active=False).exists():
+                return Response(
+                    {"error": "nickname_exists_as_federated", "detail": "This nickname is reserved by a federated user. You can claim this account if you have the private key."},
+                    status=status.HTTP_409_CONFLICT
+                )
+            # Otherwise, it's likely a username conflict or other issue
+            return Response({"error": "registration_failed", "detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    # --- MODIFICATION END ---
+
+
+# --- NEW VIEW ---
+class ClaimAccountView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        nickname = request.data.get('nickname')
+        new_password = request.data.get('new_password')
+        key_file = request.FILES.get('key_file')
+
+        if not all([nickname, new_password, key_file]):
+            return Response({"error": "Nickname, new password, and private key file are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(nickname__iexact=nickname, is_active=False)
+        except User.DoesNotExist:
+            return Response({"error": "No inactive, federated user found with that nickname."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            private_key_pem = key_file.read()
+            private_key = serialization.load_pem_private_key(private_key_pem, password=None)
+            derived_public_key = private_key.public_key()
+            
+            # Normalize the derived public key to the same format stored in the DB
+            derived_public_key_pem = derived_public_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ).decode('utf-8').strip()
+
+            if derived_public_key_pem != user.pubkey.strip():
+                return Response({"error": "Private key does not match the public key on record for this user."}, status=status.HTTP_403_FORBIDDEN)
+
+            # --- Key is valid, proceed with account activation ---
+            
+            # 1. Activate user and set their new password
+            user.is_active = True
+            user.set_password(new_password)
+            user.save()
+
+            # 2. Create the encrypted identity file storage for the user on this server
+            identity_service = IdentityService(user=user)
+            identity_service.create_storage_from_key(new_password, private_key_pem.decode('utf-8'))
+
+            # 3. Log the user in by generating JWT tokens
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'status': 'Account claimed successfully.',
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }, status=status.HTTP_200_OK)
+
+        except (ValueError, TypeError, UnsupportedAlgorithm) as e:
+            return Response({"error": f"Invalid private key file format: {e}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error during account claim for {nickname}: {e}", exc_info=True)
+            return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# --- END NEW VIEW ---
+
 
 class LogoutView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]

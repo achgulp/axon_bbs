@@ -31,6 +31,9 @@ from .auth_views import (
     GetPublicKeyView,
     GetSecurityQuestionsView,
     SubmitRecoveryView,
+    # --- START FIX ---
+    ClaimAccountView,
+    # --- END FIX ---
 )
 
 from .content_views import (
@@ -51,10 +54,8 @@ from .moderation_views import (
     RequestContentExtensionView,
     ReviewContentExtensionView,
     UnpinContentView,
-    # --- START FIX ---
     PendingProfileUpdatesQueueView,
     ReviewProfileUpdateView,
-    # --- END FIX ---
 )
 
 from .applet_views import (

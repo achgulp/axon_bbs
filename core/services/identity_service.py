@@ -113,6 +113,44 @@ class IdentityService:
             
         return identity
 
+    # --- NEW METHOD ---
+    def create_storage_from_key(self, password: str, private_key_pem: str):
+        """
+        Creates and encrypts the identity files for a claimed account,
+        using the user's provided private key and new password.
+        This does not create security questions.
+        """
+        identity = {
+            "id": str(uuid.uuid4()), "name": "default", "type": "rsa",
+            "public_key": self.user.pubkey, "private_key": private_key_pem,
+            "created_at": datetime.now().isoformat()
+        }
+        identities_json = json.dumps([identity])
+
+        master_aes_key = Fernet.generate_key()
+        password_salt = generate_salt()
+        password_derived_key = derive_key_from_password(password, password_salt)
+        password_envelope = Fernet(password_derived_key).encrypt(master_aes_key)
+
+        # Create a manifest without security questions for now
+        manifest = {
+            "password_salt": password_salt.hex(),
+            "security_question_1": None,
+            "security_question_2": None,
+            "envelopes": {
+                "password": password_envelope.hex()
+            }
+        }
+        with open(self.manifest_path, 'w') as f:
+            json.dump(manifest, f, indent=2)
+        
+        encrypted_identities = self._encrypt_identities(identities_json, master_aes_key)
+        with open(self.identity_storage_path, 'wb') as f:
+            f.write(encrypted_identities)
+        
+        logger.info(f"Identity storage created for claimed account: {self.user.username}")
+    # --- END NEW METHOD ---
+
     def get_unlocked_private_key(self, password: str) -> Optional[str]:
         """Gets the decrypted private key using the main password."""
         master_key = self.get_master_key_from_password(password)
@@ -130,7 +168,6 @@ class IdentityService:
             logger.error(f"Failed to get unlocked private key for {self.user.username}: {e}")
             return None
 
-    # --- NEW METHODS for password recovery ---
     def get_security_questions(self) -> Optional[Dict[str, str]]:
         """Reads the manifest and returns the user's security questions."""
         try:
