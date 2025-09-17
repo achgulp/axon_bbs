@@ -24,6 +24,7 @@ const AuthenticatedImage = ({ src, alt, className }) => {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // A variable to track if the component is still mounted.
     let isMounted = true; 
 
     const fetchImage = async () => {
@@ -45,13 +46,15 @@ const AuthenticatedImage = ({ src, alt, className }) => {
 
     fetchImage();
 
+    // Cleanup function to run when the component unmounts.
     return () => {
       isMounted = false;
+      // Revoke the object URL to free up memory when the component is gone.
       if (imageSrc) {
         URL.revokeObjectURL(imageSrc);
       }
     };
-  }, [src]);
+  }, [src]); // Re-run effect if the src prop changes
 
   if (error) {
     return <div className={className} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4A5568' }}><span className="text-xs text-red-400">{error}</span></div>;

@@ -8,11 +8,13 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
 # Full path: axon_bbs/api/serializers.py
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
@@ -24,6 +26,7 @@ from core.services.avatar_generator import generate_cow_avatar
 import os
 import logging
 import json
+from django.core.signing import TimestampSigner
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -223,7 +226,6 @@ class ModerationReportSerializer(serializers.ModelSerializer):
 
 class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
     user_info = serializers.SerializerMethodField()
-    # --- NEW FIELD ---
     pending_avatar_url = serializers.SerializerMethodField()
     
     class Meta:
@@ -246,7 +248,6 @@ class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
             "current_avatar_url": avatar_url
         }
     
-    # --- NEW METHOD ---
     def get_pending_avatar_url(self, obj):
         avatar_hash = obj.action_details.get('avatar_hash')
         if not avatar_hash:
@@ -254,6 +255,9 @@ class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
         
         request = self.context.get('request')
         if request:
-            # Construct a URL to the new preview endpoint
-            return request.build_absolute_uri(f'/api/moderation/preview_content/{avatar_hash}/')
+            # Create a short-lived, signed token containing the content hash
+            signer = TimestampSigner()
+            signed_hash = signer.sign(avatar_hash)
+            # Construct a URL to the new temporary serving view
+            return request.build_absolute_uri(f'/api/moderation/preview_token/{signed_hash}/')
         return None

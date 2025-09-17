@@ -18,7 +18,7 @@
 // Full path: axon_bbs/frontend/src/components/ModerationDashboard.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
-import AuthenticatedImage from './AuthenticatedImage';
+import AuthenticatedImage from './AuthenticatedImage'; // --- MODIFICATION: Import new component ---
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const ModerationDashboard = ({ displayTimezone }) => {
@@ -132,6 +132,7 @@ useEffect(() => {
                         </div>
                         <div>
                             <h4 className="font-bold text-gray-300 mb-2">Avatar Change</h4>
+                            {/* --- MODIFICATION START --- */}
                             {update.pending_avatar_url ? (
                                 <div>
                                     <p className="text-sm text-yellow-400 mb-2">New avatar for review:</p>
@@ -144,6 +145,7 @@ useEffect(() => {
                             ) : (
                                 <p className="text-sm text-gray-400">No new avatar submitted.</p>
                             )}
+                            {/* --- MODIFICATION END --- */}
                         </div>
                     </div>
                     <div className="flex justify-end gap-4 mt-4">
