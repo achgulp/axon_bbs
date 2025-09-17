@@ -27,6 +27,10 @@ from django.core.files.base import ContentFile
 import io
 import base64
 import logging
+# --- MODIFICATION START ---
+import uuid
+import os
+# --- MODIFICATION END ---
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import UnsupportedAlgorithm
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -234,17 +238,20 @@ class UpdateNicknameView(views.APIView):
             user.nickname = nickname
             user.save()
 
-            avatar_attachment = FileAttachment.objects.filter(author=user, filename=f'{user.username}_avatar.png').first()
+            # Create an approval request. If an avatar exists, use its temporary name if available,
+            # otherwise, this action is for a nickname-only change.
+            action_details = {
+                'nickname': user.nickname,
+                'karma': user.karma,
+                'avatar_hash': None,
+                'pending_avatar_filename': None,
+            }
 
             FederatedAction.objects.create(
                 action_type='update_profile',
                 pubkey_target=user.pubkey,
                 status='pending_approval',
-                action_details={
-                    'nickname': user.nickname,
-                    'karma': user.karma,
-                    'avatar_hash': avatar_attachment.manifest.get('content_hash') if avatar_attachment else None
-                }
+                action_details=action_details
             )
             return Response({"status": "Nickname update submitted for approval.", "nickname": nickname}, status=status.HTTP_200_OK)
         except IntegrityError:
@@ -294,25 +301,17 @@ class UploadAvatarView(views.APIView):
             
             user = request.user
             
-            file_content = {
-                "type": "file", "filename": f'{user.username}_avatar.png', "content_type": 'image/png',
-                "size": thumb_io.tell(), "data": base64.b64encode(thumb_io.getvalue()).decode('ascii')
-            }
-            _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(file_content)
+            # --- MODIFICATION START ---
+            # Save to a temporary, unguessable location for moderation
+            pending_dir = os.path.join(settings.MEDIA_ROOT, 'pending_avatars')
+            os.makedirs(pending_dir, exist_ok=True)
             
-            FileAttachment.objects.update_or_create(
-                author=user,
-                filename=f'{user.username}_avatar.png',
-                defaults={
-                    'content_type': 'image/png',
-                    'size': thumb_io.tell(),
-                    'manifest': manifest
-                }
-            )
+            temp_filename = f"{uuid.uuid4()}.png"
+            temp_filepath = os.path.join(pending_dir, temp_filename)
 
-            user.avatar.save(f'{user.username}_avatar.png', ContentFile(thumb_io.getvalue()), save=False)
-            user.save(update_fields=['avatar'])
- 
+            with open(temp_filepath, 'wb') as f:
+                f.write(thumb_io.getvalue())
+            
             FederatedAction.objects.create(
                 action_type='update_profile',
                 pubkey_target=user.pubkey,
@@ -320,11 +319,12 @@ class UploadAvatarView(views.APIView):
                 action_details={
                     'nickname': user.nickname,
                     'karma': user.karma,
-                    'avatar_hash': manifest.get('content_hash')
+                    'pending_avatar_filename': temp_filename, # Store the temp name
                 }
             )
+            # --- MODIFICATION END ---
 
-            return Response({"status": "Avatar update submitted for approval.", "avatar_url": user.avatar.url})
+            return Response({"status": "Avatar update submitted for approval."})
 
         except Exception as e:
             logger.error(f"Could not process avatar for {request.user.username}: {e}")
@@ -409,17 +409,14 @@ class ChangePasswordView(views.APIView):
 
         try:
             identity_service = IdentityService(user=user)
-            # --- MODIFICATION START ---
-            # Correctly call the modified service method
             success = identity_service.recover_identity_with_answers(
                 sa1=old_password, 
                 sa2=None, 
                 new_password=new_password, 
                 use_password=True
             )
-            # --- MODIFICATION END ---
             if not success:
-                 raise Exception("Failed to re-key identity manifest.")
+                 raise Exception("Failed to re-key identity manifest with new password.")
 
             user.set_password(new_password)
             user.save()
