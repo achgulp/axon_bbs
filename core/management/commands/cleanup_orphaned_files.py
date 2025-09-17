@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/management/commands/cleanup_orphaned_files.py
@@ -21,11 +21,10 @@ import shutil
 from django.core.management.base import BaseCommand
 from django.db.models import Count
 from django.conf import settings
-from core.models import FileAttachment
+from core.models import FileAttachment, User
 
 class Command(BaseCommand):
     help = 'Finds and deletes orphaned FileAttachments and their associated data chunks from disk.'
-
     def add_arguments(self, parser):
         parser.add_argument(
             '--dry-run',
@@ -39,12 +38,26 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        # [cite_start]Find FileAttachment objects that are not linked to any Message [cite: 190]
-        orphaned_attachments = FileAttachment.objects.annotate(
+        # --- MODIFICATION START ---
+        # Get a set of all file paths currently being used as user avatars.
+        # The User.avatar field stores paths like 'avatars/cow_....png'.
+        active_avatar_paths = set(User.objects.exclude(avatar__exact='').values_list('avatar', flat=True))
+
+        # Find FileAttachment objects that are not linked to any Message
+        attachments_without_messages = FileAttachment.objects.annotate(
             message_count=Count('messages')
         ).filter(message_count=0)
 
-        count = orphaned_attachments.count()
+        # From that list, filter out any that are active avatars.
+        orphaned_attachments = []
+        for attachment in attachments_without_messages:
+            # Construct the path as it would be stored in the User.avatar field.
+            expected_avatar_path = os.path.join('avatars', attachment.filename)
+            if expected_avatar_path not in active_avatar_paths:
+                orphaned_attachments.append(attachment)
+        # --- MODIFICATION END ---
+        
+        count = len(orphaned_attachments)
 
         if count == 0:
             self.stdout.write(self.style.SUCCESS("No orphaned files found."))
@@ -58,7 +71,6 @@ class Command(BaseCommand):
                 self.stdout.write(f"[WOULD DELETE] DB Record: {attachment.filename} ({attachment.id})")
                 content_hash = attachment.manifest.get('content_hash')
                 if content_hash:
-                    # [cite_start]The chunk storage path is defined in the BitSyncService [cite: 289]
                     chunk_dir = os.path.join(settings.BASE_DIR, 'data', 'bitsync_chunks', content_hash)
                     if os.path.isdir(chunk_dir):
                         self.stdout.write(f"                Disk Chunks: {chunk_dir}")
