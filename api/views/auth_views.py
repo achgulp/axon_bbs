@@ -47,8 +47,6 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = (permissions.AllowAny,)
     serializer_class = UserSerializer
 
-    # --- MODIFICATION START ---
-    # This logic now explicitly checks for conflicts before validation.
     def create(self, request, *args, **kwargs):
         username = request.data.get('username')
         nickname = request.data.get('nickname')
@@ -81,7 +79,6 @@ class RegisterView(generics.CreateAPIView):
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-    # --- MODIFICATION END ---
 
 
 class ClaimAccountView(views.APIView):
@@ -89,19 +86,26 @@ class ClaimAccountView(views.APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request, *args, **kwargs):
-        nickname = request.data.get('nickname')
+        # --- MODIFICATION START ---
+        nickname_to_claim = request.data.get('nickname')
+        new_username = request.data.get('username')
         new_password = request.data.get('new_password')
         key_file = request.FILES.get('key_file')
         key_file_password = request.data.get('key_file_password', None)
 
 
-        if not all([nickname, new_password, key_file]):
-            return Response({"error": "Nickname, new password, and private key file are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([nickname_to_claim, new_username, new_password, key_file]):
+            return Response({"error": "Username, nickname, new password, and private key file are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            user = User.objects.get(nickname__iexact=nickname, is_active=False)
+            user_to_claim = User.objects.get(nickname__iexact=nickname_to_claim, is_active=False)
         except User.DoesNotExist:
             return Response({"error": "No inactive, federated user found with that nickname."}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if the desired new username is already taken by a different active user
+        if User.objects.filter(username__iexact=new_username).exclude(pk=user_to_claim.pk).exists():
+            return Response({"error": f"The username '{new_username}' is already in use by another account."}, status=status.HTTP_409_CONFLICT)
+        # --- MODIFICATION END ---
 
         try:
             private_key_pem = key_file.read()
@@ -118,17 +122,22 @@ class ClaimAccountView(views.APIView):
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
             ).decode('utf-8').strip()
 
-            if derived_public_key_pem != user.pubkey.strip():
+            if derived_public_key_pem != user_to_claim.pubkey.strip():
                 return Response({"error": "Private key does not match the public key on record for this user."}, status=status.HTTP_403_FORBIDDEN)
 
-            user.is_active = True
-            user.set_password(new_password)
-            user.save()
+            # --- MODIFICATION START ---
+            # Key is valid, proceed with account activation and UPDATES
+            user_to_claim.username = new_username
+            user_to_claim.nickname = nickname_to_claim # Ensure canonical nickname is saved
+            user_to_claim.is_active = True
+            user_to_claim.set_password(new_password)
+            user_to_claim.save()
 
-            identity_service = IdentityService(user=user)
+            identity_service = IdentityService(user=user_to_claim)
             identity_service.create_storage_from_key(new_password, private_key_pem.decode('utf-8'))
 
-            refresh = RefreshToken.for_user(user)
+            refresh = RefreshToken.for_user(user_to_claim)
+            # --- MODIFICATION END ---
             
             return Response({
                 'status': 'Account claimed successfully.',
@@ -139,7 +148,7 @@ class ClaimAccountView(views.APIView):
         except (ValueError, TypeError, UnsupportedAlgorithm) as e:
             return Response({"error": f"Invalid private key file format or incorrect key password: {e}"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            logger.error(f"Unexpected error during account claim for {nickname}: {e}", exc_info=True)
+            logger.error(f"Unexpected error during account claim for {nickname_to_claim}: {e}", exc_info=True)
             return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
