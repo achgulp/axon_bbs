@@ -24,6 +24,7 @@ from django.utils import timezone
 from datetime import timedelta
 from django.apps import apps
 import logging
+from django.core.signing import TimestampSigner, SignatureExpired, BadSignature
 
 from ..serializers import ContentExtensionRequestSerializer, ModerationReportSerializer, FederatedActionProfileUpdateSerializer
 from ..permissions import IsModeratorOrAdmin
@@ -32,26 +33,33 @@ from core.models import IgnoredPubkey, BannedPubkey, FederatedAction, Message, M
 logger = logging.getLogger(__name__)
 
 
-class PreviewContentView(views.APIView):
-    permission_classes = [IsModeratorOrAdmin]
+class ServeTemporaryAvatarView(views.APIView):
+    """
+    Serves a decrypted file using a short-lived signed token.
+    This is unauthenticated because the token itself proves authorization.
+    """
+    permission_classes = [permissions.AllowAny]
 
-    def get(self, request, content_hash, *args, **kwargs):
+    def get(self, request, token, *args, **kwargs):
+        signer = TimestampSigner()
         try:
+            # The token is valid for 1 hour
+            content_hash = signer.unsign(token, max_age=3600)
+            
             attachment = FileAttachment.objects.get(manifest__content_hash=content_hash)
             
-            # --- MODIFICATION START ---
-            # Removed the incorrect check for the user's unlocked identity.
             # The SyncService handles decryption using the server's key.
             decrypted_data = service_manager.sync_service.get_decrypted_content(attachment.manifest)
-            # --- MODIFICATION END ---
 
             if decrypted_data:
                 return HttpResponse(decrypted_data, content_type=attachment.content_type)
             else:
                 raise Http404("Could not decrypt or find content.")
 
-        except FileAttachment.DoesNotExist:
-            raise Http404("Content not found.")
+        except SignatureExpired:
+            return Response({"error": "Preview link has expired."}, status=status.HTTP_410_GONE)
+        except (BadSignature, FileAttachment.DoesNotExist):
+            raise Http404("Invalid preview link or content not found.")
 
 
 class IgnorePubkeyView(views.APIView):
