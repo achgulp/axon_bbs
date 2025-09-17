@@ -199,8 +199,23 @@ class ExportIdentityView(views.APIView):
             if not private_key_pem:
                 raise DecryptionError("Failed to unlock key for export.")
 
-            response = HttpResponse(private_key_pem, content_type='application/x-pem-file')
-            response['Content-Disposition'] = f'attachment; filename="{request.user.username}_axon_identity.pem"'
+            # --- MODIFICATION START ---
+            # Load the unencrypted key object from the PEM string
+            private_key_obj = serialization.load_pem_private_key(
+                private_key_pem.encode(),
+                password=None
+            )
+
+            # Re-serialize the key object, this time with password-based encryption
+            encrypted_pem_bytes = private_key_obj.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8Encrypted,
+                encryption_algorithm=serialization.BestAvailableEncryption(password.encode('utf-8'))
+            )
+            
+            response = HttpResponse(encrypted_pem_bytes, content_type='application/x-pem-file')
+            response['Content-Disposition'] = f'attachment; filename="{request.user.username}_axon_identity_encrypted.pem"'
+            # --- MODIFICATION END ---
             return response
 
         except DecryptionError:
@@ -447,7 +462,6 @@ class UpdateTimezoneView(views.APIView):
         if not timezone:
             return Response({"error": "Timezone is a required field."}, status=status.HTTP_400_BAD_REQUEST)
         
-        # A full implementation would validate against a list of IANA timezones
         user.timezone = timezone
         user.save(update_fields=['timezone'])
         
@@ -458,9 +472,7 @@ class GetDisplayTimezoneView(views.APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        # If the user is logged in and has a specific timezone set, use that.
         if request.user.is_authenticated and request.user.timezone:
             return Response({'timezone': request.user.timezone})
         
-        # Otherwise, fall back to the admin-defined default.
         return Response({'timezone': settings.DISPLAY_TIMEZONE})
