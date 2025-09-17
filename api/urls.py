@@ -8,8 +8,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -54,6 +54,9 @@ from .views import (
     ReviewReportView,
     GetSecurityQuestionsView,
     SubmitRecoveryView,
+    # --- NEW: Profile Moderation Views ---
+    PendingProfileUpdatesQueueView,
+    ReviewProfileUpdateView,
 )
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
@@ -93,6 +96,9 @@ urlpatterns = [
     path('messages/report/', ReportMessageView.as_view(), name='report-message'),
     path('moderation/queue/', ModeratorQueueView.as_view(), name='mod-queue'),
     path('moderation/review/<int:report_id>/', ReviewReportView.as_view(), name='mod-review'),
+    # --- NEW: Profile Moderation URLs ---
+    path('moderation/profile_queue/', PendingProfileUpdatesQueueView.as_view(), name='mod-profile-queue'),
+    path('moderation/profile_review/<uuid:action_id>/', ReviewProfileUpdateView.as_view(), name='mod-profile-review'),
     
     # Admin & Moderator Actions
     path('admin/ban/', BanPubkeyView.as_view(), name='ban-pubkey'),

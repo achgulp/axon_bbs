@@ -17,7 +17,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.conf import settings
-from core.models import MessageBoard, Message, User, ContentExtensionRequest, FileAttachment, PrivateMessage, Applet, HighScore, ModerationReport
+from core.models import MessageBoard, Message, User, ContentExtensionRequest, FileAttachment, PrivateMessage, Applet, HighScore, ModerationReport, FederatedAction
 from core.services.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_salt, generate_short_id
 # --- START FIX ---
@@ -223,3 +223,28 @@ class ModerationReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = ModerationReport
         fields = ('id', 'reported_message', 'reporting_user', 'comment', 'status', 'created_at', 'reviewed_by', 'reviewed_at')
+
+# --- NEW SERIALIZER ---
+class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
+    user_info = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = FederatedAction
+        fields = ('id', 'created_at', 'action_details', 'user_info')
+
+    def get_user_info(self, obj):
+        user = User.objects.filter(pubkey=obj.pubkey_target).first()
+        if not user:
+            return None
+        
+        request = self.context.get('request')
+        avatar_url = None
+        if user.avatar:
+            avatar_url = request.build_absolute_uri(user.avatar.url) if request else user.avatar.url
+        
+        return {
+            "username": user.username,
+            "current_nickname": user.nickname,
+            "current_avatar_url": avatar_url
+        }
+# --- END NEW SERIALIZER ---

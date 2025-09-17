@@ -8,8 +8,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -19,7 +19,6 @@
 # This file makes the 'views' directory a Python package and exposes
 # all the view classes from their separate modules, so they can still
 # be imported from 'api.views'.
-
 from .auth_views import (
     RegisterView,
     LogoutView,
@@ -52,6 +51,10 @@ from .moderation_views import (
     RequestContentExtensionView,
     ReviewContentExtensionView,
     UnpinContentView,
+    # --- START FIX ---
+    PendingProfileUpdatesQueueView,
+    ReviewProfileUpdateView,
+    # --- END FIX ---
 )
 
 from .applet_views import (

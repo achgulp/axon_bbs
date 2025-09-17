@@ -8,8 +8,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -23,7 +23,7 @@ from datetime import timedelta
 from django.apps import apps
 import logging
 
-from ..serializers import ContentExtensionRequestSerializer, ModerationReportSerializer
+from ..serializers import ContentExtensionRequestSerializer, ModerationReportSerializer, FederatedActionProfileUpdateSerializer
 from ..permissions import IsModeratorOrAdmin
 from core.models import IgnoredPubkey, BannedPubkey, FederatedAction, Message, ModerationReport, ContentExtensionRequest
 
@@ -149,6 +149,39 @@ class ReviewReportView(views.APIView):
 
         return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
 
+class PendingProfileUpdatesQueueView(generics.ListAPIView):
+    permission_classes = [IsModeratorOrAdmin]
+    serializer_class = FederatedActionProfileUpdateSerializer
+
+    def get_queryset(self):
+        return FederatedAction.objects.filter(
+            action_type='update_profile',
+            status='pending_approval'
+        ).order_by('created_at')
+
+class ReviewProfileUpdateView(views.APIView):
+    permission_classes = [IsModeratorOrAdmin]
+
+    def post(self, request, action_id, *args, **kwargs):
+        action = request.data.get('action') # "approve" or "deny"
+        try:
+            profile_action = FederatedAction.objects.get(id=action_id, status='pending_approval', action_type='update_profile')
+        except FederatedAction.DoesNotExist:
+            return Response({"error": "Profile update request not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
+
+        if action == 'approve':
+            profile_action.status = 'approved'
+            profile_action.save()
+            return Response({"status": "Profile update approved and will be federated."}, status=status.HTTP_200_OK)
+        elif action == 'deny':
+            profile_action.status = 'denied'
+            profile_action.save()
+            # Optionally, you could revert the user's profile change here.
+            # For now, denying just prevents federation.
+            return Response({"status": "Profile update denied."}, status=status.HTTP_200_OK)
+
+        return Response({"error": "Invalid action. Must be 'approve' or 'deny'."}, status=status.HTTP_400_BAD_REQUEST)
+
 class RequestContentExtensionView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request, *args, **kwargs):
@@ -160,7 +193,8 @@ class RequestContentExtensionView(views.APIView):
         except (LookupError, model.DoesNotExist): return Response({"error": "Invalid content_type or content not found/not owned by user."}, status=status.HTTP_404_NOT_FOUND)
         ext_request, created = ContentExtensionRequest.objects.get_or_create(content_id=content_id, user=request.user, defaults={'content_type': content_type})
         if not created and ext_request.status in ['pending', 'approved']: return Response({"status": "An extension request is already pending or has been approved."}, status=status.HTTP_200_OK)
-        ext_request.status = 'pending'; ext_request.save()
+        ext_request.status = 'pending'
+        ext_request.save()
         return Response(ContentExtensionRequestSerializer(ext_request).data, status=status.HTTP_201_CREATED)
 
 class ReviewContentExtensionView(views.APIView):
@@ -170,14 +204,18 @@ class ReviewContentExtensionView(views.APIView):
         except ContentExtensionRequest.DoesNotExist: return Response({"error": "Request not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
         action = request.data.get('action')
         if action not in ['approve', 'deny']: return Response({"error": "Action must be 'approve' or 'deny'."}, status=status.HTTP_400_BAD_REQUEST)
-        ext_request.status = f"{action}d"; ext_request.reviewed_by = request.user; ext_request.reviewed_at = timezone.now()
+        ext_request.status = f"{action}d"
+        ext_request.reviewed_by = request.user
+        ext_request.reviewed_at = timezone.now()
         if action == 'approve':
             try:
                 model = apps.get_model('core', ext_request.content_type.capitalize())
                 content_obj = model.objects.get(pk=ext_request.content_id)
-                content_obj.expires_at += timedelta(days=30); content_obj.save()
+                content_obj.expires_at += timedelta(days=30)
+                content_obj.save()
             except (LookupError, model.DoesNotExist):
-                ext_request.status = 'denied'; logger.error(f"Could not find content {ext_request.content_id} to approve extension.")
+                ext_request.status = 'denied'
+                logger.error(f"Could not find content {ext_request.content_id} to approve extension.")
         ext_request.save()
         return Response(ContentExtensionRequestSerializer(ext_request).data, status=status.HTTP_200_OK)
 
@@ -186,8 +224,14 @@ class UnpinContentView(views.APIView):
     def post(self, request, *args, **kwargs):
         content_id, content_type = request.data.get('content_id'), request.data.get('content_type')
         if not all([content_id, content_type]): return Response({"error": "content_id and content_type are required."}, status=status.HTTP_400_BAD_REQUEST)
-        try: model = apps.get_model('core', content_type.capitalize()); content_obj = model.objects.get(pk=content_id)
-        except (LookupError, model.DoesNotExist): return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
+        # --- START FIX ---
+        # Corrected the indentation of the try...except block
+        try:
+            model = apps.get_model('core', content_type.capitalize())
+            content_obj = model.objects.get(pk=content_id)
+        except (LookupError, model.DoesNotExist):
+            return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
+        # --- END FIX ---
         if content_obj.pinned_by and content_obj.pinned_by.is_staff and not request.user.is_staff: return Response({"error": "Moderators cannot unpin content pinned by an Admin."}, status=status.HTTP_403_FORBIDDEN)
         
         if content_obj.is_pinned and content_obj.manifest and content_obj.manifest.get('content_hash'):
@@ -196,5 +240,7 @@ class UnpinContentView(views.APIView):
                 content_hash_target=content_obj.manifest.get('content_hash')
             )
 
-        content_obj.is_pinned = False; content_obj.pinned_by = None; content_obj.save()
+        content_obj.is_pinned = False
+        content_obj.pinned_by = None
+        content_obj.save()
         return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)

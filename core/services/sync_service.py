@@ -30,16 +30,15 @@ from functools import partial
 
 from django.utils import timezone as django_timezone
 from django.conf import settings
+from django.core.files.base import ContentFile
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 
-# --- START FIX ---
 from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey
 from .encryption_utils import generate_checksum, generate_short_id
 from .avatar_generator import generate_cow_avatar
-# --- END FIX ---
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +236,21 @@ class SyncService:
                     FileAttachment.objects.filter(manifest__content_hash=content_hash).update(is_pinned=False, pinned_by=None)
                     logger.info(f"Federated unpin applied for content hash: {content_hash[:12]}...")
 
+                elif action_type == 'update_profile':
+                    pubkey = action_data.get('pubkey_target')
+                    details = action_data.get('action_details', {})
+                    user_to_update = User.objects.filter(pubkey=pubkey).first()
+                    
+                    if user_to_update:
+                        user_to_update.nickname = details.get('nickname', user_to_update.nickname)
+                        user_to_update.karma = details.get('karma', user_to_update.karma)
+                        user_to_update.save()
+                        logger.info(f"Applied federated profile update for user: {user_to_update.username}")
+                        
+                        avatar_hash = details.get('avatar_hash')
+                        if avatar_hash:
+                            self._apply_avatar_from_hash(user_to_update, avatar_hash)
+
             except Exception as e:
                 logger.error(f"Failed to process federated action {action_id}: {e}", exc_info=True)
 
@@ -266,8 +280,6 @@ class SyncService:
             if content_type == 'message':
                 content = json.loads(decrypted_data)
                 
-                # --- START FIX ---
-                # Automatically create an inactive user profile for a new federated user.
                 author_pubkey = content.get('pubkey')
                 if author_pubkey and not User.objects.filter(pubkey=author_pubkey).exists():
                     try:
@@ -285,9 +297,29 @@ class SyncService:
                         )
                         new_user.avatar.save(avatar_filename, avatar_content_file, save=True)
                         logger.info(f"Discovered new federated user. Created profile '{new_nickname}' with a unique cow avatar.")
+
+                        # --- NEW LOGIC START ---
+                        # After creating a new user, check for and apply any pending profile updates for them.
+                        pending_actions = FederatedAction.objects.filter(
+                            pubkey_target=new_user.pubkey,
+                            action_type='update_profile'
+                        ).order_by('created_at')
+
+                        if pending_actions.exists():
+                            logger.info(f"Found {pending_actions.count()} pending profile actions for new user {new_user.username}. Applying them now.")
+                            for action in pending_actions:
+                                details = action.action_details
+                                new_user.nickname = details.get('nickname', new_user.nickname)
+                                new_user.karma = details.get('karma', new_user.karma)
+                                new_user.save()
+                                
+                                avatar_hash = details.get('avatar_hash')
+                                if avatar_hash:
+                                    self._apply_avatar_from_hash(new_user, avatar_hash)
+                        # --- NEW LOGIC END ---
+
                     except Exception as user_create_e:
                         logger.error(f"Failed to create federated user profile for pubkey {author_pubkey[:12]}: {user_create_e}")
-                # --- END FIX ---
                 
                 required_hashes = content.get('attachment_hashes', [])
                 if required_hashes:
@@ -306,14 +338,23 @@ class SyncService:
                 logger.info(f"Successfully saved new message: '{message.subject}'")
 
             elif content_type == 'file':
-                FileAttachment.objects.create(
+                attachment = FileAttachment.objects.create(
                     filename=final_manifest.get('filename', 'unknown'),
                     content_type=final_manifest.get('content_type_val', 'application/octet-stream'),
                     size=final_manifest.get('size', 0),
                     manifest=final_manifest
                 )
                 logger.info(f"Successfully saved new file: '{final_manifest.get('filename')}'")
-            
+                
+                pending_actions = FederatedAction.objects.filter(
+                    action_type='update_profile',
+                    content_hash_target=content_hash
+                )
+                for action in pending_actions:
+                    user_to_update = User.objects.filter(pubkey=action.pubkey_target).first()
+                    if user_to_update:
+                        self._apply_avatar_from_attachment(user_to_update, attachment)
+
             elif content_type == 'pm':
                 pm_content = json.loads(decrypted_data)
                 sender_pubkey = pm_content.get('sender_pubkey')
@@ -458,3 +499,31 @@ class SyncService:
         if encrypted_data:
             return self._decrypt_data(encrypted_data, manifest)
         return None
+
+    def _apply_avatar_from_hash(self, user, avatar_hash):
+        """Finds a local attachment by hash and applies it as a user's avatar."""
+        try:
+            attachment = FileAttachment.objects.get(manifest__content_hash=avatar_hash)
+            self._apply_avatar_from_attachment(user, attachment)
+        except FileAttachment.DoesNotExist:
+            logger.info(f"Avatar for user {user.username} (hash: {avatar_hash[:10]}) is not yet local. Will apply after download.")
+    
+    def _apply_avatar_from_attachment(self, user, attachment):
+        """Given a user and a FileAttachment, decrypts the file and saves it as the user's avatar."""
+        try:
+            logger.info(f"Attempting to apply new federated avatar {attachment.filename} to user {user.username}")
+            encrypted_data = self._download_content(attachment.manifest)
+            if not encrypted_data:
+                logger.warning(f"Could not get encrypted data for avatar {attachment.filename}.")
+                return
+
+            decrypted_data = self._decrypt_data(encrypted_data, attachment.manifest)
+            if not decrypted_data:
+                logger.warning(f"Could not decrypt data for avatar {attachment.filename}.")
+                return
+            
+            content_file = ContentFile(decrypted_data, name=attachment.filename)
+            user.avatar.save(attachment.filename, content_file, save=True)
+            logger.info(f"Successfully applied new federated avatar for user {user.username}.")
+        except Exception as e:
+            logger.error(f"Failed to apply avatar {attachment.filename} to user {user.username}: {e}")
