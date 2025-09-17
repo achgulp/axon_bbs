@@ -30,6 +30,10 @@ User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    # --- MODIFICATION START ---
+    # Made nickname required for the serializer to process it
+    nickname = serializers.CharField(required=True)
+    # --- MODIFICATION END ---
     security_question_1 = serializers.CharField(write_only=True, required=True)
     security_answer_1 = serializers.CharField(write_only=True, required=True)
     security_question_2 = serializers.CharField(write_only=True, required=True)
@@ -37,19 +41,16 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        # --- MODIFICATION START ---
         fields = ('username', 'password', 'nickname', 'security_question_1', 'security_answer_1', 'security_question_2', 'security_answer_2')
-        # --- MODIFICATION END ---
 
     def create(self, validated_data):
-        # --- MODIFICATION START ---
-        # User is now created with all fields at once to ensure constraints are checked
+        # The User model's custom manager now handles nickname assignment.
+        # This serializer's job is just to pass the validated data along.
         user = User.objects.create_user(
             username=validated_data['username'],
             password=validated_data['password'],
             nickname=validated_data.get('nickname')
         )
-        # --- MODIFICATION END ---
         try:
             identity_service = IdentityService(user=user)
             identity = identity_service.generate_identity_with_manifest(

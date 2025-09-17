@@ -29,10 +29,11 @@ const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }) => {
   const [answer2, setAnswer2] = useState('');
   const [error, setError] = useState('');
 
-  // --- MODIFICATION START ---
   const [view, setView] = useState('register'); // 'register' or 'claim'
   const [keyFile, setKeyFile] = useState(null);
   const [claimPassword, setClaimPassword] = useState('');
+  // --- MODIFICATION START ---
+  const [keyFilePassword, setKeyFilePassword] = useState('');
   // --- MODIFICATION END ---
 
   const handleRegister = async (e) => {
@@ -55,8 +56,8 @@ const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }) => {
       });
       onRegisterSuccess();
     } catch (err) {
-      if (err.response && err.response.status === 409 && err.response.data.error === 'nickname_exists_as_federated') {
-        setError('This nickname is reserved by a federated user. If this is you, you can claim this account.');
+      if (err.response && err.response.status === 409 && err.response.data.error.endsWith('_exists_as_federated')) {
+        setError(err.response.data.detail);
         setView('claim');
       } else if (err.response && err.response.data) {
         const errorData = err.response.data;
@@ -69,7 +70,6 @@ const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }) => {
     }
   };
 
-  // --- NEW HANDLER ---
   const handleClaim = async (e) => {
     e.preventDefault();
     setError('');
@@ -81,19 +81,22 @@ const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }) => {
     formData.append('nickname', nickname);
     formData.append('new_password', claimPassword);
     formData.append('key_file', keyFile);
+    // --- MODIFICATION START ---
+    if (keyFilePassword) {
+        formData.append('key_file_password', keyFilePassword);
+    }
+    // --- MODIFICATION END ---
 
     try {
         const response = await apiClient.post('/api/identity/claim/', formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
         });
-        // The claim endpoint returns a token, so we can log the user in directly.
         localStorage.setItem('token', response.data.access);
-        onRegisterSuccess(); // This will trigger a redirect to the main app
+        onRegisterSuccess();
     } catch (err) {
         setError(err.response?.data?.error || 'Failed to claim account. Please check your key file and password.');
     }
   };
-  // --- END NEW HANDLER ---
 
   if (view === 'claim') {
     return (
@@ -112,6 +115,12 @@ const RegisterScreen = ({ onRegisterSuccess, onNavigateToLogin }) => {
                     <label className="block text-gray-300 text-sm font-bold mb-2">Your Private Key File (.pem)</label>
                     <input type="file" onChange={e => setKeyFile(e.target.files[0])} accept=".pem" required className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700"/>
                 </div>
+                {/* --- MODIFICATION START --- */}
+                <div className="mb-4">
+                    <label className="block text-gray-300 text-sm font-bold mb-2">Password for Key File (if encrypted)</label>
+                    <input type="password" value={keyFilePassword} onChange={e => setKeyFilePassword(e.target.value)} placeholder="Leave blank if not encrypted" className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:shadow-outline"/>
+                </div>
+                {/* --- MODIFICATION END --- */}
                 <div className="mb-6">
                     <label className="block text-gray-300 text-sm font-bold mb-2">New Password for this BBS</label>
                     <input type="password" value={claimPassword} onChange={e => setClaimPassword(e.target.value)} required className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:shadow-outline"/>
