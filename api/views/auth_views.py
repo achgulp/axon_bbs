@@ -47,26 +47,28 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = (permissions.AllowAny,)
     serializer_class = UserSerializer
 
+    # --- MODIFICATION START ---
+    # This logic now correctly handles the IntegrityError from the database
+    # and checks if the conflict is with a claimable federated user.
     def create(self, request, *args, **kwargs):
-        username = request.data.get('username')
-        nickname = request.data.get('nickname')
-
-        if nickname and User.objects.filter(nickname__iexact=nickname, is_active=False).exists():
-            return Response(
-                {"error": "nickname_exists_as_federated", "detail": f"The nickname '{nickname}' is reserved by a federated user. You can claim this account if you have the private key."},
-                status=status.HTTP_409_CONFLICT
-            )
-        if username and User.objects.filter(username__iexact=username, is_active=False).exists():
-                return Response(
-                {"error": "username_exists_as_federated", "detail": f"The username '{username}' is reserved by a federated user. Try claiming the account via its nickname instead."},
-                status=status.HTTP_409_CONFLICT
-            )
-        
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        try:
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        except IntegrityError:
+            nickname = serializer.validated_data.get('nickname')
+            if nickname and User.objects.filter(nickname__iexact=nickname, is_active=False).exists():
+                return Response(
+                    {"error": "nickname_exists_as_federated", "detail": f"The nickname '{nickname}' is reserved by a federated user. You can claim this account if you have the private key."},
+                    status=status.HTTP_409_CONFLICT
+                )
+            return Response(
+                {"error": "A user with that username or nickname already exists."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    # --- MODIFICATION END ---
 
 
 class ClaimAccountView(views.APIView):
@@ -77,9 +79,7 @@ class ClaimAccountView(views.APIView):
         nickname = request.data.get('nickname')
         new_password = request.data.get('new_password')
         key_file = request.FILES.get('key_file')
-        # --- MODIFICATION START ---
         key_file_password = request.data.get('key_file_password', None)
-        # --- MODIFICATION END ---
 
 
         if not all([nickname, new_password, key_file]):
@@ -92,16 +92,11 @@ class ClaimAccountView(views.APIView):
 
         try:
             private_key_pem = key_file.read()
-            # --- MODIFICATION START ---
-            # Use the provided password if it exists
             key_password_bytes = key_file_password.encode() if key_file_password else None
             try:
                 private_key = serialization.load_pem_private_key(private_key_pem, password=key_password_bytes)
             except TypeError:
-                # This can happen if the key is encrypted but no password was provided,
-                # or if a password was provided for an unencrypted key.
                 return Response({"error": "Password mismatch for private key. Provide a password if the key is encrypted, or leave it blank if not."}, status=status.HTTP_400_BAD_REQUEST)
-            # --- MODIFICATION END ---
             
             derived_public_key = private_key.public_key()
             
