@@ -1,40 +1,41 @@
-Axon BBS - Product Requirements Document
-Version: 10.13.0 (Moderation & Identity Enhancements)
-Date: September 18, 2025
-
-1. Overview
-Axon BBS is a modern, anonymous bulletin board system built on a private, federated network of trusted nodes. The platform prioritizes user privacy and architectural resilience through a custom P2P data synchronization protocol named BitSync. This version introduces several key features and security enhancements, including:
+Axon BBS - Product Requirements Document (Version 10.13.0)
+Overview
+Axon BBS is an anonymous, modern bulletin board system that operates on a private, federated network of trusted nodes. The platform is built with a focus on user privacy and resilience, utilizing a custom peer-to-peer data synchronization protocol called BitSync. This version of the document consolidates all previous versions and is the definitive guide for the platform's current state. Key features and enhancements in this version include:
 
 
 
-Account Claiming: Allows users to take control of their federated profiles on new BBS instances using their private key.
 
 
 
-Moderation Workflow: The moderation process has been improved with a new system for previewing pending avatars. Uploaded files are now stored in a temporary directory with unguessable filenames, allowing moderators to safely review them before they are approved and federated.
+Account Claiming 
 
 
 
-Private Messaging: A new double-encryption scheme for private messages has been implemented to ensure end-to-end privacy. This prevents BBS operators from viewing message content while still allowing the system to handle message delivery and synchronization.
+Moderation Workflow 
 
 
-Credential Management: User security is enhanced with new features on the profile page, including password changes and security question resets.
+Private Messaging 
 
 
 
-User Timezones: Users can now select their preferred display timezone from their profile.
 
-This document consolidates all previous versions and serves as the definitive guide for the platform's current state.
+Credential Management 
 
-2. User Roles & Stories
+
+
+
+User Timezones 
+
+
+User Roles & Stories
 As a User...
 A standard participant on the BBS whose focus is on communication, personalization, and interacting with applications.
 
-I want to generate or import my cryptographic identity so that I can securely and anonymously interact with the system.
+I want to generate or import my cryptographic identity to securely and anonymously interact with the system.
 
-I want to securely back up my private key so that I can recover my account if I lose access to my primary device.
+I want to securely back up my private key to recover my account if I lose access to my primary device.
 
-I want to upload a profile avatar so that I can personalize my identity.
+I want to upload a profile avatar to personalize my identity.
 
 I want my profile updates (nickname and avatar) to be sent to other BBSes so my identity is consistent across the network.
 
@@ -109,43 +110,47 @@ I want to dynamically start, stop, and reload agent services from the admin pane
 
 I want to see a user's avatar in the admin panel and have an action to reset it to the default if it is inappropriate.
 
-3. The Architecture
+Architecture
 Private Message Double-Encryption
-To guarantee the privacy of private messages (PMs), a double-encryption scheme is now used:
+A double-encryption scheme is used to guarantee the privacy of private messages (PMs). This architecture allows federated nodes to process message delivery metadata without being able to decrypt the actual message content.
 
-End-to-End (E2E) Encryption: The actual message content and subject are encrypted on the client side using a unique AES key. This key is then encrypted with the public keys of only the sender and the recipient. This inner layer ensures that only the two users can ever read the message. The resulting encrypted blob, e2e_encrypted_content, is treated as opaque data by the BBS servers.
 
-BBS-Level Metadata Encryption: To enable message routing and synchronization without revealing the content, a separate metadata object is created. This object contains non-sensitive information like sender and recipient public key checksums and a content hash of the E2E encrypted message. This metadata is then encrypted using the public keys of all trusted BBS instances.
 
-This architecture allows all federated BBS nodes to download and process the metadata to know where to deliver the message, but they cannot decrypt the inner e2e_encrypted_content that holds the actual message text.
+End-to-End (E2E) Encryption: The message content and subject are encrypted client-side with a unique AES key. This key is then encrypted with the public keys of only the sender and recipient, ensuring only they can ever read the message. The BBS servers treat the resulting encrypted blob as opaque data.
+
+
+
+
+BBS-Level Metadata Encryption: A separate metadata object is created for routing, containing non-sensitive information like public key checksums and a content hash. This metadata is encrypted using the public keys of all trusted BBS instances.
+
 
 Moderation Approval Workflow
-To ensure avatars can be safely reviewed before being federated, a new workflow has been implemented:
+A new workflow ensures avatars can be safely reviewed before being federated across the network.
 
-When a user uploads a new avatar, the processed image is saved to a temporary 
+A user uploads a new avatar, which is saved to a temporary 
 
-media/pending_avatars/ directory with a secure, unguessable UUID-based filename.
+media/pending_avatars/ directory with a secure, unguessable filename.
 
 A 
 
-FederatedAction with a status of pending_approval is created, which stores a reference to this temporary file.
+FederatedAction with a status of pending_approval is created, referencing this temporary file.
 
-The Moderation Dashboard displays this temporary image for review using its direct, unguessable public URL.
+The Moderation Dashboard displays the temporary image for review using its direct URL.
 
-When a moderator approves the request, the backend moves the file from the 
+When a moderator approves the request, the backend moves the file to the final 
 
-pending_avatars directory to the final media/avatars/ directory, renames it, and updates the user's profile.
+media/avatars/ directory.
 
-Only at this point is the 
+Only after approval is the 
 
-FileAttachment with the BitSync manifest created and the FederatedAction status changed to approved, allowing it to be synced to other BBSes.
+FileAttachment with the BitSync manifest created and the FederatedAction status changed to approved, which allows it to be synced to other BBSes.
 
-4. Full Project File Structure
+Full Project File Structure
 This diagram represents the complete and accurate file structure for the 
 
 axon_bbs project.
 
-<pre><code>axon_bbs/
+axon_bbs/
 ├── .env
 ├── manage.py
 ├── requirements.txt
@@ -160,40 +165,40 @@ axon_bbs project.
 │   ├── bitsync_chunks/
 │   └── user_data/
 ├── axon_project/
-│   ├── init.py
+│   ├── __init__.py
 │   ├── asgi.py
 │   ├── settings.py
 │   ├── urls.py
 │   └── wsgi.py
 ├── api/
-│   ├── init.py
+│   ├── __init__.py
 │   ├── admin.py
 │   ├── apps.py
 │   ├── models.py
 │   ├── permissions.py
 │   ├── serializers.py
 │   ├── tests/
-│   │   ├── init.py
+│   │   ├── __init__.py
 │   │   └── test_views.py
 │   ├── urls.py
-│   └── views/
-│       ├── init.py
+│   └── views/ [cite: 64]
+│       ├── __init__.py
 │       ├── applet_views.py
 │       ├── auth_views.py
 │       ├── content_views.py
 │       ├── federation_views.py
 │       └── moderation_views.py
 ├── core/
-│   ├── init.py
+│   ├── __init__.py
 │   ├── admin.py
 │   ├── apps.py
 │   ├── models.py
 │   ├── tests/
-│   │   ├── init.py
+│   │   ├── __init__.py
 │   │   └── test_models.py
 │   ├── management/
 │   │   └── commands/
-│   │       ├── init.py
+│   │       ├── __init__.py [cite: 65]
 │   │       ├── approve_pending_profiles.py
 │   │       ├── backfill_avatars.py
 │   │       ├── check_local_content.py
@@ -202,12 +207,12 @@ axon_bbs project.
 │   │       ├── diagnose_sync_content.py
 │   │       ├── process_scores.py
 │   │       ├── reset_peer_sync_time.py
-│   │       └── update_peer_key.py
+│   │       └── update_peer_key.py [cite: 66]
 │   ├── migrations/
 │   │   ├── ... (migration files) ...
-│   │   └── init.py
+│   │   └── __init__.py
 │   └── services/
-│       ├── init.py
+│       ├── __init__.py
 │       ├── avatar_generator.py
 │       ├── bitsync_service.py
 │       ├── content_validator.py
@@ -215,32 +220,32 @@ axon_bbs project.
 │       ├── high_score_service.py
 │       ├── identity_service.py
 │       ├── moderator_agent_service.py
-│       ├── overlord_agent_service.py
+│       ├── overlord_agent_service.py [cite: 67]
 │       ├── service_manager.py
 │       ├── sync_service.py
 │       └── tor_service.py
 └── frontend/
-└── src/
-├── applet_api/
-│   └── api.js
-├── applets/
-│   ├── FortressOverlord.js
-│   ├── FloatUpMaze.js
-│   ├── PipeDoger.js
-│   └── Template.js
-├── components/
-│   ├── AnsiViewer.js
-│   ├── App.js
-│   ├── AppletRunner.js
-│   ├── AppletView.js
-│   ├── HighScoreBoard.js
-│   ├── LoginScreen.js
-│   ├── MessageList.js
-│   ├── ModerationDashboard.js
-│   ├── PrivateMessageClient.js
-│   ├── ProfileScreen.js
-│   ├── RecoveryScreen.js
-│   ├── RegisterScreen.js
-│   ├── ReportModal.js
-│   └── UnlockForm.js
-└── apiClient.js
+    └── src/
+        ├── applet_api/
+        │   └── api.js
+        ├── applets/
+        │   ├── FortressOverlord.js
+        │   ├── FloatUpMaze.js
+        │   ├── PipeDoger.js
+        │   └── Template.js
+        ├── components/
+        │   ├── AnsiViewer.js
+        │   ├── App.js
+        │   ├── AppletRunner.js
+        │   ├── AppletView.js
+        │   ├── HighScoreBoard.js
+        │   ├── LoginScreen.js
+        │   ├── MessageList.js
+        │   ├── ModerationDashboard.js
+        │   ├── PrivateMessageClient.js
+        │   ├── ProfileScreen.js
+        │   ├── RecoveryScreen.js
+        │   ├── RegisterScreen.js [cite: 68]
+        │   ├── ReportModal.js
+        │   └── UnlockForm.js
+        └── apiClient.js
