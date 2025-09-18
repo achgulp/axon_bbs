@@ -27,7 +27,7 @@ import json
 import base64
 import hashlib
 
-from core.services.encryption_utils import encrypt_for_recipients_only, generate_checksum
+from core.services.encryption_utils import encrypt_for_recipients_only, generate_checksum, decrypt_for_recipients_only
 from ..serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
 from core.models import MessageBoard, Message, IgnoredPubkey, FileAttachment, PrivateMessage, User, Alias, TrustedInstance
 from core.services.service_manager import service_manager
@@ -191,6 +191,30 @@ class PrivateMessageListView(generics.ListAPIView):
     def get_queryset(self):
         return PrivateMessage.objects.filter(recipient=self.request.user).order_by('-created_at')
 
+    def list(self, request, *args, **kwargs):
+        private_key = request.session.get('unencrypted_priv_key')
+        if not private_key:
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        queryset = self.get_queryset()
+        for message in queryset:
+            decrypted_json = decrypt_for_recipients_only(
+                base64.b64decode(message.e2e_encrypted_content),
+                message.metadata_manifest,
+                private_key
+            )
+            if decrypted_json:
+                try:
+                    content = json.loads(decrypted_json)
+                    message.decrypted_body = content.get('body')
+                except (json.JSONDecodeError, TypeError):
+                    message.decrypted_body = "[Decryption Error: Invalid format]"
+            else:
+                message.decrypted_body = None
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
 
 class PrivateMessageOutboxView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -198,3 +222,27 @@ class PrivateMessageOutboxView(generics.ListAPIView):
     
     def get_queryset(self):
         return PrivateMessage.objects.filter(author=self.request.user).order_by('-created_at')
+
+    def list(self, request, *args, **kwargs):
+        private_key = request.session.get('unencrypted_priv_key')
+        if not private_key:
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        queryset = self.get_queryset()
+        for message in queryset:
+            decrypted_json = decrypt_for_recipients_only(
+                base64.b64decode(message.e2e_encrypted_content),
+                message.metadata_manifest,
+                private_key
+            )
+            if decrypted_json:
+                try:
+                    content = json.loads(decrypted_json)
+                    message.decrypted_body = content.get('body')
+                except (json.JSONDecodeError, TypeError):
+                    message.decrypted_body = "[Decryption Error: Invalid format]"
+            else:
+                message.decrypted_body = None
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
