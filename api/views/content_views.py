@@ -198,17 +198,26 @@ class PrivateMessageListView(generics.ListAPIView):
             
         queryset = self.get_queryset()
         for message in queryset:
+            decrypted_metadata_bytes = service_manager.sync_service.get_decrypted_content(message.metadata_manifest)
+            if not decrypted_metadata_bytes:
+                message.decrypted_body = "[Decryption Error: Could not read metadata]"
+                continue
+
+            metadata = json.loads(decrypted_metadata_bytes.decode('utf-8'))
+            e2e_manifest = metadata.get('e2e_manifest')
+
             decrypted_json = decrypt_for_recipients_only(
                 base64.b64decode(message.e2e_encrypted_content),
-                message.metadata_manifest,
+                e2e_manifest,
                 private_key
             )
+
             if decrypted_json:
                 try:
                     content = json.loads(decrypted_json)
                     message.decrypted_body = content.get('body')
                 except (json.JSONDecodeError, TypeError):
-                    message.decrypted_body = "[Decryption Error: Invalid format]"
+                    message.decrypted_body = "[Decryption Error: Invalid E2E format]"
             else:
                 message.decrypted_body = None
         
@@ -230,17 +239,26 @@ class PrivateMessageOutboxView(generics.ListAPIView):
             
         queryset = self.get_queryset()
         for message in queryset:
+            decrypted_metadata_bytes = service_manager.sync_service.get_decrypted_content(message.metadata_manifest)
+            if not decrypted_metadata_bytes:
+                message.decrypted_body = "[Decryption Error: Could not read metadata]"
+                continue
+
+            metadata = json.loads(decrypted_metadata_bytes.decode('utf-8'))
+            e2e_manifest = metadata.get('e2e_manifest')
+
             decrypted_json = decrypt_for_recipients_only(
                 base64.b64decode(message.e2e_encrypted_content),
-                message.metadata_manifest,
+                e2e_manifest,
                 private_key
             )
+
             if decrypted_json:
                 try:
                     content = json.loads(decrypted_json)
                     message.decrypted_body = content.get('body')
                 except (json.JSONDecodeError, TypeError):
-                    message.decrypted_body = "[Decryption Error: Invalid format]"
+                    message.decrypted_body = "[Decryption Error: Invalid E2E format]"
             else:
                 message.decrypted_body = None
         
