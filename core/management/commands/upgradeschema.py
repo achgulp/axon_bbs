@@ -105,12 +105,3 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.SUCCESS("  -> 'core_privatemessage' table already matches the current schema. No rebuild needed."))
 
         self.stdout.write(self.style.SUCCESS("\n--- Manual Schema Upgrade Complete ---"))
-
----
-### Full Upgrade Procedure for PiBBS
-
-After updating the file, please run the full sequence of commands again on your PiBBS machine. This will ensure everything is clean and synchronized.
-
-**Step 1: Clean the Migration Files**
-```bash
-python manage.py resetmigrations core
