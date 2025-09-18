@@ -105,3 +105,12 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.SUCCESS("  -> 'core_privatemessage' table already matches the current schema. No rebuild needed."))
 
         self.stdout.write(self.style.SUCCESS("\n--- Manual Schema Upgrade Complete ---"))
+
+---
+### Full Upgrade Procedure
+
+After saving the corrected file, please run the full sequence of commands again. The `resetmigrations` and `makemigrations` steps are important to ensure the history is clean before you try to upgrade the schema.
+
+**Step 1: Clean the Migration Files**
+```bash
+python manage.py resetmigrations core
