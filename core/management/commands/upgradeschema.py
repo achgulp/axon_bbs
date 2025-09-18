@@ -18,6 +18,7 @@
 # Full path: axon_bbs/core/management/commands/upgradeschema.py
 from django.core.management.base import BaseCommand
 from django.db import connection, transaction
+from core.models import PrivateMessage
 
 class Command(BaseCommand):
     help = 'Manually upgrades the database schema to the version 10.13.0 state without using migrations.'
@@ -55,21 +56,51 @@ class Command(BaseCommand):
                     cursor.execute("ALTER TABLE core_message RENAME COLUMN manifest TO metadata_manifest;")
                     self.stdout.write(self.style.SUCCESS("  -> Done."))
 
-            # --- Upgrade core_privatemessage table ---
+            # --- Rebuild core_privatemessage table to remove old columns ---
             if 'core_privatemessage' in all_tables:
+                self.stdout.write("Checking 'core_privatemessage' table for required rebuild...")
                 cursor.execute("PRAGMA table_info(core_privatemessage);")
-                columns = [row[1] for row in cursor.fetchall()]
-                # Add new columns if they don't exist
-                if 'e2e_encrypted_content' not in columns:
-                    self.stdout.write("Adding 'e2e_encrypted_content' to 'core_privatemessage'...")
-                    cursor.execute("ALTER TABLE core_privatemessage ADD COLUMN e2e_encrypted_content TEXT NULL;")
-                    self.stdout.write(self.style.SUCCESS("  -> Done."))
-                if 'metadata_manifest' not in columns:
-                    self.stdout.write("Adding 'metadata_manifest' to 'core_privatemessage'...")
-                    cursor.execute("ALTER TABLE core_privatemessage ADD COLUMN metadata_manifest TEXT NULL;")
-                    self.stdout.write(self.style.SUCCESS("  -> Done."))
+                columns_info = cursor.fetchall()
+                column_names = [row[1] for row in columns_info]
+                
+                old_columns_exist = any(col in column_names for col in ['subject', 'body', 'recipient_pubkey', 'manifest'])
 
-                self.stdout.write(self.style.NOTICE("NOTE: Old, unused columns may remain in the 'core_privatemessage' table. This is safe and expected as SQLite does not support dropping columns easily."))
+                if old_columns_exist:
+                    self.stdout.write(self.style.WARNING("Old columns found. Rebuilding 'core_privatemessage' table to match current models..."))
+                    
+                    # 1. Get the schema for the current model
+                    model = PrivateMessage
+                    new_schema = connection.schema_editor().column_sql(model, model._meta.get_field('id'))[0]
+                    new_columns_with_types = [new_schema]
+                    final_fields = []
+
+                    for field in model._meta.local_fields:
+                        if field.name == 'id': continue
+                        col_sql = connection.schema_editor().column_sql(model, field)
+                        if col_sql:
+                            new_columns_with_types.append(f'"{field.column}" {col_sql[1]}')
+                            final_fields.append(field.column)
+
+                    # 2. Create a new table with the correct schema
+                    create_sql = f"CREATE TABLE core_privatemessage_new ({', '.join(new_columns_with_types)});"
+                    cursor.execute(create_sql)
+                    self.stdout.write("  -> Created new temporary table.")
+
+                    # 3. Copy data from the old table to the new one
+                    common_columns = [col for col in final_fields if col in column_names]
+                    common_columns_str = ', '.join(f'"{col}"' for col in common_columns)
+                    insert_sql = f"INSERT INTO core_privatemessage_new ({common_columns_str}) SELECT {common_columns_str} FROM core_privatemessage;"
+                    cursor.execute(insert_sql)
+                    self.stdout.write(f"  -> Copied data for {len(common_columns)} matching columns.")
+
+                    # 4. Drop the old table
+                    cursor.execute("DROP TABLE core_privatemessage;")
+                    self.stdout.write("  -> Dropped old table.")
+
+                    # 5. Rename the new table
+                    cursor.execute("ALTER TABLE core_privatemessage_new RENAME TO core_privatemessage;")
+                    self.stdout.write("  -> Renamed new table. Rebuild complete.")
+                else:
+                    self.stdout.write(self.style.SUCCESS("  -> 'core_privatemessage' table already matches the current schema. No rebuild needed."))
 
         self.stdout.write(self.style.SUCCESS("\n--- Manual Schema Upgrade Complete ---"))
-
