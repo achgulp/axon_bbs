@@ -169,6 +169,7 @@ class SendPrivateMessageView(views.APIView):
             PrivateMessage.objects.create(
                 author=sender,
                 recipient=recipient,
+                subject=subject,
                 sender_pubkey=sender.pubkey,
                 recipient_pubkey=recipient_pubkey,
                 e2e_encrypted_content=base64.b64encode(e2e_encrypted_content).decode('utf-8'),

@@ -177,6 +177,7 @@ class Message(Content):
 
 class PrivateMessage(Content):
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail', null=True, blank=True)
+    subject = models.CharField(max_length=255, null=True, blank=True)
     sender_pubkey = models.TextField(blank=True, null=True)
     recipient_pubkey = models.TextField(null=True, blank=True)
     metadata_manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for BBS-level metadata.")
