@@ -25,6 +25,7 @@ from django.db.models import Q
 import logging
 import json
 import base64
+import hashlib
 
 from core.services.encryption_utils import encrypt_for_recipients_only, generate_checksum
 from ..serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
@@ -152,7 +153,7 @@ class SendPrivateMessageView(views.APIView):
                 "type": "pm_metadata",
                 "sender_pubkey_checksum": generate_checksum(sender.pubkey),
                 "recipient_pubkey_checksum": generate_checksum(recipient_pubkey),
-                "e2e_content_hash": service_manager.bitsync_service.get_content_hash(e2e_encrypted_content),
+                "e2e_content_hash": hashlib.sha256(e2e_encrypted_content).hexdigest(),
                 "e2e_manifest": e2e_manifest,
             }
             
