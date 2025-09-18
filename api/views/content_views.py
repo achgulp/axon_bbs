@@ -198,14 +198,17 @@ class PrivateMessageListView(generics.ListAPIView):
             
         queryset = self.get_queryset()
         for message in queryset:
+            # First, decrypt the outer metadata envelope
             decrypted_metadata_bytes = service_manager.sync_service.get_decrypted_content(message.metadata_manifest)
             if not decrypted_metadata_bytes:
                 message.decrypted_body = "[Decryption Error: Could not read metadata]"
                 continue
 
+            # Now, use the decrypted metadata to get the inner E2E manifest
             metadata = json.loads(decrypted_metadata_bytes.decode('utf-8'))
             e2e_manifest = metadata.get('e2e_manifest')
 
+            # Finally, decrypt the actual message content with the E2E manifest
             decrypted_json = decrypt_for_recipients_only(
                 base64.b64decode(message.e2e_encrypted_content),
                 e2e_manifest,
@@ -239,14 +242,17 @@ class PrivateMessageOutboxView(generics.ListAPIView):
             
         queryset = self.get_queryset()
         for message in queryset:
+            # First, decrypt the outer metadata envelope
             decrypted_metadata_bytes = service_manager.sync_service.get_decrypted_content(message.metadata_manifest)
             if not decrypted_metadata_bytes:
                 message.decrypted_body = "[Decryption Error: Could not read metadata]"
                 continue
 
+            # Now, use the decrypted metadata to get the inner E2E manifest
             metadata = json.loads(decrypted_metadata_bytes.decode('utf-8'))
             e2e_manifest = metadata.get('e2e_manifest')
 
+            # Finally, decrypt the actual message content with the E2E manifest
             decrypted_json = decrypt_for_recipients_only(
                 base64.b64decode(message.e2e_encrypted_content),
                 e2e_manifest,
