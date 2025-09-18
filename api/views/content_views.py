@@ -1,4 +1,3 @@
-# axon_bbs/api/views/content_views.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
@@ -13,7 +12,8 @@
 # See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/api/views/content_views.py
@@ -170,6 +170,7 @@ class SendPrivateMessageView(views.APIView):
                 author=sender,
                 recipient=recipient,
                 sender_pubkey=sender.pubkey,
+                recipient_pubkey=recipient_pubkey,
                 e2e_encrypted_content=base64.b64encode(e2e_encrypted_content).decode('utf-8'),
                 metadata_manifest=metadata_manifest
             )
