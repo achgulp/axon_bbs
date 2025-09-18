@@ -13,7 +13,8 @@
 # See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/models.py
@@ -75,7 +76,7 @@ class User(AbstractUser):
                 ).decode('utf-8').strip()
             except Exception as e:
                 print(f"Warning: Could not normalize public key for user {self.username}: {e}")
-        
+    
         super(User, self).save(*args, **kwargs)
 
 
@@ -177,6 +178,7 @@ class Message(Content):
 class PrivateMessage(Content):
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail', null=True, blank=True)
     sender_pubkey = models.TextField(blank=True, null=True)
+    recipient_pubkey = models.TextField(null=True, blank=True)
     metadata_manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for BBS-level metadata.")
     e2e_encrypted_content = models.TextField(blank=True, null=True, help_text="The end-to-end encrypted message body and subject.")
     is_read = models.BooleanField(default=False)
