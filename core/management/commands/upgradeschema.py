@@ -68,39 +68,49 @@ class Command(BaseCommand):
                 if old_columns_exist:
                     self.stdout.write(self.style.WARNING("Old columns found. Rebuilding 'core_privatemessage' table to match current models..."))
                     
-                    # 1. Get the schema for the current model
                     model = PrivateMessage
-                    new_schema = connection.schema_editor().column_sql(model, model._meta.get_field('id'))[0]
-                    new_columns_with_types = [new_schema]
+                    new_columns_with_types = []
                     final_fields = []
 
+                    # Correctly build the list of column definitions for the new table
                     for field in model._meta.local_fields:
-                        if field.name == 'id': continue
-                        col_sql = connection.schema_editor().column_sql(model, field)
-                        if col_sql:
-                            new_columns_with_types.append(f'"{field.column}" {col_sql[1]}')
+                        column_sql = connection.schema_editor().column_sql(model, field)
+                        if column_sql:
+                            # column_sql is a tuple like ('"my_field"', 'INTEGER NULL')
+                            # We combine them to get a valid column definition string
+                            full_column_definition = f"{column_sql[0]} {column_sql[1]}"
+                            new_columns_with_types.append(full_column_definition)
                             final_fields.append(field.column)
-
-                    # 2. Create a new table with the correct schema
+                    
+                    # 1. Create a new table with the correct schema
                     create_sql = f"CREATE TABLE core_privatemessage_new ({', '.join(new_columns_with_types)});"
                     cursor.execute(create_sql)
                     self.stdout.write("  -> Created new temporary table.")
 
-                    # 3. Copy data from the old table to the new one
+                    # 2. Copy data from the old table to the new one
                     common_columns = [col for col in final_fields if col in column_names]
                     common_columns_str = ', '.join(f'"{col}"' for col in common_columns)
                     insert_sql = f"INSERT INTO core_privatemessage_new ({common_columns_str}) SELECT {common_columns_str} FROM core_privatemessage;"
                     cursor.execute(insert_sql)
                     self.stdout.write(f"  -> Copied data for {len(common_columns)} matching columns.")
 
-                    # 4. Drop the old table
+                    # 3. Drop the old table
                     cursor.execute("DROP TABLE core_privatemessage;")
                     self.stdout.write("  -> Dropped old table.")
 
-                    # 5. Rename the new table
+                    # 4. Rename the new table
                     cursor.execute("ALTER TABLE core_privatemessage_new RENAME TO core_privatemessage;")
                     self.stdout.write("  -> Renamed new table. Rebuild complete.")
                 else:
                     self.stdout.write(self.style.SUCCESS("  -> 'core_privatemessage' table already matches the current schema. No rebuild needed."))
 
         self.stdout.write(self.style.SUCCESS("\n--- Manual Schema Upgrade Complete ---"))
+
+---
+### Full Upgrade Procedure for PiBBS
+
+After updating the file, please run the full sequence of commands again on your PiBBS machine. This will ensure everything is clean and synchronized.
+
+**Step 1: Clean the Migration Files**
+```bash
+python manage.py resetmigrations core
