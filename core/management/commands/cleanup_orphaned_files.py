@@ -1,3 +1,4 @@
+# axon_bbs/core/management/commands/cleanup_orphaned_files.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
@@ -8,8 +9,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -67,16 +68,16 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("--- DRY RUN ---"))
             for attachment in orphaned_attachments:
                 self.stdout.write(f"[WOULD DELETE] DB Record: {attachment.filename} ({attachment.id})")
-                content_hash = attachment.manifest.get('content_hash')
+                content_hash = attachment.metadata_manifest.get('content_hash') if attachment.metadata_manifest else None
                 if content_hash:
                     chunk_dir = os.path.join(settings.BASE_DIR, 'data', 'bitsync_chunks', content_hash)
                     if os.path.isdir(chunk_dir):
                         self.stdout.write(f"                Disk Chunks: {chunk_dir}")
                     else:
-                        self.stdout.write(self.style.NOTICE(f"                Disk Chunks: Not found at {chunk_dir}"))
+                        self.stdout.write(self.style.NOTICE(f"                 Disk Chunks: Not found at {chunk_dir}"))
             return
 
-        if not options['no_input']:
+        if not options['no-input']:
             confirm = input(f"Are you sure you want to delete these {count} files and their data? [y/N] ")
             if confirm.lower() != 'y':
                 self.stdout.write(self.style.ERROR("Cleanup cancelled by user."))
@@ -85,7 +86,7 @@ class Command(BaseCommand):
         deleted_count = 0
         for attachment in orphaned_attachments:
             self.stdout.write(f"Deleting {attachment.filename}...")
-            content_hash = attachment.manifest.get('content_hash')
+            content_hash = attachment.metadata_manifest.get('content_hash') if attachment.metadata_manifest else None
             
             # 1. Delete the data chunks from the disk
             if content_hash:
@@ -101,4 +102,4 @@ class Command(BaseCommand):
             attachment.delete()
             deleted_count += 1
             
-        self.stdout.write(self.style.SUCCESS(f"\nCleanup complete. Deleted {deleted_count} orphaned file(s)."))
+        self.stdout.write(self.style.SUCCESS(f"\nCleanup complete. Deleted {deleted_count} orphaned

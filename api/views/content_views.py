@@ -1,3 +1,4 @@
+# axon_bbs/api/views/content_views.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
@@ -8,8 +9,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -24,8 +25,11 @@ from django.db.models import Q
 import logging
 import json
 
+# MODIFICATION START: Add new import
+from core.services.encryption_utils import encrypt_for_recipients_only
+# MODIFICATION END
 from ..serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
-from core.models import MessageBoard, Message, IgnoredPubkey, FileAttachment, PrivateMessage, User, Alias
+from core.models import MessageBoard, Message, IgnoredPubkey, FileAttachment, PrivateMessage, User, Alias, TrustedInstance
 from core.services.service_manager import service_manager
 
 logger = logging.getLogger(__name__)
@@ -82,7 +86,7 @@ class PostMessageView(views.APIView):
                 return Response({"error": "You do not have permission to post on this board."}, status=status.HTTP_403_FORBIDDEN)
 
             attachments = FileAttachment.objects.filter(id__in=attachment_ids, author=user)
-            attachment_hashes = [att.manifest['content_hash'] for att in attachments]
+            attachment_hashes = [att.metadata_manifest['content_hash'] for att in attachments]
             
             message_content = {
                 "type": "message",
@@ -94,9 +98,9 @@ class PostMessageView(views.APIView):
             }
             
             if service_manager.bitsync_service:
-                _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(message_content)
+                _content_hash, metadata_manifest = service_manager.bitsync_service.create_encrypted_content(message_content)
                 message = Message.objects.create(
-                    board=board, subject=subject, body=body, author=user, pubkey=user.pubkey, manifest=manifest
+                    board=board, subject=subject, body=body, author=user, pubkey=user.pubkey, metadata_manifest=metadata_manifest
                 )
                 message.attachments.set(attachments)
                 logger.info(f"New message '{subject}' with {attachments.count()} attachment(s) posted.")
@@ -111,10 +115,12 @@ class SendPrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        if not request.session.get('unencrypted_priv_key'):
+        # MODIFICATION START
+        # The user's private key is needed here for the E2E encryption step
+        private_key = request.session.get('unencrypted_priv_key')
+        if not private_key:
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
         
-        # --- START FIX ---
         identifier = request.data.get('recipient_identifier')
         subject = request.data.get('subject')
         body = request.data.get('body')
@@ -135,37 +141,54 @@ class SendPrivateMessageView(views.APIView):
         
         if not recipient_pubkey:
             return Response({"error": f"Recipient '{identifier}' not found or has no public key."}, status=status.HTTP_404_NOT_FOUND)
-        # --- END FIX ---
 
         try:
-            pm_content = {
-                "type": "pm_body",
-                "sender_pubkey": sender.pubkey,
-                "recipient_pubkey": recipient_pubkey,
+            # Step 1: Perform the E2E encryption
+            e2e_payload = json.dumps({
                 "subject": subject,
                 "body": body,
+                "sender_pubkey": sender.pubkey,
+                "recipient_pubkey": recipient_pubkey,
+            })
+            
+            # The inner content is only encrypted for the two users.
+            e2e_encrypted_content, e2e_manifest = encrypt_for_recipients_only(e2e_payload, [sender.pubkey, recipient_pubkey])
+
+            # Step 2: Create the BBS-level metadata
+            metadata = {
+                "type": "pm_metadata",
+                "sender_pubkey_checksum": service_manager.bitsync_service.generate_checksum(sender.pubkey),
+                "recipient_pubkey_checksum": service_manager.bitsync_service.generate_checksum(recipient_pubkey),
+                "e2e_content_hash": service_manager.bitsync_service.get_content_hash(e2e_encrypted_content),
+                "e2e_manifest": e2e_manifest,
             }
             
-            _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(
-                pm_content,
-                recipients_pubkeys=[recipient_pubkey, sender.pubkey]
+            # Step 3: Encrypt the metadata for all BBS instances
+            all_bbs_instances = list(TrustedInstance.objects.all())
+            bbs_pubkeys = [inst.pubkey for inst in all_bbs_instances if inst.pubkey]
+            
+            _content_hash, metadata_manifest = service_manager.bitsync_service.create_encrypted_content(
+                metadata,
+                b_b_s_instance_pubkeys=bbs_pubkeys,
+                is_double_encrypted=True
             )
 
+            # Step 4: Save the raw E2E content and the BBS metadata manifest to the database
             PrivateMessage.objects.create(
                 author=sender,
                 recipient=recipient,
                 sender_pubkey=sender.pubkey,
-                recipient_pubkey=recipient_pubkey,
-                subject=subject,
-                manifest=manifest
+                e2e_encrypted_content=base64.b64encode(e2e_encrypted_content).decode('utf-8'),
+                metadata_manifest=metadata_manifest
             )
             
-            logger.info(f"User '{sender.username}' sent PM to pubkey '{recipient_pubkey[:12]}...'")
+            logger.info(f"User '{sender.username}' sent E2E PM to pubkey '{recipient_pubkey[:12]}...'")
             return Response({"status": "Private message sent successfully."}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             logger.error(f"Failed to send PM from {sender.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred while sending the message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # MODIFICATION END
 
 
 class PrivateMessageListView(generics.ListAPIView):

@@ -46,22 +46,23 @@ def rekey_content_action(modeladmin, request, queryset):
         name = getattr(item, 'subject', getattr(item, 'filename', str(item.id)))
         try:
             if isinstance(item, Applet):
-                manifest_field = 'code_manifest'
+                metadata_manifest_field = 'code_manifest'
             elif isinstance(item, AppletData):
-                manifest_field = 'data_manifest'
+                metadata_manifest_field = 'data_manifest'
             else:
-                manifest_field = 'manifest'
-            manifest = getattr(item, manifest_field)
+                metadata_manifest_field = 'metadata_manifest'
+            metadata_manifest = getattr(item, metadata_manifest_field)
 
-            if not manifest:
+            if not metadata_manifest:
                 modeladmin.message_user(request, f"Content '{name}' has no manifest to re-key.", level='WARNING')
                 continue
             
-            new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
+            new_metadata_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(metadata_manifest)
             
-            setattr(item, manifest_field, new_manifest)
+            setattr(item, metadata_manifest_field, new_metadata_manifest)
             item.save()
             updated_count += 1
+        
         except Exception as e:
             modeladmin.message_user(request, f"Failed to re-key content '{name}': {e}", level='ERROR')
     
@@ -86,7 +87,7 @@ class UserAdmin(BaseUserAdmin):
             ("Important dates", {"fields": ("last_login", "date_joined")}),
         ]
         if obj.pubkey:
-             fieldsets.insert(2, ("Avatar & Identity", {"fields": ('avatar_preview', 'avatar_path', 'pubkey')}))
+            fieldsets.insert(2, ("Avatar & Identity", {"fields": ('avatar_preview', 'avatar_path', 'pubkey')}))
         
         return tuple(fieldsets)
 
@@ -95,7 +96,6 @@ class UserAdmin(BaseUserAdmin):
         if obj.avatar and obj.avatar.url:
             return format_html('<img src="{}" width="128" height="128" style="border-radius: 50%;" />', obj.avatar.url)
         return "No avatar set."
-
     @admin.display(description='Avatar File Path')
     def avatar_path(self, obj):
         return obj.avatar.name if obj.avatar else "N/A"
@@ -176,7 +176,7 @@ class MessageAdmin(admin.ModelAdmin):
 
 @admin.register(PrivateMessage)
 class PrivateMessageAdmin(admin.ModelAdmin):
-    list_display = ('subject', 'author', 'recipient', 'created_at', 'is_read')
+    list_display = ('id', 'author', 'recipient', 'is_read', 'created_at')
     list_filter = ('author', 'recipient', 'is_read')
     date_hierarchy = 'created_at'
     actions = [rekey_content_action]
@@ -377,11 +377,11 @@ class AppletAdmin(admin.ModelAdmin):
                 self.message_user(request, "BitSync service is not available. Cannot create manifest.", level='ERROR')
                 return
 
-            _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(
+            _content_hash, metadata_manifest = service_manager.bitsync_service.create_encrypted_content(
                 content_to_encrypt, 
                 recipients_pubkeys=recipients
             )
-            obj.code_manifest = manifest
+            obj.code_manifest = metadata_manifest
         
         super().save_model(request, obj, form, change)
 

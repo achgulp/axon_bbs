@@ -1,3 +1,4 @@
+# axon_bbs/core/services/sync_service.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
@@ -36,8 +37,8 @@ from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 
-from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey
-from .encryption_utils import generate_checksum, generate_short_id
+from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey, Alias, Applet, AppletData
+from core.services.encryption_utils import generate_checksum, generate_short_id, decrypt_for_recipients_only
 from .avatar_generator import generate_cow_avatar
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ class SyncService:
         logger.info("BitSync Service thread started. Polling will begin shortly.")
 
     def _run(self):
-        time.sleep(30) # Increased initial delay to 30 seconds
+        time.sleep(30)
         logger.info("SyncService polling loop is now active.")
         while True:
             try:
@@ -94,16 +95,16 @@ class SyncService:
         logger.info("Checking for any incomplete downloads to resume...")
         
         all_content = list(FileAttachment.objects.all()) + \
-                      list(Message.objects.filter(manifest__isnull=False)) + \
-                      list(PrivateMessage.objects.filter(manifest__isnull=False))
+                      list(Message.objects.filter(metadata_manifest__isnull=False)) + \
+                      list(PrivateMessage.objects.filter(metadata_manifest__isnull=False))
         
         incomplete_items = [
             item for item in all_content
-            if item.manifest and not service_manager.bitsync_service.are_all_chunks_local(item.manifest)
+            if item.metadata_manifest and not service_manager.bitsync_service.are_all_chunks_local(item.metadata_manifest)
         ]
         
         for item in incomplete_items:
-            self._schedule_download(item.manifest)
+            self._schedule_download(item.metadata_manifest)
         
         if not incomplete_items:
             logger.info("No incomplete downloads found.")
@@ -185,9 +186,9 @@ class SyncService:
             content_hash = manifest.get('content_hash')
             if not content_hash: continue
             
-            exists = Message.objects.filter(manifest__content_hash=content_hash).exists() or \
-                     FileAttachment.objects.filter(manifest__content_hash=content_hash).exists() or \
-                     PrivateMessage.objects.filter(manifest__content_hash=content_hash).exists()
+            exists = Message.objects.filter(metadata_manifest__content_hash=content_hash).exists() or \
+                     FileAttachment.objects.filter(metadata_manifest__content_hash=content_hash).exists() or \
+                     PrivateMessage.objects.filter(metadata_manifest__content_hash=content_hash).exists()
 
             if not exists:
                 self._schedule_download(manifest)
@@ -232,8 +233,8 @@ class SyncService:
 
                 elif action_type == 'unpin_content':
                     content_hash = action_data.get('content_hash_target')
-                    Message.objects.filter(manifest__content_hash=content_hash).update(is_pinned=False, pinned_by=None)
-                    FileAttachment.objects.filter(manifest__content_hash=content_hash).update(is_pinned=False, pinned_by=None)
+                    Message.objects.filter(metadata_manifest__content_hash=content_hash).update(is_pinned=False, pinned_by=None)
+                    FileAttachment.objects.filter(metadata_manifest__content_hash=content_hash).update(is_pinned=False, pinned_by=None)
                     logger.info(f"Federated unpin applied for content hash: {content_hash[:12]}...")
 
                 elif action_type == 'update_profile':
@@ -259,9 +260,9 @@ class SyncService:
         from .service_manager import service_manager
         content_hash = manifest.get('content_hash')
 
-        if Message.objects.filter(manifest__content_hash=content_hash).exists() or \
-           FileAttachment.objects.filter(manifest__content_hash=content_hash).exists() or \
-           PrivateMessage.objects.filter(manifest__content_hash=content_hash).exists():
+        if Message.objects.filter(metadata_manifest__content_hash=content_hash).exists() or \
+           FileAttachment.objects.filter(metadata_manifest__content_hash=content_hash).exists() or \
+           PrivateMessage.objects.filter(metadata_manifest__content_hash=content_hash).exists():
             return
 
         logger.info(f"Processing newly completed download for hash {content_hash[:10]}...")
@@ -310,7 +311,7 @@ class SyncService:
                                 new_user.nickname = details.get('nickname', new_user.nickname)
                                 new_user.karma = details.get('karma', new_user.karma)
                                 new_user.save()
-                                
+                            
                                 avatar_hash = details.get('avatar_hash')
                                 if avatar_hash:
                                     self._apply_avatar_from_hash(new_user, avatar_hash)
@@ -320,15 +321,16 @@ class SyncService:
                 
                 required_hashes = content.get('attachment_hashes', [])
                 if required_hashes:
-                    existing_attachments = FileAttachment.objects.filter(manifest__content_hash__in=required_hashes)
+                    existing_attachments = FileAttachment.objects.filter(metadata_manifest__content_hash__in=required_hashes)
                     if len(existing_attachments) != len(required_hashes):
                         logger.warning(f"Message {content_hash[:10]} is waiting for attachments to download. Will retry processing later.")
                         return
+        
                 
                 board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
                 message = Message.objects.create(
                     board=board, subject=content.get('subject'), body=content.get('body'),
-                    pubkey=content.get('pubkey'), manifest=final_manifest
+                    pubkey=content.get('pubkey'), metadata_manifest=final_manifest
                 )
                 if required_hashes:
                     message.attachments.set(existing_attachments)
@@ -339,48 +341,64 @@ class SyncService:
                     filename=final_manifest.get('filename', 'unknown'),
                     content_type=final_manifest.get('content_type_val', 'application/octet-stream'),
                     size=final_manifest.get('size', 0),
-                    manifest=final_manifest
+                    metadata_manifest=final_manifest
                 )
                 logger.info(f"Successfully saved new file: '{final_manifest.get('filename')}'")
                 
-                # --- MODIFICATION START ---
-                # Correctly query the JSONField for the avatar hash.
                 pending_actions = FederatedAction.objects.filter(
                     action_type='update_profile',
                     action_details__avatar_hash=content_hash
                 )
-                # --- MODIFICATION END ---
                 for action in pending_actions:
                     user_to_update = User.objects.filter(pubkey=action.pubkey_target).first()
                     if user_to_update:
                         self._apply_avatar_from_attachment(user_to_update, attachment)
 
-            elif content_type == 'pm':
-                pm_content = json.loads(decrypted_data)
-                sender_pubkey = pm_content.get('sender_pubkey')
-                recipient_pubkey = pm_content.get('recipient_pubkey')
+            elif content_type == 'pm_metadata':
+                metadata = json.loads(decrypted_data)
+                sender_pubkey_checksum = metadata.get('sender_pubkey_checksum')
+                recipient_pubkey_checksum = metadata.get('recipient_pubkey_checksum')
 
-                if not recipient_pubkey:
-                    logger.error(f"Received PM manifest {content_hash[:10]} is missing the recipient_pubkey field.")
-                    return
-                
-                recipient_user = User.objects.filter(pubkey=recipient_pubkey).first()
+                local_instance_checksum = generate_checksum(self.local_instance.pubkey)
 
-                if recipient_user:
-                    PrivateMessage.objects.create(
-                        recipient=recipient_user,
-                        recipient_pubkey=recipient_user.pubkey,
-                        sender_pubkey=sender_pubkey,
-                        subject=pm_content.get('subject'),
-                        manifest=final_manifest
-                    )
-                    logger.info(f"Successfully received and saved a federated PM for user '{recipient_user.username}'.")
+                if local_instance_checksum == recipient_pubkey_checksum:
+                    # The e2e_encrypted_content is stored in the metadata. We save it raw.
+                    e2e_content_hash = metadata.get('e2e_content_hash')
+                    e2e_encrypted_content = self._download_content_by_hash(e2e_content_hash)
+                    
+                    if e2e_encrypted_content:
+                        recipient_user = User.objects.filter(pubkey__checksum=recipient_pubkey_checksum).first()
+                        
+                        if recipient_user:
+                            # Create the message entry on this BBS. The content is still encrypted.
+                            PrivateMessage.objects.create(
+                                recipient=recipient_user,
+                                sender_pubkey=self._find_pubkey_by_checksum(sender_pubkey_checksum),
+                                e2e_encrypted_content=base64.b64encode(e2e_encrypted_content).decode('utf-8'),
+                                metadata_manifest=final_manifest
+                            )
+                            logger.info(f"Successfully received and saved a federated E2E PM for user '{recipient_user.username}'.")
+                    else:
+                        logger.warning(f"Could not download E2E content for PM with metadata hash {content_hash[:10]}...")
+
                 else:
-                    recipient_checksum = generate_checksum(recipient_pubkey)
-                    logger.warning(f"Received a PM for a pubkey not belonging to any local user. Checksum: {recipient_checksum}")
+                    logger.info(f"Received PM metadata for a different BBS. Ignoring.")
 
         except Exception as e:
-            logger.error(f"Failed to create database object from manifest {content_hash[:10]}: {e}")
+            logger.error(f"Failed to create database object from manifest {content_hash[:10]}: {e}", exc_info=True)
+
+    def _find_pubkey_by_checksum(self, checksum):
+        """Helper to find a pubkey from a checksum, used for E2E message processing."""
+        for user in User.objects.all():
+            if user.pubkey and generate_checksum(user.pubkey) == checksum:
+                return user.pubkey
+        for instance in TrustedInstance.objects.all():
+            if instance.pubkey and generate_checksum(instance.pubkey) == checksum:
+                return instance.pubkey
+        for alias in Alias.objects.all():
+            if alias.pubkey and generate_checksum(alias.pubkey) == checksum:
+                return alias.pubkey
+        return None
 
     def _find_seeders(self, content_hash: str) -> list:
         logger.info(f"Discovering seeders for content {content_hash[:10]}...")
@@ -411,7 +429,7 @@ class SyncService:
                     with open(chunk_path, 'rb') as f:
                         local_chunks_data += f.read()
                 except FileNotFoundError:
-                    break 
+                    break
             else:
                 return local_chunks_data
 
@@ -454,7 +472,34 @@ class SyncService:
         else:
             logger.error(f"Download for '{item_name}' is incomplete. Will retry on next sync cycle.")
             return None
+    
+    def _download_content_by_hash(self, content_hash: str) -> bytes | None:
+        """Helper to download a file by its hash directly, assuming a manifest exists."""
+        from .service_manager import service_manager
+        # Find a manifest for this content hash. In a real system, we'd search
+        # through all models, but for this demo, we'll assume it exists somewhere.
+        manifest = self.get_manifest_by_content_hash(content_hash)
+        if not manifest:
+            logger.warning(f"Could not find a manifest for content hash {content_hash[:10]}... to download.")
+            return None
+        
+        return self._download_content(manifest)
 
+    def get_manifest_by_content_hash(self, content_hash: str):
+        """Searches for a manifest across all models by content hash."""
+        # This is a helper function that might be slow but is necessary without a dedicated manifest table.
+        for model in [Message, FileAttachment, PrivateMessage, Applet, AppletData]:
+            field_name = 'metadata_manifest'
+            if not hasattr(model, field_name):
+                field_name = 'code_manifest' if hasattr(model, 'code_manifest') else 'data_manifest'
+                if not hasattr(model, field_name):
+                    continue
+
+            obj = model.objects.filter(**{f'{field_name}__content_hash': content_hash}).first()
+            if obj:
+                return getattr(obj, field_name)
+        return None
+    
     def _download_chunk(self, seeder_url, content_hash, chunk_index, proxies):
         try:
             url = f"{seeder_url.strip('/')}/api/bitsync/chunk/{content_hash}/{chunk_index}/"
@@ -462,7 +507,7 @@ class SyncService:
             if response.status_code == 200: return chunk_index, response.content
         except requests.exceptions.RequestException as e:
             logger.warning(f"Failed to download chunk {chunk_index} from {seeder_url}: {e}")
-        return chunk_index, None
+            return chunk_index, None
 
     def _decrypt_data(self, encrypted_data: bytes, manifest: dict) -> bytes | None:
         if not encrypted_data: return None
@@ -503,7 +548,7 @@ class SyncService:
     def _apply_avatar_from_hash(self, user, avatar_hash):
         """Finds a local attachment by hash and applies it as a user's avatar."""
         try:
-            attachment = FileAttachment.objects.get(manifest__content_hash=avatar_hash)
+            attachment = FileAttachment.objects.get(metadata_manifest__content_hash=avatar_hash)
             self._apply_avatar_from_attachment(user, attachment)
         except FileAttachment.DoesNotExist:
             logger.info(f"Avatar for user {user.username} (hash: {avatar_hash[:10]}) is not yet local. Will apply after download.")
@@ -512,12 +557,12 @@ class SyncService:
         """Given a user and a FileAttachment, decrypts the file and saves it as the user's avatar."""
         try:
             logger.info(f"Attempting to apply new federated avatar {attachment.filename} to user {user.username}")
-            encrypted_data = self._download_content(attachment.manifest)
+            encrypted_data = self._download_content(attachment.metadata_manifest)
             if not encrypted_data:
                 logger.warning(f"Could not get encrypted data for avatar {attachment.filename}.")
                 return
 
-            decrypted_data = self._decrypt_data(encrypted_data, attachment.manifest)
+            decrypted_data = self._decrypt_data(encrypted_data, attachment.metadata_manifest)
             if not decrypted_data:
                 logger.warning(f"Could not decrypt data for avatar {attachment.filename}.")
                 return

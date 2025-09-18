@@ -1,3 +1,4 @@
+# axon_bbs/core/models.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
@@ -8,8 +9,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -41,7 +42,6 @@ class User(AbstractUser):
     is_moderator = models.BooleanField(default=False, help_text="Grants moderator permissions.")
     karma = models.IntegerField(default=10, help_text="User's reputation score.")
     last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this user.")
-    # --- NEW FIELD ---
     timezone = models.CharField(max_length=50, blank=True, null=True, help_text="User's preferred display timezone (IANA name).")
     
     groups = models.ManyToManyField(
@@ -156,7 +156,7 @@ class FileAttachment(Content):
     filename = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)
     size = models.PositiveIntegerField()
-    manifest = models.JSONField(help_text="BitSync manifest for P2P file distribution.")
+    metadata_manifest = models.JSONField(help_text="BitSync manifest for P2P file distribution.")
 
     def __str__(self):
         return f"{self.filename} ({self.id})"
@@ -166,7 +166,7 @@ class Message(Content):
     subject = models.CharField(max_length=255)
     body = models.TextField()
     pubkey = models.TextField(blank=True, null=True)
-    manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for P2P content distribution.")
+    metadata_manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for P2P content distribution.")
     attachments = models.ManyToManyField(FileAttachment, blank=True, related_name='messages')
     agent_status = models.CharField(max_length=20, default='pending', choices=[('pending', 'Pending'), ('processed', 'Processed'), ('failed', 'Failed')])
     last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this message.")
@@ -176,19 +176,18 @@ class Message(Content):
 
 class PrivateMessage(Content):
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail', null=True, blank=True)
-    recipient_pubkey = models.TextField()
     sender_pubkey = models.TextField(blank=True, null=True)
-    subject = models.CharField(max_length=255)
+    metadata_manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for BBS-level metadata.")
+    e2e_encrypted_content = models.TextField(blank=True, null=True, help_text="The end-to-end encrypted message body and subject.")
     is_read = models.BooleanField(default=False)
-    manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for E2E encrypted content.")
 
     def __str__(self):
         recipient_display = "Unknown"
         if self.recipient:
             recipient_display = self.recipient.username
         else:
-            recipient_display = f"PubKey starting with {self.recipient_pubkey[:12]}..."
-        return f"'{self.subject}' to {recipient_display} from {self.author.username if self.author else 'system'}"
+            recipient_display = f"ID: {str(self.id)[:8]}..."
+        return f"Private Message to {recipient_display} from {self.author.username if self.author else 'system'}"
 
 class TrustedInstance(models.Model):
     web_ui_onion_url = models.URLField(max_length=255, blank=True, null=True)
@@ -208,6 +207,7 @@ class TrustedInstance(models.Model):
                 ).decode('utf-8').strip()
             except Exception as e:
                 raise ValidationError(f"Invalid public key format: {e}")
+        
         super().save(*args, **kwargs)
     def __str__(self):
         return self.web_ui_onion_url or "Local Instance"
@@ -242,6 +242,7 @@ class FederatedAction(models.Model):
         ('pending_approval', 'Pending Approval'),
         ('denied', 'Denied'),
     ]
+    
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     action_type = models.CharField(max_length=50, choices=ACTION_CHOICES)
     pubkey_target = models.TextField(blank=True, null=True, help_text="The pubkey targeted by the action (e.g., for a ban).")

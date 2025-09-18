@@ -1,3 +1,4 @@
+# axon_bbs/core/services/encryption_utils.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
@@ -8,11 +9,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/services/encryption_utils.py
@@ -26,6 +27,8 @@ import hashlib
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 # NEW: Import necessary modules for E2E encryption
 from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.padding import PKCS7
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
@@ -56,7 +59,6 @@ def decrypt_data(encrypted_data: bytes, key: bytes) -> str:
     decrypted_bytes = f.decrypt(encrypted_data)
     return decrypted_bytes.decode()
 
-# NEW: E2E function to encrypt data with a user's public key
 def encrypt_with_public_key(data: str, public_key_pem: str) -> str:
     """Encrypts a string with an RSA public key and returns a base64 encoded string."""
     public_key = load_pem_public_key(public_key_pem.encode())
@@ -70,7 +72,6 @@ def encrypt_with_public_key(data: str, public_key_pem: str) -> str:
     )
     return base64.b64encode(ciphertext).decode('utf-8')
 
-# NEW: E2E function to decrypt data with a user's private key
 def decrypt_with_private_key(encrypted_data_b64: str, private_key_pem: str) -> str:
     """Decrypts a base64 encoded string with an RSA private key."""
     private_key = load_pem_private_key(private_key_pem.encode(), password=None)
@@ -104,4 +105,84 @@ def generate_checksum(data_string: str) -> str:
     except Exception:
         # For non-keys, just strip whitespace
         normalized_data = data_string.strip().encode('utf-8')
+    
     return hashlib.md5(normalized_data).hexdigest()
+
+def encrypt_for_recipients_only(message: str, pubkeys: list):
+    """
+    Encrypts a message with a session key, then encrypts the session key
+    for a list of recipient public keys. Returns the encrypted message
+    and the list of encrypted session keys.
+    """
+    aes_key = os.urandom(32)
+    iv = os.urandom(16)
+    cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
+    padder = PKCS7(algorithms.AES.block_size).padder()
+    padded_data = padder.update(message.encode('utf-8')) + padder.finalize()
+    encryptor = cipher.encryptor()
+    encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
+
+    encrypted_keys = {}
+    for pubkey_pem in pubkeys:
+        try:
+            pubkey_obj = serialization.load_pem_public_key(pubkey_pem.encode())
+            encrypted_key = pubkey_obj.encrypt(
+                aes_key,
+                rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+            )
+            checksum = generate_checksum(pubkey_pem)
+            encrypted_keys[checksum] = base64.b64encode(encrypted_key).decode('utf-8')
+        except Exception as e:
+            logger.error(f"Failed to encrypt session key for pubkey with checksum {generate_checksum(pubkey_pem)}: {e}")
+
+    return encrypted_data, {
+        "encryption_iv": base64.b64encode(iv).decode('utf-8'),
+        "encrypted_aes_keys": encrypted_keys,
+    }
+
+# MODIFICATION START
+def decrypt_for_recipients_only(e2e_content: bytes, metadata_manifest: dict, private_key_pem: str) -> str | None:
+    """
+    Decrypts the E2E content using a key from the metadata manifest.
+    
+    Args:
+        e2e_content (bytes): The raw, E2E encrypted message content.
+        metadata_manifest (dict): The manifest containing the encrypted session keys.
+        private_key_pem (str): The user's private key to decrypt the session key.
+    
+    Returns:
+        str: The decrypted message content as a string, or None on failure.
+    """
+    try:
+        private_key = load_pem_private_key(private_key_pem.encode(), password=None)
+        public_key = private_key.public_key()
+        user_checksum = generate_checksum(public_key.public_bytes(
+            encoding=Encoding.PEM, format=PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8'))
+        
+        e2e_manifest = metadata_manifest.get('e2e_manifest')
+        encrypted_aes_key_b64 = e2e_manifest['encrypted_aes_keys'].get(user_checksum)
+
+        if not encrypted_aes_key_b64:
+            logger.warning("Could not find an encryption envelope for this user's key in the E2E manifest.")
+            return None
+        
+        encrypted_aes_key = base64.b64decode(encrypted_aes_key_b64)
+        aes_key = private_key.decrypt(
+            encrypted_aes_key,
+            rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+        )
+        
+        iv = base64.b64decode(e2e_manifest['encryption_iv'])
+        cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
+        decryptor = cipher.decryptor()
+        padded_data = decryptor.update(e2e_content) + decryptor.finalize()
+        unpadder = PKCS7(algorithms.AES.block_size).unpadder()
+        decrypted_data = unpadder.update(padded_data) + unpadder.finalize()
+        
+        return decrypted_data.decode('utf-8')
+    
+    except Exception as e:
+        logger.error(f"Failed to decrypt E2E content: {e}", exc_info=True)
+        return None
+# MODIFICATION END
