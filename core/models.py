@@ -1,4 +1,3 @@
-# axon_bbs/core/models.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
