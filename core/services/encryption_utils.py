@@ -20,12 +20,11 @@
 import os
 import logging
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 import hashlib
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
-# NEW: Import necessary modules for E2E encryption
 from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
@@ -140,7 +139,6 @@ def encrypt_for_recipients_only(message: str, pubkeys: list):
         "encrypted_aes_keys": encrypted_keys,
     }
 
-# MODIFICATION START
 def decrypt_for_recipients_only(e2e_content: bytes, metadata_manifest: dict, private_key_pem: str) -> str | None:
     """
     Decrypts the E2E content using a key from the metadata manifest.
@@ -185,4 +183,3 @@ def decrypt_for_recipients_only(e2e_content: bytes, metadata_manifest: dict, pri
     except Exception as e:
         logger.error(f"Failed to decrypt E2E content: {e}", exc_info=True)
         return None
-# MODIFICATION END

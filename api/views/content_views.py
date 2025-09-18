@@ -24,10 +24,9 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 import logging
 import json
+import base64
 
-# MODIFICATION START: Add new import
-from core.services.encryption_utils import encrypt_for_recipients_only
-# MODIFICATION END
+from core.services.encryption_utils import encrypt_for_recipients_only, generate_checksum
 from ..serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
 from core.models import MessageBoard, Message, IgnoredPubkey, FileAttachment, PrivateMessage, User, Alias, TrustedInstance
 from core.services.service_manager import service_manager
@@ -57,7 +56,7 @@ class MessageListView(generics.ListAPIView):
         board = get_object_or_404(MessageBoard, pk=self.kwargs['pk'])
         if self.request.user.access_level < board.required_access_level:
             return Message.objects.none()
-            
+        
         ignored_pubkeys = IgnoredPubkey.objects.filter(user=self.request.user).values_list('pubkey', flat=True)
         return Message.objects.filter(board=board).exclude(pubkey__in=ignored_pubkeys).order_by('-created_at')
     
@@ -115,8 +114,6 @@ class SendPrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        # MODIFICATION START
-        # The user's private key is needed here for the E2E encryption step
         private_key = request.session.get('unencrypted_priv_key')
         if not private_key:
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
@@ -129,7 +126,6 @@ class SendPrivateMessageView(views.APIView):
         if not all([identifier, subject, body]):
             return Response({"error": "Recipient, subject, and body are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Lookup recipient's public key by identifier
         recipient_pubkey = None
         recipient = User.objects.filter(Q(username__iexact=identifier) | Q(nickname__iexact=identifier)).first()
         if recipient and recipient.pubkey:
@@ -143,7 +139,6 @@ class SendPrivateMessageView(views.APIView):
             return Response({"error": f"Recipient '{identifier}' not found or has no public key."}, status=status.HTTP_404_NOT_FOUND)
 
         try:
-            # Step 1: Perform the E2E encryption
             e2e_payload = json.dumps({
                 "subject": subject,
                 "body": body,
@@ -151,19 +146,16 @@ class SendPrivateMessageView(views.APIView):
                 "recipient_pubkey": recipient_pubkey,
             })
             
-            # The inner content is only encrypted for the two users.
             e2e_encrypted_content, e2e_manifest = encrypt_for_recipients_only(e2e_payload, [sender.pubkey, recipient_pubkey])
 
-            # Step 2: Create the BBS-level metadata
             metadata = {
                 "type": "pm_metadata",
-                "sender_pubkey_checksum": service_manager.bitsync_service.generate_checksum(sender.pubkey),
-                "recipient_pubkey_checksum": service_manager.bitsync_service.generate_checksum(recipient_pubkey),
+                "sender_pubkey_checksum": generate_checksum(sender.pubkey),
+                "recipient_pubkey_checksum": generate_checksum(recipient_pubkey),
                 "e2e_content_hash": service_manager.bitsync_service.get_content_hash(e2e_encrypted_content),
                 "e2e_manifest": e2e_manifest,
             }
             
-            # Step 3: Encrypt the metadata for all BBS instances
             all_bbs_instances = list(TrustedInstance.objects.all())
             bbs_pubkeys = [inst.pubkey for inst in all_bbs_instances if inst.pubkey]
             
@@ -173,7 +165,6 @@ class SendPrivateMessageView(views.APIView):
                 is_double_encrypted=True
             )
 
-            # Step 4: Save the raw E2E content and the BBS metadata manifest to the database
             PrivateMessage.objects.create(
                 author=sender,
                 recipient=recipient,
@@ -188,7 +179,6 @@ class SendPrivateMessageView(views.APIView):
         except Exception as e:
             logger.error(f"Failed to send PM from {sender.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred while sending the message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        # MODIFICATION END
 
 
 class PrivateMessageListView(generics.ListAPIView):
