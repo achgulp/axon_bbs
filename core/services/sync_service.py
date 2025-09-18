@@ -13,7 +13,8 @@
 # See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/services/sync_service.py
@@ -461,7 +462,7 @@ class SyncService:
                     if chunk_save_path:
                          os.makedirs(os.path.dirname(chunk_save_path), exist_ok=True)
                          with open(chunk_save_path, 'wb') as f:
-                            f.write(chunk_data)
+                             f.write(chunk_data)
                     logger.info(f"  - Chunk {chunk_index + 1}/{num_chunks} for '{item_name}' downloaded.")
                 else: 
                      logger.error(f"   - Failed to download/verify chunk {chunk_index + 1} for '{item_name}'. Will retry on next sync.")
@@ -537,6 +538,13 @@ class SyncService:
             return None
 
     def get_decrypted_content(self, manifest: dict) -> bytes | None:
+        if not self.private_key:
+            self._load_identity()
+        
+        if not self.private_key:
+            logger.error("Cannot decrypt content because local instance identity is not loaded.")
+            return None
+
         content_hash = manifest.get('content_hash')
         if content_hash in self.currently_downloading:
             logger.info("Content is being downloaded by the background service; UI download will wait.")
