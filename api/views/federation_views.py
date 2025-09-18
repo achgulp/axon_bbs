@@ -42,9 +42,9 @@ class SyncView(views.APIView):
             server_now = timezone.now()
             since_dt = timezone.datetime.fromisoformat(since_str.replace(' ', '+'))
             
-            new_messages = Message.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
-            new_files = FileAttachment.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
-            new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, manifest__isnull=False)
+            new_messages = Message.objects.filter(created_at__gt=since_dt, metadata_manifest__isnull=False)
+            new_files = FileAttachment.objects.filter(created_at__gt=since_dt, metadata_manifest__isnull=False)
+            new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, metadata_manifest__isnull=False)
             new_applets = Applet.objects.filter(created_at__gt=since_dt, is_local=False, code_manifest__isnull=False)
             new_actions = FederatedAction.objects.filter(created_at__gt=since_dt, status='approved')
 
@@ -56,7 +56,7 @@ class SyncView(views.APIView):
                     item_manifest = item.code_manifest
                     item_manifest['content_type'] = 'applet'
                 else:
-                    item_manifest = item.manifest
+                    item_manifest = item.metadata_manifest
                 
                 if isinstance(item, Message):
                     item_manifest['content_type'] = 'message'
@@ -95,9 +95,9 @@ class SyncView(views.APIView):
 class BitSyncHasContentView(views.APIView):
     permission_classes = [TrustedPeerPermission]
     def get(self, request, content_hash, *args, **kwargs):
-        has_content = Message.objects.filter(manifest__content_hash=content_hash).exists() or \
-                      FileAttachment.objects.filter(manifest__content_hash=content_hash).exists() or \
-                      PrivateMessage.objects.filter(manifest__content_hash=content_hash).exists() or \
+        has_content = Message.objects.filter(metadata_manifest__content_hash=content_hash).exists() or \
+                      FileAttachment.objects.filter(metadata_manifest__content_hash=content_hash).exists() or \
+                      PrivateMessage.objects.filter(metadata_manifest__content_hash=content_hash).exists() or \
                       Applet.objects.filter(code_manifest__content_hash=content_hash).exists() or \
                       AppletData.objects.filter(data_manifest__content_hash=content_hash).exists()
         return Response(status=status.HTTP_200_OK if has_content else status.HTTP_404_NOT_FOUND)
