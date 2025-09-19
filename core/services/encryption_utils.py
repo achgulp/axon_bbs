@@ -49,6 +49,17 @@ def generate_checksum(data: str) -> str:
     """Generate a SHA-256 checksum of the data."""
     return hashlib.sha256(data.encode()).hexdigest()[:16]
 
+def generate_short_id(data: str = None) -> str:
+    """
+    Generate a short (12-char) unique ID: SHA-256 hex digest of input data or random bytes.
+    Used for content/manifest IDs in sync and federation.
+    """
+    if data is None:
+        h = hashlib.sha256(os.urandom(16))
+    else:
+        h = hashlib.sha256(data.encode())
+    return h.hexdigest()[:12]
+
 def encrypt_with_fernet(data: str, key: bytes) -> str:
     """Encrypt data using Fernet symmetric encryption."""
     f = Fernet(key)
