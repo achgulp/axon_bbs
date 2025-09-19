@@ -333,7 +333,7 @@ class SyncService:
                     pubkey=content.get('pubkey'), metadata_manifest=final_manifest
                 )
                 if required_hashes:
-                    message.attachments.set(existing_attachments)
+                    message.attachments.set(attachments)
                 logger.info(f"Successfully saved new message: '{message.subject}'")
 
             elif content_type == 'file':
@@ -355,11 +355,13 @@ class SyncService:
                         self._apply_avatar_from_attachment(user_to_update, attachment)
 
             elif content_type == 'pm':
-                metadata = json.loads(decrypted_data)
+                metadata = json.loads(decrypted_data.decode('utf-8'))
                 recipient_pubkey_checksum = metadata.get('recipient_pubkey_checksum')
-                local_instance_checksum = generate_checksum(self.local_instance.pubkey)
+                
+                local_user_pubkeys = User.objects.filter(is_active=True).values_list('pubkey', flat=True)
+                local_user_checksums = {generate_checksum(pk) for pk in local_user_pubkeys if pk}
 
-                if local_instance_checksum == recipient_pubkey_checksum:
+                if recipient_pubkey_checksum in local_user_checksums:
                     e2e_content_b64 = metadata.get('e2e_encrypted_content_b64')
                     if not e2e_content_b64:
                         logger.error("Downloaded PM manifest is missing the E2E content payload.")
