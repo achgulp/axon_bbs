@@ -1,0 +1,235 @@
+Axon BBS - Product Requirements Document (Version 10.14.0)
+Overview
+Axon BBS is an anonymous, modern bulletin board system that operates on a private, federated network of trusted nodes. The platform is built with a focus on user privacy and resilience, utilizing a custom peer-to-peer data synchronization protocol called BitSync. This version of the document consolidates all previous versions and is the definitive guide for the platform's current state.
+
+Key features and enhancements in this version include:
+
+Account Claiming
+
+Moderation Workflow
+
+Private Messaging (Including Deletion)
+
+Credential Management
+
+User Timezones
+
+Developer & SysOp Tooling
+
+User Roles & Stories
+As a User...
+A standard participant on the BBS whose focus is on communication, personalization, and interacting with applications.
+
+I want to generate or import my cryptographic identity to securely and anonymously interact with the system.
+
+I want to securely back up my private key to recover my account if I lose access to my primary device.
+
+I want to upload a profile avatar to personalize my identity.
+
+I want my profile updates (nickname and avatar) to be sent to other BBSes so my identity is consistent across the network.
+
+I want to send and receive E2E encrypted private messages.
+
+I want to delete private messages from my inbox and outbox to manage my mail.
+
+I want to post on public message boards to participate in community discussions.
+
+I want to run sandboxed games and applications (applets) securely.
+
+I want to play persistent games that continue to run while I am offline.
+
+I want to report a message that violates the rules to help keep the community clean.
+
+I want to gain karma points when my reports are validated by a moderator to build my reputation.
+
+I want to see my karma score on my profile.
+
+I want to change my password from my profile page to maintain account security.
+
+I want to reset my security questions from my profile page if I know my current password.
+
+I want to be prevented from importing a private key that has been banned on the network.
+
+I want to be prevented from viewing or posting to message boards that are above my access level.
+
+I want to claim my federated, inactive account on a new BBS by proving ownership with my private key, so I can use my established identity everywhere.
+
+As a Moderator...
+A trusted user responsible for maintaining community health with a subset of admin powers.
+
+I want to have all the powers of a standard User.
+
+I want to review a queue of user-submitted reports for inappropriate messages.
+
+I want to approve valid reports, which purges the message from the network and awards karma to the reporter.
+
+I want to reject invalid reports.
+
+I want to review profile updates (nicknames, avatars) from users before they are federated.
+
+I want the ability to manually adjust a user's karma score.
+
+I want to see a preview of a user's proposed new avatar in the approval queue to ensure it is appropriate for the community.
+
+As an Applet Developer...
+A technical user who creates games and utilities that run on the BBS.
+
+I want to package my application as a single, self-contained JavaScript file for easy distribution.
+
+I want a simple, secure API to save and load my applet's private data.
+
+I want an API to post public "action" messages to a designated message board for my game.
+
+I want to provide a server-side agent script that defines the rules and logic for my game.
+
+As a SysOp (System Operator/Admin)...
+The administrator of a BBS node responsible for maintenance, user management, and federation.
+
+I want all the powers of a standard User and Moderator.
+
+I want to manage a whitelist of trusted federated peers to control synchronization.
+
+I want to create special "agent" user accounts that can run persistently in the background.
+
+I want to assign a specific message board to an applet or agent to act as its official "Event Bus".
+
+I want to promote or demote standard users to the Moderator role.
+
+I want to create and manage a dedicated message board for federated moderation events.
+
+I want to dynamically start, stop, and reload agent services from the admin panel without restarting the entire BBS.
+
+I want to see a user's avatar in the admin panel and have an action to reset it to the default if it is inappropriate.
+
+I want a command-line tool to easily rebuild the frontend application after making changes.
+
+Architecture
+Private Message Double-Encryption
+A double-encryption scheme is used to guarantee the privacy of private messages (PMs). This architecture allows federated nodes to process message delivery metadata without being able to decrypt the actual message content.
+
+End-to-End (E2E) Encryption: The message content and subject are encrypted client-side with a unique AES key. This key is then encrypted with the public keys of only the sender and recipient, ensuring only they can ever read the message. The BBS servers treat the resulting encrypted blob as opaque data.
+
+BBS-Level Metadata Encryption: A separate metadata object is created for routing, containing non-sensitive information like public key checksums and a content hash. This metadata is encrypted using the public keys of all trusted BBS instances.
+
+Moderation Approval Workflow
+A new workflow ensures avatars can be safely reviewed before being federated across the network.
+
+A user uploads a new avatar, which is saved to a temporary media/pending_avatars/ directory with a secure, unguessable filename.
+
+A FederatedAction with a status of pending_approval is created, referencing this temporary file.
+
+The Moderation Dashboard displays the temporary image for review using its direct URL.
+
+When a moderator approves the request, the backend moves the file to the final media/avatars/ directory.
+
+Only after approval is the FileAttachment with the BitSync manifest created and the FederatedAction status changed to approved, which allows it to be synced to other BBSes.
+
+Full Project File Structure
+This diagram represents the complete and accurate file structure for the axon_bbs project.
+
+Plaintext
+
+axon_bbs/
+├── .env
+├── manage.py
+├── requirements.txt
+├── install.txt
+├── media/
+│   ├── avatars/
+│   └── pending_avatars/
+├── logs/
+│   └── bbs.log
+├── data/
+│   ├── axon_bbs.sqlite3
+│   ├── bitsync_chunks/
+│   └── user_data/
+├── axon_project/
+│   ├── __init__.py
+│   ├── asgi.py
+│   ├── settings.py
+│   ├── urls.py
+│   └── wsgi.py
+├── api/
+│   ├── __init__.py
+│   ├── permissions.py
+│   ├── serializers.py
+│   ├── tests/
+│   │   ├── __init__.py
+│   │   └── test_views.py
+│   ├── urls.py
+│   └── views/
+│       ├── __init__.py
+│       ├── applet_views.py
+│       ├── auth_views.py
+│       ├── content_views.py
+│       ├── federation_views.py
+│       └── moderation_views.py
+├── core/
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── tests/
+│   │   ├── __init__.py
+│   │   └── test_models.py
+│   ├── management/
+│   │   └── commands/
+│   │       ├── __init__.py
+│   │       ├── backfill_avatars.py
+│   │       ├── check_local_content.py
+│   │       ├── cleanup_orphaned_files.py
+│   │       ├── compare_sync_status.py
+│   │       ├── diagnose_sync_content.py
+│   │       ├── process_scores.py
+│   │       ├── rebuild_frontend.py
+│   │       ├── reset_peer_sync_time.py
+│   │       ├── resetmigrations.py
+│   │       ├── upgradeschema.py
+│   │       └── update_peer_key.py
+│   ├── migrations/
+│   │   ├── 0001_initial.py
+│   │   └── __init__.py
+│   └── services/
+│       ├── __init__.py
+│       ├── avatar_generator.py
+│       ├── bitsync_service.py
+│       ├── content_validator.py
+│       ├── encryption_utils.py
+│       ├── high_score_service.py
+│       ├── identity_service.py
+│       ├── moderator_agent_service.py
+│       ├── overlord_agent_service.py
+│       ├── service_manager.py
+│       ├── socket_utils.py
+│       ├── sync_service.py
+│       └── tor_service.py
+└── frontend/
+    └── src/
+        ├── applet_api/
+        │   └── api.js
+        ├── applets/
+        │   ├── FortressOverlord.js
+        │   ├── FloatUpMaze.js
+        │   ├── PipeDoger.js
+        │   └── Template.js
+        ├── components/
+        │   ├── AnsiViewer.js
+        │   ├── App.js
+        │   ├── AppletRunner.js
+        │   ├── AppletView.js
+        │   ├── AuthenticatedImage.js
+        │   ├── HighScoreBoard.js
+        │   ├── LoginScreen.js
+        │   ├── MessageList.js
+        │   ├── ModerationDashboard.js
+        │   ├── PrivateMessageClient.js
+        │   ├── ProfileScreen.js
+        │   ├── RecoveryScreen.js
+        │   ├── RegisterScreen.js
+        │   ├── ReportModal.js
+        │   └── UnlockForm.js
+        ├── apiClient.js
+        ├── App.js
+        ├── index.css
+        ├── index.js
+        └── reportWebVitals.js

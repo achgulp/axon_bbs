@@ -1,0 +1,22 @@
+UAT
+0) Register as new user
+1) Login 
+2) Unlock Identity
+3) Create a message on the Tech Board w/ attachment
+4) Reply to a message on the tech board no attachment
+5) Send a PM from the message board to a user on PiBBS
+6) Reply to a PM from a user on the PiBBS
+7) Forward a PM to a local user on the Host BBS
+8) Delete message from Inbox
+9) Delete Send message from Outbox
+10) Change Profile Avatar
+11) Confirm Profile Avatar is changed locally and also Federated
+12) Change NickName
+13) Confirm Nickname is chaned locally and Federated
+14) Change Password
+15) Logout
+16) Log in with New Password
+17) Reset Password with Security Passwords
+18) Log in with New Password
+19) Run a simple applet that sends results to PiBBS
+20) Verify all results from log off of PiBBS
