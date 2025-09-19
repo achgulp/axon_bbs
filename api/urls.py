@@ -7,12 +7,14 @@
 # (at your option) any later version.
 #
 # This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# but WITHOUT ANY WARRANTY;
+# without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/api/urls.py
@@ -41,6 +43,7 @@ from .views import (
     SendPrivateMessageView,
     PrivateMessageListView,
     PrivateMessageOutboxView,
+    DeletePrivateMessageView, # <-- ADD THIS LINE
     AppletListView,
     GetSaveAppletDataView,
     HighScoreListView,
@@ -97,6 +100,7 @@ urlpatterns = [
     path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),
     path('pm/list/', PrivateMessageListView.as_view(), name='pm-list'),
     path('pm/outbox/', PrivateMessageOutboxView.as_view(), name='pm-outbox'),
+    path('pm/delete/<uuid:pk>/', DeletePrivateMessageView.as_view(), name='pm-delete'), # <-- ADD THIS LINE
 
     # Content & Moderation
     path('boards/', MessageBoardListView.as_view(), name='board-list'),

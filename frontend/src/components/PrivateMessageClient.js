@@ -7,7 +7,8 @@
 // (at your option) any later version.
 //
 // This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// but WITHOUT ANY WARRANTY;
+// without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 // See the GNU General Public License for more details.
 //
@@ -53,17 +54,20 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
       setIsLoading(false);
     }
   }, [view]);
+
   useEffect(() => {
     if (view === 'inbox' || view === 'outbox') {
       fetchMessages();
     }
   }, [view, fetchMessages]);
+
   useEffect(() => {
     if (initialRecipient) {
         setRecipientIdentifier(initialRecipient.displayName);
         setView('compose');
     }
   }, [initialRecipient]);
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -80,13 +84,15 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
             setNeedsUnlock(true);
           } else {
             setError(err.response?.data?.error || 'Could not send message.');
-          }
+        }
     } finally {
         setIsLoading(false);
     }
   };
+
   const handleReply = () => {
     const original = selectedMessage;
+    setSelectedMessage(null); // <-- FIX: Reset selected message to change view
     setView('compose');
     setRecipientIdentifier(original.author_display);
     setSubject(`Re: ${original.decrypted_subject}`);
@@ -94,15 +100,32 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
     const quotedBody = (original.decrypted_body || '').split('\n').map(line => `> ${line}`).join('\n');
     setBody(quoteHeader + quotedBody + '\n');
   };
+
   const handleForward = () => {
     const original = selectedMessage;
+    setSelectedMessage(null); // <-- FIX: Reset selected message to change view
     setView('compose');
     setRecipientIdentifier('');
-    // User must enter a new recipient
     setSubject(`Fwd: ${original.decrypted_subject}`);
     const forwardedBody = (original.decrypted_body || '').split('\n').map(line => `> ${line}`).join('\n');
     setBody(`\n\n--- Forwarded Message ---\nFrom: ${original.author_display}\nDate: ${new Date(original.created_at).toLocaleString([], { timeZone: displayTimezone })}\nSubject: ${original.decrypted_subject}\n\n${forwardedBody}`);
   };
+
+  const handleDelete = async (messageId) => {
+    if (!window.confirm("Are you sure you want to permanently delete this message?")) {
+      return;
+    }
+    setError('');
+    try {
+      await apiClient.delete(`/api/pm/delete/${messageId}/`);
+      setSelectedMessage(null);
+      fetchMessages();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not delete the message.');
+      console.error('Error deleting PM:', err);
+    }
+  };
+
   const renderMessageList = () => (
     <div className="bg-gray-800 rounded border border-gray-700">
       <table className="w-full text-left table-auto">
@@ -111,17 +134,27 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
             <th className="p-3 text-sm font-semibold text-gray-400 w-2/5">Subject</th>
             <th className="p-3 text-sm font-semibold text-gray-400 w-2/5">{view === 'inbox' ? 'From' : 'To'}</th>
             <th className="p-3 text-sm font-semibold text-gray-400 w-1/5">Date</th>
+            <th className="p-3 text-sm font-semibold text-gray-400 text-center">Actions</th>
           </tr>
         </thead>
         <tbody>
           {messages.map(msg => (
-            <tr key={msg.id} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700 cursor-pointer" onClick={() => { setView(view); setSelectedMessage(msg); }}>
-              <td className="p-3 text-gray-200">{msg.decrypted_subject || msg.subject}</td>
-              <td className="p-3 text-gray-400 flex items-center gap-2">
+            <tr key={msg.id} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700">
+              <td className="p-3 text-gray-200 cursor-pointer" onClick={() => { setView(view); setSelectedMessage(msg); }}>{msg.decrypted_subject || msg.subject}</td>
+              <td className="p-3 text-gray-400 flex items-center gap-2 cursor-pointer" onClick={() => { setView(view); setSelectedMessage(msg); }}>
                 <img src={(msg.author_avatar_url || msg.recipient_avatar_url) || '/default_avatar.png'} alt="avatar" className="w-8 h-8 rounded-full bg-gray-700" />
                 {msg.author_display || msg.recipient_display}
               </td>
-              <td className="p-3 text-gray-400">{new Date(msg.created_at).toLocaleString([], { timeZone: displayTimezone })}</td>
+              <td className="p-3 text-gray-400 cursor-pointer" onClick={() => { setView(view); setSelectedMessage(msg); }}>{new Date(msg.created_at).toLocaleString([], { timeZone: displayTimezone })}</td>
+              <td className="p-3 text-center">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }} 
+                  className="text-red-500 hover:text-red-400 text-sm font-semibold"
+                  title="Delete Message"
+                >
+                  Delete
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -129,6 +162,7 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
       {messages.length === 0 && <p className="text-gray-400 text-center p-4">Your {view} is empty.</p>}
     </div>
   );
+
   const renderReadMessage = () => {
     const msg = selectedMessage;
     const isInboxMessage = !!msg.author_display;
@@ -141,6 +175,7 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
                 <div className="flex gap-2">
                     {isInboxMessage && <button onClick={handleReply} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Reply</button>}
                     <button onClick={handleForward} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">Forward</button>
+                    <button onClick={() => handleDelete(msg.id)} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Delete</button>
                 </div>
             </div>
             <div className="bg-gray-800 p-4 rounded border border-gray-700">
@@ -175,6 +210,7 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
         </div>
     </div>
   );
+  
   const renderContent = () => {
     if (selectedMessage) return renderReadMessage();
     if (view === 'compose') return renderCompose();

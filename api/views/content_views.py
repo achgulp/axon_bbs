@@ -7,7 +7,8 @@
 # (at your option) any later version.
 #
 # This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# but WITHOUT ANY WARRANTY;
+# without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
 #
@@ -277,3 +278,27 @@ class PrivateMessageOutboxView(generics.ListAPIView):
         
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+# --- NEW VIEW ---
+class DeletePrivateMessageView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, pk, *args, **kwargs):
+        try:
+            message = get_object_or_404(PrivateMessage, pk=pk)
+
+            # A user can only delete a message if they are the author OR the recipient.
+            if message.author != request.user and message.recipient != request.user:
+                return Response(
+                    {"error": "You do not have permission to delete this message."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            message.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            logger.error(f"Error deleting private message {pk} for user {request.user.username}: {e}")
+            return Response(
+                {"error": "An unexpected error occurred while deleting the message."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
