@@ -12,8 +12,7 @@
 # See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.
-# If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/management/commands/resetmigrations.py
@@ -24,6 +23,7 @@ from django.apps import apps
 
 class Command(BaseCommand):
     help = 'Deletes all migration files for a specified app, leaving only the __init__.py file.'
+
     def add_arguments(self, parser):
         parser.add_argument('app_name', type=str, help='The name of the Django app whose migrations should be reset.')
 

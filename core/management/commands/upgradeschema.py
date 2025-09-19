@@ -12,8 +12,7 @@
 # See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.
-# If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/management/commands/upgradeschema.py
@@ -23,6 +22,7 @@ from core.models import PrivateMessage
 
 class Command(BaseCommand):
     help = 'Manually upgrades the database schema to the version 10.13.0 state without using migrations.'
+
     @transaction.atomic
     def handle(self, *args, **options):
         self.stdout.write(self.style.WARNING("--- Starting Manual Schema Upgrade ---"))
@@ -71,25 +71,17 @@ class Command(BaseCommand):
                     model = PrivateMessage
                     new_columns_with_types = []
                     final_fields = []
-                    
-                    # Manually build the column definitions for the new table
-                    for field in model._meta.local_fields:
-                        # Get the column name (e.g., 'author_id')
-                        col_name = field.column
-                        # Get the column type (e.g., 'integer')
-                        col_type = field.db_type(connection=connection)
-                        
-                        col_def = f'"{col_name}" {col_type}'
-                        
-                        # Add constraints
-                        if not field.null:
-                            col_def += " NOT NULL"
-                        if field.primary_key:
-                            col_def += " PRIMARY KEY"
-                            
-                        new_columns_with_types.append(col_def)
-                        final_fields.append(col_name)
 
+                    # Correctly build the list of column definitions for the new table
+                    for field in model._meta.local_fields:
+                        column_sql = connection.schema_editor().column_sql(model, field)
+                        if column_sql:
+                            # column_sql is a tuple like ('"my_field"', 'INTEGER NULL')
+                            # We combine them to get a valid column definition string
+                            full_column_definition = f"{column_sql[0]} {column_sql[1]}"
+                            new_columns_with_types.append(full_column_definition)
+                            final_fields.append(field.column)
+                    
                     # 1. Create a new table with the correct schema
                     create_sql = f"CREATE TABLE core_privatemessage_new ({', '.join(new_columns_with_types)});"
                     cursor.execute(create_sql)
@@ -113,3 +105,4 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.SUCCESS("  -> 'core_privatemessage' table already matches the current schema. No rebuild needed."))
 
         self.stdout.write(self.style.SUCCESS("\n--- Manual Schema Upgrade Complete ---"))
+
