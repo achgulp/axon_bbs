@@ -120,11 +120,12 @@ class MessageSerializer(serializers.ModelSerializer):
 class PrivateMessageSerializer(serializers.ModelSerializer):
     author_display = serializers.SerializerMethodField()
     author_avatar_url = serializers.SerializerMethodField()
-    decrypted_body = serializers.CharField(read_only=True)
+    decrypted_body = serializers.CharField(read_only=True, default="")
+    decrypted_subject = serializers.CharField(read_only=True, default="")
     
     class Meta:
         model = PrivateMessage
-        fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'author_display', 'author_avatar_url')
+        fields = ('id', 'decrypted_subject', 'decrypted_body', 'created_at', 'is_read', 'author_display', 'author_avatar_url')
         read_only_fields = fields
 
     def get_author_display(self, obj):
@@ -153,28 +154,35 @@ class PrivateMessageSerializer(serializers.ModelSerializer):
 class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
     recipient_display = serializers.SerializerMethodField()
     recipient_avatar_url = serializers.SerializerMethodField()
-    decrypted_body = serializers.CharField(read_only=True)
+    decrypted_body = serializers.CharField(read_only=True, default="")
+    decrypted_subject = serializers.CharField(read_only=True, default="")
     
     class Meta:
         model = PrivateMessage
-        fields = ('id', 'subject', 'decrypted_body', 'created_at', 'is_read', 'recipient_display', 'recipient_avatar_url', 'recipient_pubkey')
+        fields = ('id', 'decrypted_subject', 'decrypted_body', 'created_at', 'is_read', 'recipient_display', 'recipient_avatar_url')
         read_only_fields = fields
 
     def get_recipient_display(self, obj):
-        user_to_check = obj.recipient
-        if not user_to_check and obj.recipient_pubkey:
-            user_to_check = User.objects.filter(pubkey=obj.recipient_pubkey).first()
-
-        if user_to_check:
-            return user_to_check.nickname if user_to_check.nickname else user_to_check.username
-        elif obj.recipient_pubkey:
+        # In the outbox, the recipient object might not be set if they are a federated user.
+        # We need a robust way to find their details.
+        if obj.recipient:
+             return obj.recipient.nickname if obj.recipient.nickname else obj.recipient.username
+        
+        # Fallback if recipient is not a local user
+        if hasattr(obj, 'recipient_pubkey') and obj.recipient_pubkey:
+            user = User.objects.filter(pubkey=obj.recipient_pubkey).first()
+            if user:
+                return user.nickname if user.nickname else user.username
+            
             short_id = generate_short_id(obj.recipient_pubkey, length=8)
             return f"Moo-{short_id}"
+
         return 'Unknown Recipient'
+
 
     def get_recipient_avatar_url(self, obj):
         user_to_check = obj.recipient
-        if not user_to_check and obj.recipient_pubkey:
+        if not user_to_check and hasattr(obj, 'recipient_pubkey') and obj.recipient_pubkey:
             user_to_check = User.objects.filter(pubkey=obj.recipient_pubkey).first()
         
         if user_to_check and user_to_check.avatar:

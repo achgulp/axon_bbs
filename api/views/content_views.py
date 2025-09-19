@@ -200,6 +200,7 @@ class PrivateMessageListView(generics.ListAPIView):
             decrypted_metadata_bytes = service_manager.sync_service.get_decrypted_content(message.metadata_manifest)
             if not decrypted_metadata_bytes:
                 message.decrypted_body = "[Decryption Error: Could not read metadata]"
+                message.decrypted_subject = "[Encrypted]"
                 continue
 
             # Now, use the decrypted metadata to get the inner E2E manifest
@@ -217,10 +218,13 @@ class PrivateMessageListView(generics.ListAPIView):
                 try:
                     content = json.loads(decrypted_json)
                     message.decrypted_body = content.get('body')
+                    message.decrypted_subject = content.get('subject')
                 except (json.JSONDecodeError, TypeError):
                     message.decrypted_body = "[Decryption Error: Invalid E2E format]"
+                    message.decrypted_subject = "[Encrypted]"
             else:
                 message.decrypted_body = None
+                message.decrypted_subject = "[Encrypted]"
         
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
@@ -244,6 +248,7 @@ class PrivateMessageOutboxView(generics.ListAPIView):
             decrypted_metadata_bytes = service_manager.sync_service.get_decrypted_content(message.metadata_manifest)
             if not decrypted_metadata_bytes:
                 message.decrypted_body = "[Decryption Error: Could not read metadata]"
+                message.decrypted_subject = "[Encrypted]"
                 continue
 
             # Now, use the decrypted metadata to get the inner E2E manifest
@@ -261,10 +266,13 @@ class PrivateMessageOutboxView(generics.ListAPIView):
                 try:
                     content = json.loads(decrypted_json)
                     message.decrypted_body = content.get('body')
+                    message.decrypted_subject = content.get('subject')
                 except (json.JSONDecodeError, TypeError):
                     message.decrypted_body = "[Decryption Error: Invalid E2E format]"
+                    message.decrypted_subject = "[Encrypted]"
             else:
                 message.decrypted_body = None
+                message.decrypted_subject = "[Encrypted]"
         
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
