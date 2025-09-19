@@ -1,4 +1,3 @@
-# axon_bbs/core/services/encryption_utils.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
@@ -13,7 +12,8 @@
 # See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/services/encryption_utils.py
@@ -139,13 +139,13 @@ def encrypt_for_recipients_only(message: str, pubkeys: list):
         "encrypted_aes_keys": encrypted_keys,
     }
 
-def decrypt_for_recipients_only(e2e_content: bytes, metadata_manifest: dict, private_key_pem: str) -> str | None:
+def decrypt_for_recipients_only(e2e_content: bytes, e2e_manifest: dict, private_key_pem: str) -> str | None:
     """
     Decrypts the E2E content using a key from the metadata manifest.
     
     Args:
         e2e_content (bytes): The raw, E2E encrypted message content.
-        metadata_manifest (dict): The manifest containing the encrypted session keys.
+        e2e_manifest (dict): The manifest containing the encrypted session keys.
         private_key_pem (str): The user's private key to decrypt the session key.
     
     Returns:
@@ -158,7 +158,6 @@ def decrypt_for_recipients_only(e2e_content: bytes, metadata_manifest: dict, pri
             encoding=Encoding.PEM, format=PublicFormat.SubjectPublicKeyInfo
         ).decode('utf-8'))
         
-        e2e_manifest = metadata_manifest.get('e2e_manifest')
         encrypted_aes_key_b64 = e2e_manifest['encrypted_aes_keys'].get(user_checksum)
 
         if not encrypted_aes_key_b64:
