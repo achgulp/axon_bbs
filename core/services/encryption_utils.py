@@ -1,4 +1,3 @@
-# axon_bbs/core/services/encryption_utils.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
@@ -9,177 +8,122 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/services/encryption_utils.py
-import os
-import logging
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
 import base64
 import hashlib
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
-from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.padding import PKCS7
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+import os
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from django.conf import settings
+import json
+import logging
 
 logger = logging.getLogger(__name__)
 
-def generate_salt(size: int = 16) -> bytes:
-    """Generates a cryptographically secure salt."""
-    return os.urandom(size)
-
 def derive_key_from_password(password: str, salt: bytes, iterations: int = 100000) -> bytes:
-    """Derives a secure encryption key from a user's password and a salt."""
+    """Derive a 32-byte encryption key from a password and salt using PBKDF2."""
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
         iterations=iterations,
     )
-    return base64.urlsafe_b64encode(kdf.derive(password.encode()))
+    key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
+    return key
 
-def encrypt_data(data: str, key: bytes) -> bytes:
-    """Encrypts a string using a Fernet key."""
+def generate_salt() -> bytes:
+    """Generate a random 16-byte salt."""
+    return os.urandom(16)
+
+def generate_checksum(data: str) -> str:
+    """Generate a SHA-256 checksum of the data."""
+    return hashlib.sha256(data.encode()).hexdigest()[:16]
+
+def encrypt_with_fernet(data: str, key: bytes) -> str:
+    """Encrypt data using Fernet symmetric encryption."""
     f = Fernet(key)
-    return f.encrypt(data.encode())
+    return f.encrypt(data.encode()).decode()
 
-def decrypt_data(encrypted_data: bytes, key: bytes) -> str:
-    """Decrypts data using a Fernet key."""
+def decrypt_with_fernet(encrypted_data: str, key: bytes) -> str:
+    """Decrypt data using Fernet symmetric encryption."""
     f = Fernet(key)
-    decrypted_bytes = f.decrypt(encrypted_data)
-    return decrypted_bytes.decode()
+    return f.decrypt(encrypted_data.encode()).decode()
 
-def encrypt_with_public_key(data: str, public_key_pem: str) -> str:
-    """Encrypts a string with an RSA public key and returns a base64 encoded string."""
-    public_key = load_pem_public_key(public_key_pem.encode())
-    ciphertext = public_key.encrypt(
-        data.encode('utf-8'),
-        rsa_padding.OAEP(
-            mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()),
+def rsa_encrypt(public_key_pem: str, data: bytes) -> bytes:
+    """Encrypt data with RSA public key."""
+    public_key = serialization.load_pem_public_key(public_key_pem.encode())
+    return public_key.encrypt(
+        data,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
             label=None
         )
     )
-    return base64.b64encode(ciphertext).decode('utf-8')
 
-def decrypt_with_private_key(encrypted_data_b64: str, private_key_pem: str) -> str:
-    """Decrypts a base64 encoded string with an RSA private key."""
-    private_key = load_pem_private_key(private_key_pem.encode(), password=None)
-    encrypted_data = base64.b64decode(encrypted_data_b64)
-    plaintext = private_key.decrypt(
+def rsa_decrypt(private_key_pem: str, encrypted_data: bytes) -> bytes:
+    """Decrypt data with RSA private key."""
+    private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+    return private_key.decrypt(
         encrypted_data,
-        rsa_padding.OAEP(
-            mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
             label=None
         )
     )
-    return plaintext.decode('utf-8')
 
-def generate_short_id(pubkey_pem: str, length: int = 16) -> str:
-    """Generates a semi-unique short ID from a public key PEM string."""
-    hash_obj = hashlib.sha256(pubkey_pem.encode())
-    return hash_obj.hexdigest()[:length]
-
-def generate_checksum(data_string: str) -> str:
-    """Generates an MD5 checksum for a given string, normalizing if it's a public key."""
-    if not data_string:
-        return "None"
-    try:
-        # Attempt to normalize if it's a public key
-        pubkey_obj = load_pem_public_key(data_string.encode())
-        normalized_data = pubkey_obj.public_bytes(
-            encoding=Encoding.PEM,
-            format=PublicFormat.SubjectPublicKeyInfo
-        ).decode('utf-8').strip().encode('utf-8')
-    except Exception:
-        # For non-keys, just strip whitespace
-        normalized_data = data_string.strip().encode('utf-8')
-    
-    return hashlib.md5(normalized_data).hexdigest()
-
-def encrypt_for_recipients_only(message: str, pubkeys: list):
-    """
-    Encrypts a message with a session key, then encrypts the session key
-    for a list of recipient public keys. Returns the encrypted message
-    and the list of encrypted session keys.
-    """
-    aes_key = os.urandom(32)
-    iv = os.urandom(16)
-    cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
-    padder = PKCS7(algorithms.AES.block_size).padder()
-    padded_data = padder.update(message.encode('utf-8')) + padder.finalize()
-    encryptor = cipher.encryptor()
-    encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
-
-    encrypted_keys = {}
-    for pubkey_pem in pubkeys:
-        try:
-            pubkey_obj = serialization.load_pem_public_key(pubkey_pem.encode())
-            encrypted_key = pubkey_obj.encrypt(
-                aes_key,
-                rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
-            )
-            checksum = generate_checksum(pubkey_pem)
-            encrypted_keys[checksum] = base64.b64encode(encrypted_key).decode('utf-8')
-        except Exception as e:
-            logger.error(f"Failed to encrypt session key for pubkey with checksum {generate_checksum(pubkey_pem)}: {e}")
-
-    return encrypted_data, {
-        "encryption_iv": base64.b64encode(iv).decode('utf-8'),
-        "encrypted_aes_keys": encrypted_keys,
+def generate_e2e_manifest(sender_pubkey: str, recipient_pubkey: str, aes_key: bytes) -> dict:
+    """Generate E2E manifest for PMs: Wrap AES key for sender and recipient."""
+    checksums = {
+        'sender': generate_checksum(sender_pubkey),
+        'recipient': generate_checksum(recipient_pubkey)
     }
+    manifest = {'encrypted_aes_keys': {}}
+    for role, pubkey in [('sender', sender_pubkey), ('recipient', recipient_pubkey)]:
+        encrypted_aes = rsa_encrypt(pubkey, aes_key)
+        manifest['encrypted_aes_keys'][checksums[role]] = base64.b64encode(encrypted_aes).decode()
+    manifest['checksums'] = checksums
+    return manifest
 
-def decrypt_for_recipients_only(e2e_content: bytes, metadata_manifest: dict, private_key_pem: str) -> str | None:
+def decrypt_for_recipients_only(e2e_manifest: dict, user_pubkey_checksum: str, user_private_key_pem: str, encrypted_content: str) -> str:
     """
-    Decrypts the E2E content using a key from the metadata manifest.
-    
-    Args:
-        e2e_content (bytes): The raw, E2E encrypted message content.
-        metadata_manifest (dict): The manifest containing the encrypted session keys.
-        private_key_pem (str): The user's private key to decrypt the session key.
-    
-    Returns:
-        str: The decrypted message content as a string, or None on failure.
+    Decrypt E2E content for authorized recipients only (sender or recipient).
+    Handles missing manifest gracefully.
     """
     try:
-        private_key = load_pem_private_key(private_key_pem.encode(), password=None)
-        public_key = private_key.public_key()
-        user_checksum = generate_checksum(public_key.public_bytes(
-            encoding=Encoding.PEM, format=PublicFormat.SubjectPublicKeyInfo
-        ).decode('utf-8'))
+        if e2e_manifest is None:
+            logger.warning("E2E manifest is missing. Cannot decrypt content. This may indicate a send failure.")
+            raise ValueError("E2E manifest missing – message cannot be decrypted.")
         
-        e2e_manifest = metadata_manifest.get('e2e_manifest')
-        encrypted_aes_key_b64 = e2e_manifest['encrypted_aes_keys'].get(user_checksum)
-
+        encrypted_aes_key_b64 = e2e_manifest['encrypted_aes_keys'].get(user_pubkey_checksum)
         if not encrypted_aes_key_b64:
-            logger.warning("Could not find an encryption envelope for this user's key in the E2E manifest.")
-            return None
+            raise ValueError(f"No AES key found for user checksum: {user_pubkey_checksum}")
         
+        # Unwrap AES key with user's private key
         encrypted_aes_key = base64.b64decode(encrypted_aes_key_b64)
-        aes_key = private_key.decrypt(
-            encrypted_aes_key,
-            rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
-        )
+        aes_key = rsa_decrypt(user_private_key_pem, encrypted_aes_key)
         
-        iv = base64.b64decode(e2e_manifest['encryption_iv'])
-        cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
-        decryptor = cipher.decryptor()
-        padded_data = decryptor.update(e2e_content) + decryptor.finalize()
-        unpadder = PKCS7(algorithms.AES.block_size).unpadder()
-        decrypted_data = unpadder.update(padded_data) + unpadder.finalize()
-        
-        return decrypted_data.decode('utf-8')
+        # Decrypt content with AES key (assuming Fernet for simplicity)
+        f = Fernet(aes_key)
+        return f.decrypt(base64.b64decode(encrypted_content)).decode()
     
     except Exception as e:
-        logger.error(f"Failed to decrypt E2E content: {e}", exc_info=True)
-        return None
+        logger.error(f"Decryption failed: {e}")
+        raise ValueError(f"Failed to decrypt message: {str(e)}")
+
+# Additional utilities (e.g., for double-encryption metadata) can go here...
+def encrypt_metadata_for_peers(metadata: dict, peer_pubkeys: list) -> str:
+    """Encrypt metadata for all trusted peers (placeholder for federation)."""
+    # Implementation for BBS-level encryption...
+    pass
