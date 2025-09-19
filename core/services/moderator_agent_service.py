@@ -7,12 +7,14 @@
 # (at your option) any later version.
 #
 # This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# but WITHOUT ANY WARRANTY;
+# without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/services/moderator_agent_service.py
@@ -102,6 +104,7 @@ class ModeratorAgentService:
                             is_temporary = action_details.get('is_temporary', False)
                             duration = action_details.get('duration_hours')
                             expires_at = None
+                
                             if is_temporary and duration:
                                 expires_at = timezone.now() + timedelta(hours=int(duration))
                             
@@ -114,7 +117,7 @@ class ModeratorAgentService:
                     elif action_type == 'DELETE_CONTENT':
                         content_hash = details.get('target_hash')
                         if content_hash:
-                            Message.objects.filter(manifest__content_hash=content_hash).delete()
+                            Message.objects.filter(metadata_manifest__content_hash=content_hash).delete()
                             logger.info(f"Applied federated delete for content hash: {content_hash[:12]}...")
 
                 log_message.agent_status = 'processed'
@@ -146,7 +149,7 @@ class ModeratorAgentService:
                     "reporter_nickname": report.reporting_user.nickname,
                     "decision": report.status,
                     "target_message_subject": report.reported_message.subject if report.reported_message else "[Message Deleted]",
-                    "target_message_hash": report.reported_message.manifest.get('content_hash') if report.reported_message and report.reported_message.manifest else "N/A"
+                    "target_message_hash": report.reported_message.metadata_manifest.get('content_hash') if report.reported_message and report.reported_message.metadata_manifest else "N/A"
                 }
             }
             # --- END FIX ---
@@ -195,7 +198,7 @@ class ModeratorAgentService:
             pubkey=self.agent_user.pubkey,
             subject=subject,
             body=body_json,
-            manifest=manifest,
+            metadata_manifest=manifest, # <-- FIX: Changed 'manifest' to 'metadata_manifest'
             agent_status='processed' # The agent's own logs are pre-processed
         )
         logger.info(f"Moderator Agent logged event: {subject}")
