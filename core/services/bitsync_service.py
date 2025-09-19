@@ -1,4 +1,3 @@
-# axon_bbs/core/services/bitsync_service.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
@@ -13,7 +12,8 @@
 # See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/services/bitsync_service.py
@@ -70,7 +70,8 @@ class BitSyncService:
                 return serialization.load_pem_private_key(decrypted_pem, password=None)
         except Exception as e:
             logger.error(f"Failed to load or decrypt local private key: {e}")
-            return None
+        
+        return None
 
     def get_decrypted_aes_key(self, manifest: dict):
         private_key = self._load_local_private_key()
@@ -123,16 +124,8 @@ class BitSyncService:
         
         return manifest
 
-    # MODIFICATION START: Updated function signature with is_double_encrypted flag
-    def create_encrypted_content(self, data: Dict[str, Any], recipients_pubkeys: Optional[List[str]] = None, b_b_s_instance_pubkeys: Optional[List[str]] = None, is_double_encrypted: bool = False) -> (str, Dict[str, Any]):
-        
-        if is_double_encrypted:
-            # The data here is already the outer metadata envelope
-            raw_data = json.dumps(data, sort_keys=True).encode('utf-8')
-        else:
-            # This is the original logic for single-layer encryption
-            raw_data = json.dumps(data, sort_keys=True).encode('utf-8')
-
+    def create_encrypted_content(self, data: Dict[str, Any], recipients_pubkeys: Optional[List[str]] = None, b_b_s_instance_pubkeys: Optional[List[str]] = None) -> (str, Dict[str, Any]):
+        raw_data = json.dumps(data, sort_keys=True).encode('utf-8')
         content_hash = hashlib.sha256(raw_data).hexdigest()
         
         aes_key = os.urandom(32)
@@ -155,23 +148,21 @@ class BitSyncService:
         encrypted_aes_keys = {}
         pubkeys_to_encrypt_for = set()
 
-        # This logic is different for double-encrypted content
-        if is_double_encrypted and b_b_s_instance_pubkeys:
+        if b_b_s_instance_pubkeys:
             for pkey in b_b_s_instance_pubkeys:
                 pubkeys_to_encrypt_for.add(pkey)
         elif recipients_pubkeys:
-            # For single-layer encryption, this is the existing logic
             local_instance = TrustedInstance.objects.filter(encrypted_private_key__isnull=False, is_trusted_peer=False).first()
             if local_instance and local_instance.pubkey:
                 pubkeys_to_encrypt_for.add(local_instance.pubkey)
             for pkey in recipients_pubkeys:
                 pubkeys_to_encrypt_for.add(pkey)
         else:
-            # For public content, encrypt for all trusted peers.
-            trusted_peers = TrustedInstance.objects.filter(is_trusted_peer=True)
-            for peer in trusted_peers:
-                if peer.pubkey:
-                    pubkeys_to_encrypt_for.add(peer.pubkey)
+            # For public content, encrypt for all trusted peers AND self.
+            all_instances = TrustedInstance.objects.all()
+            for instance in all_instances:
+                if instance.pubkey:
+                    pubkeys_to_encrypt_for.add(instance.pubkey)
         
         logger.info(f"Creating manifest for {len(pubkeys_to_encrypt_for)} total instance(s).")
         for pubkey_pem in pubkeys_to_encrypt_for:
@@ -194,7 +185,6 @@ class BitSyncService:
             "encrypted_aes_keys": encrypted_aes_keys,
         }
         return content_hash, manifest
-    # MODIFICATION END
 
     def get_chunk_path(self, content_hash: str, chunk_index: int) -> str:
         return os.path.join(self.chunk_storage_path, content_hash, f"{chunk_index}.chunk")

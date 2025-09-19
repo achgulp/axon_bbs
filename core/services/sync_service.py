@@ -1,4 +1,3 @@
-# axon_bbs/core/services/sync_service.py
 # Axon BBS - A modern, anonymous, federated bulletin board system.
 # Copyright (C) 2025 Achduke7
 #
@@ -355,33 +354,39 @@ class SyncService:
                     if user_to_update:
                         self._apply_avatar_from_attachment(user_to_update, attachment)
 
-            elif content_type == 'pm_metadata':
+            elif content_type == 'pm':
                 metadata = json.loads(decrypted_data)
-                sender_pubkey_checksum = metadata.get('sender_pubkey_checksum')
                 recipient_pubkey_checksum = metadata.get('recipient_pubkey_checksum')
-
                 local_instance_checksum = generate_checksum(self.local_instance.pubkey)
 
                 if local_instance_checksum == recipient_pubkey_checksum:
-                    # The e2e_encrypted_content is stored in the metadata. We save it raw.
-                    e2e_content_hash = metadata.get('e2e_content_hash')
-                    e2e_encrypted_content = self._download_content_by_hash(e2e_content_hash)
-                    
-                    if e2e_encrypted_content:
-                        recipient_user = User.objects.filter(pubkey__checksum=recipient_pubkey_checksum).first()
-                        
-                        if recipient_user:
-                            # Create the message entry on this BBS. The content is still encrypted.
-                            PrivateMessage.objects.create(
-                                recipient=recipient_user,
-                                sender_pubkey=self._find_pubkey_by_checksum(sender_pubkey_checksum),
-                                e2e_encrypted_content=base64.b64encode(e2e_encrypted_content).decode('utf-8'),
-                                metadata_manifest=final_manifest
-                            )
-                            logger.info(f"Successfully received and saved a federated E2E PM for user '{recipient_user.username}'.")
-                    else:
-                        logger.warning(f"Could not download E2E content for PM with metadata hash {content_hash[:10]}...")
+                    e2e_content_b64 = metadata.get('e2e_encrypted_content_b64')
+                    if not e2e_content_b64:
+                        logger.error("Downloaded PM manifest is missing the E2E content payload.")
+                        return
 
+                    recipient_pubkey = metadata.get('recipient_pubkey')
+                    if not recipient_pubkey:
+                        logger.warning(f"PM received without a recipient public key. Discarding.")
+                        return
+
+                    recipient_user, created = User.objects.get_or_create(
+                        pubkey=recipient_pubkey,
+                        defaults={
+                            'username': f"federated_{generate_short_id(recipient_pubkey, 8)}",
+                            'is_active': False
+                        }
+                    )
+                    if created:
+                        logger.info(f"Created new federated user profile for PM recipient: {recipient_user.username}")
+
+                    PrivateMessage.objects.create(
+                        recipient=recipient_user,
+                        sender_pubkey=metadata.get('sender_pubkey'),
+                        e2e_encrypted_content=e2e_content_b64,
+                        metadata_manifest=final_manifest
+                    )
+                    logger.info(f"Successfully received and saved a federated E2E PM for user '{recipient_user.username}'.")
                 else:
                     logger.info(f"Received PM metadata for a different BBS. Ignoring.")
 

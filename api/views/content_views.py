@@ -150,11 +150,13 @@ class SendPrivateMessageView(views.APIView):
             e2e_encrypted_content, e2e_manifest = encrypt_for_recipients_only(e2e_payload, [sender.pubkey, recipient_pubkey])
 
             metadata = {
-                "type": "pm_metadata",
+                "type": "pm",
+                "e2e_encrypted_content_b64": base64.b64encode(e2e_encrypted_content).decode('utf-8'),
+                "e2e_manifest": e2e_manifest,
+                "sender_pubkey": sender.pubkey,
+                "recipient_pubkey": recipient_pubkey,
                 "sender_pubkey_checksum": generate_checksum(sender.pubkey),
                 "recipient_pubkey_checksum": generate_checksum(recipient_pubkey),
-                "e2e_content_hash": hashlib.sha256(e2e_encrypted_content).hexdigest(),
-                "e2e_manifest": e2e_manifest,
             }
             
             all_bbs_instances = list(TrustedInstance.objects.all())
@@ -162,8 +164,7 @@ class SendPrivateMessageView(views.APIView):
             
             _content_hash, metadata_manifest = service_manager.bitsync_service.create_encrypted_content(
                 metadata,
-                b_b_s_instance_pubkeys=bbs_pubkeys,
-                is_double_encrypted=True
+                b_b_s_instance_pubkeys=bbs_pubkeys
             )
 
             PrivateMessage.objects.create(

@@ -131,12 +131,12 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
   );
   const renderReadMessage = () => {
     const msg = selectedMessage;
-    const isInboxMessage = msg.author_display;
+    const isInboxMessage = !!msg.author_display;
     return (
         <div>
             <div className="flex justify-between items-center mb-4">
                 <button onClick={() => setSelectedMessage(null)} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
-                ← Back to {isInboxMessage ? 'Inbox' : 'Outbox'}
+                ← Back to {view}
                 </button>
                 <div className="flex gap-2">
                     {isInboxMessage && <button onClick={handleReply} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Reply</button>}
