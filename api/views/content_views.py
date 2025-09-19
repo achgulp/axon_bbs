@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django.http import HttpResponse # <-- ADD THIS LINE
 import logging
 import json
 import base64
@@ -279,7 +280,6 @@ class PrivateMessageOutboxView(generics.ListAPIView):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-# --- NEW VIEW ---
 class DeletePrivateMessageView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -302,3 +302,36 @@ class DeletePrivateMessageView(views.APIView):
                 {"error": "An unexpected error occurred while deleting the message."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+# --- NEW VIEW ---
+class DownloadContentView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, content_hash, *args, **kwargs):
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        try:
+            sync_service = service_manager.sync_service
+            manifest = sync_service.get_manifest_by_content_hash(content_hash)
+            
+            if not manifest:
+                return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            decrypted_bytes = sync_service.get_decrypted_content(manifest)
+            
+            if not decrypted_bytes:
+                return Response({"error": "Could not retrieve or decrypt content."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            content = json.loads(decrypted_bytes.decode('utf-8'))
+            
+            if content.get('type') == 'applet_code':
+                applet_code = content.get('code', '')
+                return HttpResponse(applet_code, content_type='application/javascript')
+            
+            # This endpoint could be expanded to handle other content types like files
+            return Response({"error": "Unsupported content type for direct download."}, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            logger.error(f"Error downloading content {content_hash} for user {request.user.username}: {e}")
+            return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

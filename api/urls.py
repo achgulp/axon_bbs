@@ -43,7 +43,8 @@ from .views import (
     SendPrivateMessageView,
     PrivateMessageListView,
     PrivateMessageOutboxView,
-    DeletePrivateMessageView, # <-- ADD THIS LINE
+    DeletePrivateMessageView,
+    DownloadContentView, # <-- ADD THIS LINE
     AppletListView,
     GetSaveAppletDataView,
     HighScoreListView,
@@ -100,7 +101,7 @@ urlpatterns = [
     path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),
     path('pm/list/', PrivateMessageListView.as_view(), name='pm-list'),
     path('pm/outbox/', PrivateMessageOutboxView.as_view(), name='pm-outbox'),
-    path('pm/delete/<uuid:pk>/', DeletePrivateMessageView.as_view(), name='pm-delete'), # <-- ADD THIS LINE
+    path('pm/delete/<uuid:pk>/', DeletePrivateMessageView.as_view(), name='pm-delete'),
 
     # Content & Moderation
     path('boards/', MessageBoardListView.as_view(), name='board-list'),
@@ -112,15 +113,13 @@ urlpatterns = [
     path('moderation/review/<int:report_id>/', ReviewReportView.as_view(), name='mod-review'),
     path('moderation/profile_queue/', PendingProfileUpdatesQueueView.as_view(), name='mod-profile-queue'),
     path('moderation/profile_review/<uuid:action_id>/', ReviewProfileUpdateView.as_view(), name='mod-profile-review'),
-    # --- MODIFICATION START ---
-    # The temporary token preview URL is no longer needed with the new workflow.
-    # --- MODIFICATION END ---
     
     # Admin & Moderator Actions
     path('admin/ban/', BanPubkeyView.as_view(), name='ban-pubkey'),
     path('content/request-extension/', RequestContentExtensionView.as_view(), name='request-extension'),
     path('content/review-extension/<int:pk>/', ReviewContentExtensionView.as_view(), name='review-extension'),
     path('content/unpin/', UnpinContentView.as_view(), name='unpin-content'),
+    path('content/download/<str:content_hash>/', DownloadContentView.as_view(), name='content-download'), # <-- ADD THIS LINE
 
     # Applet Framework
     path('applets/', AppletListView.as_view(), name='applet-list'),

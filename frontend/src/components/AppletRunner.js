@@ -7,23 +7,27 @@
 // (at your option) any later version.
 //
 // This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU General Public License for more details.
+// but WITHOUT ANY WARRANTY;
+// without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with this program. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.
+// If not, see <https://www.gnu.org/licenses/>.
 
 
 // Full path: axon_bbs/frontend/src/components/AppletRunner.js
 import React, { useState, useEffect, useRef } from 'react';
 import apiClient from '../apiClient';
+
 const AppletRunner = ({ applet, onBack }) => {
   const [appletCode, setAppletCode] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [profile, setProfile] = useState(null);
   const iframeRef = useRef(null);
+
   useEffect(() => {
     const loadAppletAndProfile = async () => {
       setIsLoading(true);
@@ -33,8 +37,8 @@ const AppletRunner = ({ applet, onBack }) => {
         if (!applet?.code_manifest?.content_hash) {
           throw new Error("Applet has an invalid code manifest.");
         }
-        const cacheBuster = `?t=${new Date().getTime()}`;
-        const codeUrl = `/api/content/download/${applet.code_manifest.content_hash}/${cacheBuster}`;
+        // --- FIX: Use the correct, newly created endpoint ---
+        const codeUrl = `/api/content/download/${applet.code_manifest.content_hash}/`;
         const codePromise = apiClient.get(codeUrl);
 
         const [profileResponse, codeResponse] = await Promise.all([profilePromise, codePromise]);
@@ -52,6 +56,7 @@ const AppletRunner = ({ applet, onBack }) => {
     
     loadAppletAndProfile();
   }, [applet]);
+
   useEffect(() => {
     const handleMessage = async (event) => {
       // SECURITY: Validate both the origin and the source of the message
@@ -106,6 +111,7 @@ const AppletRunner = ({ applet, onBack }) => {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [profile, applet]);
+
   const getIframeContent = () => {
     if (!appletCode) return '';
     const checksum = applet?.code_manifest?.content_hash || 'N/A';
@@ -138,6 +144,7 @@ const AppletRunner = ({ applet, onBack }) => {
       </html>
     `;
   };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4">

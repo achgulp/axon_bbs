@@ -47,7 +47,8 @@ from .content_views import (
     PrivateMessageListView,
     PrivateMessageOutboxView,
     SendPrivateMessageView,
-    DeletePrivateMessageView, # <-- ADD THIS LINE
+    DeletePrivateMessageView,
+    DownloadContentView, # <-- ADD THIS LINE
 )
 
 from .moderation_views import (
@@ -61,9 +62,6 @@ from .moderation_views import (
     UnpinContentView,
     PendingProfileUpdatesQueueView,
     ReviewProfileUpdateView,
-    # --- MODIFICATION START ---
-    # The ServeTemporaryAvatarView is no longer needed with the new workflow.
-    # --- MODIFICATION END ---
 )
 
 from .applet_views import (
