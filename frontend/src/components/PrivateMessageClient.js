@@ -12,7 +12,9 @@
 // See the GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with this program. If not, see <https://www.gnu.org/licenses/>.
+// along with this program.
+// If not, see <https://www.gnu.org/licenses/>.
+
 
 // Full path: axon_bbs/frontend/src/components/PrivateMessageClient.js
 import React, { useState, useEffect, useCallback } from 'react';
@@ -26,7 +28,6 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  
   const [recipientIdentifier, setRecipientIdentifier] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -52,12 +53,12 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
       setIsLoading(false);
     }
   }, [view]);
-useEffect(() => {
+  useEffect(() => {
     if (view === 'inbox' || view === 'outbox') {
       fetchMessages();
     }
   }, [view, fetchMessages]);
-useEffect(() => {
+  useEffect(() => {
     if (initialRecipient) {
         setRecipientIdentifier(initialRecipient.displayName);
         setView('compose');
@@ -88,19 +89,19 @@ useEffect(() => {
     const original = selectedMessage;
     setView('compose');
     setRecipientIdentifier(original.author_display);
-    setSubject(`Re: ${original.subject}`);
+    setSubject(`Re: ${original.decrypted_subject}`);
     const quoteHeader = `\n\nOn ${new Date(original.created_at).toLocaleString([], { timeZone: displayTimezone })}, ${original.author_display} wrote:\n`;
     const quotedBody = (original.decrypted_body || '').split('\n').map(line => `> ${line}`).join('\n');
     setBody(quoteHeader + quotedBody + '\n');
   };
-
   const handleForward = () => {
     const original = selectedMessage;
     setView('compose');
-    setRecipientIdentifier(''); // User must enter a new recipient
-    setSubject(`Fwd: ${original.subject}`);
+    setRecipientIdentifier('');
+    // User must enter a new recipient
+    setSubject(`Fwd: ${original.decrypted_subject}`);
     const forwardedBody = (original.decrypted_body || '').split('\n').map(line => `> ${line}`).join('\n');
-    setBody(`\n\n--- Forwarded Message ---\nFrom: ${original.author_display}\nDate: ${new Date(original.created_at).toLocaleString([], { timeZone: displayTimezone })}\nSubject: ${original.subject}\n\n${forwardedBody}`);
+    setBody(`\n\n--- Forwarded Message ---\nFrom: ${original.author_display}\nDate: ${new Date(original.created_at).toLocaleString([], { timeZone: displayTimezone })}\nSubject: ${original.decrypted_subject}\n\n${forwardedBody}`);
   };
   const renderMessageList = () => (
     <div className="bg-gray-800 rounded border border-gray-700">
@@ -115,7 +116,7 @@ useEffect(() => {
         <tbody>
           {messages.map(msg => (
             <tr key={msg.id} className="border-b border-gray-700 last:border-b-0 hover:bg-gray-700 cursor-pointer" onClick={() => { setView(view); setSelectedMessage(msg); }}>
-              <td className="p-3 text-gray-200">{msg.subject}</td>
+              <td className="p-3 text-gray-200">{msg.decrypted_subject || msg.subject}</td>
               <td className="p-3 text-gray-400 flex items-center gap-2">
                 <img src={(msg.author_avatar_url || msg.recipient_avatar_url) || '/default_avatar.png'} alt="avatar" className="w-8 h-8 rounded-full bg-gray-700" />
                 {msg.author_display || msg.recipient_display}
@@ -143,7 +144,7 @@ useEffect(() => {
                 </div>
             </div>
             <div className="bg-gray-800 p-4 rounded border border-gray-700">
-                <h3 className="text-xl font-bold text-white mb-1">{msg.subject}</h3>
+                <h3 className="text-xl font-bold text-white mb-1">{msg.decrypted_subject}</h3>
                 <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
                     <img src={(msg.author_avatar_url || msg.recipient_avatar_url) || '/default_avatar.png'} alt="avatar" className="w-6 h-6 rounded-full bg-gray-700" />
                     <span>{isInboxMessage ? `From: ${msg.author_display}` : `To: ${msg.recipient_display}`} on {new Date(msg.created_at).toLocaleString([], { timeZone: displayTimezone })}</span>
