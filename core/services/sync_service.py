@@ -36,6 +36,7 @@ from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 from django.db import IntegrityError
+import uuid
 
 from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey, Alias, Applet, AppletData
 from core.services.encryption_utils import generate_checksum, generate_short_id, decrypt_for_recipients_only
@@ -255,7 +256,6 @@ class SyncService:
             except Exception as e:
                 logger.error(f"Failed to process federated action {action_id}: {e}", exc_info=True)
 
-
     def _process_completed_download(self, manifest, encrypted_data):
         from .service_manager import service_manager
         content_hash = manifest.get('content_hash')
@@ -281,10 +281,18 @@ class SyncService:
             if content_type == 'message':
                 content = json.loads(decrypted_data)
                 
+                # --- CHANGE START ---
+                # Check if attachments are downloaded before saving the message
+                required_hashes = content.get('attachment_hashes', [])
+                if required_hashes:
+                    existing_attachments = FileAttachment.objects.filter(metadata_manifest__content_hash__in=required_hashes)
+                    if len(existing_attachments) != len(required_hashes):
+                        logger.warning(f"Message {content_hash[:10]} is waiting for attachments to download. Will retry processing later.")
+                        return # Abort processing for now, will be picked up by _resume_incomplete_downloads
+                # --- CHANGE END ---
+                
                 author_pubkey = content.get('pubkey')
                 if author_pubkey:
-                    # --- CHANGE START ---
-                    # Use get_or_create to safely handle existing federated users.
                     short_id = generate_short_id(author_pubkey, length=8)
                     defaults = {
                         'nickname': f"Moo-{short_id}",
@@ -298,12 +306,10 @@ class SyncService:
                             new_user.avatar.save(avatar_filename, avatar_content_file, save=True)
                             logger.info(f"Discovered new federated user. Created profile '{new_user.nickname}' with a unique cow avatar.")
                     except IntegrityError:
-                        # This can happen if two messages from different pubkeys generate the same short_id nickname. Retry with a random suffix.
                         random_suffix = uuid.uuid4().hex[:4]
                         new_user, created = User.objects.get_or_create(pubkey=author_pubkey, defaults={**defaults, 'username': f"federated_{short_id}_{random_suffix}", 'nickname': f"Moo-{short_id}-{random_suffix}"})
                         if created:
                             logger.info(f"Created federated user with fallback nickname '{new_user.nickname}'.")
-                    # --- CHANGE END ---
                 
                 board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
                 message = Message.objects.create(
@@ -311,13 +317,7 @@ class SyncService:
                     pubkey=content.get('pubkey'), metadata_manifest=final_manifest
                 )
 
-                required_hashes = content.get('attachment_hashes', [])
                 if required_hashes:
-                    existing_attachments = FileAttachment.objects.filter(metadata_manifest__content_hash__in=required_hashes)
-                    if len(existing_attachments) != len(required_hashes):
-                        logger.warning(f"Message {content_hash[:10]} is waiting for attachments to download. Will retry processing later.")
-                        message.delete()
-                        return
                     message.attachments.set(existing_attachments)
                 
                 logger.info(f"Successfully saved new message: '{message.subject}'")
@@ -380,20 +380,7 @@ class SyncService:
 
         except Exception as e:
             logger.error(f"Failed to create database object from manifest {content_hash[:10]}: {e}", exc_info=True)
-
-    def _find_pubkey_by_checksum(self, checksum):
-        """Helper to find a pubkey from a checksum, used for E2E message processing."""
-        for user in User.objects.all():
-            if user.pubkey and generate_checksum(user.pubkey) == checksum:
-                return user.pubkey
-        for instance in TrustedInstance.objects.all():
-            if instance.pubkey and generate_checksum(instance.pubkey) == checksum:
-                return instance.pubkey
-        for alias in Alias.objects.all():
-            if alias.pubkey and generate_checksum(alias.pubkey) == checksum:
-                return alias.pubkey
-        return None
-
+    
     def _find_seeders(self, content_hash: str) -> list:
         logger.info(f"Discovering seeders for content {content_hash[:10]}...")
         available_seeders = []
@@ -470,8 +457,6 @@ class SyncService:
     def _download_content_by_hash(self, content_hash: str) -> bytes | None:
         """Helper to download a file by its hash directly, assuming a manifest exists."""
         from .service_manager import service_manager
-        # Find a manifest for this content hash. In a real system, we'd search
-        # through all models, but for this demo, we'll assume it exists somewhere.
         manifest = self.get_manifest_by_content_hash(content_hash)
         if not manifest:
             logger.warning(f"Could not find a manifest for content hash {content_hash[:10]}... to download.")
@@ -481,7 +466,6 @@ class SyncService:
 
     def get_manifest_by_content_hash(self, content_hash: str):
         """Searches for a manifest across all models by content hash."""
-        # This is a helper function that might be slow but is necessary without a dedicated manifest table.
         for model in [Message, FileAttachment, PrivateMessage, Applet, AppletData]:
             field_name = 'metadata_manifest'
             if not hasattr(model, field_name):

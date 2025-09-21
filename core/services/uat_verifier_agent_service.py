@@ -93,16 +93,12 @@ class UatVerifierAgentService:
         for trigger in triggers:
             try:
                 logger.info(f"UAT Verifier Agent processing trigger message {trigger.id}")
-                # --- CHANGE START ---
-                # Parse the new payload structure
                 payload = json.loads(trigger.body)
                 run_log = payload.get("run_log")
                 uat_user_pubkey = payload.get("uat_user_pubkey")
                 if not run_log or not uat_user_pubkey:
                     raise ValueError("Trigger message is missing run_log or uat_user_pubkey.")
-                # Pass the pubkey to the verification suite
                 results = self.run_verification_suite(run_log, uat_user_pubkey)
-                # --- CHANGE END ---
                 self.post_results(results)
                 trigger.agent_status = 'processed'
             except (json.JSONDecodeError, ValueError) as e:
@@ -163,6 +159,11 @@ class UatVerifierAgentService:
         original_content = upload_log_entry['details']['content']
         try:
             message = Message.objects.get(subject=subject)
+            # --- CHANGE START ---
+            # Add a check to ensure the attachment exists before proceeding.
+            if not message.attachments.exists():
+                return {"check": "Attachment Federation", "result": "FAIL", "details": "Message was found, but its attachment has not federated yet."}
+            # --- CHANGE END ---
             attachment = message.attachments.first()
             decrypted_bytes = self.sync_service.get_decrypted_content(attachment.metadata_manifest)
             decrypted_payload = json.loads(decrypted_bytes.decode('utf-8'))
@@ -289,9 +290,6 @@ class UatVerifierAgentService:
         logger.info(f"UAT Verifier Agent posted results: {final_status}")
 
     def send_attachment_to_host(self, run_log, uat_user_pubkey):
-        # --- CHANGE START ---
-        # The logic to find the original message is no longer needed.
-        # We use the public key passed in directly.
         log_entry = self._get_log_entry(run_log, "5)")
         if not (log_entry and log_entry['status'] == 'PASS'):
             return {"check": "Send Attachment to Host", "result": "FAIL", "details": "Prerequisite step did not pass on host."}
@@ -300,7 +298,8 @@ class UatVerifierAgentService:
         original_message = Message.objects.filter(subject=original_message_subject).first()
         
         recipient_pubkey = uat_user_pubkey
-        # --- CHANGE END ---
+        if not recipient_pubkey:
+             return {"check": "Send Attachment to Host", "result": "FAIL", "details": "Original message has no public key."}
         
         subject = f"Re: {original_message_subject}"
         body = "This is a reply from the UAT verifier agent with an attachment."

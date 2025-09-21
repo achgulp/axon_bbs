@@ -18,10 +18,10 @@
     "step": "3) Get Self Profile",
     "status": "PASS",
     "details": {
-      "username": "uat_user_2e4e8d06",
-      "nickname": "uat-runner-2e4e8d06",
-      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1v/7Tj2ZU6JGcJWT+Ypw\nWc0w1lkt2iVZb5zgdaCBJckMQ8H3CHagKCN1E3lO7KAOPt5MoZOe0oEneas3MPdF\n9pm2hAtT/dU+s+qMpKzAYHfyAF4gTDKw1Bk7rGP8KDa2OFsAk7JfwUKjur+s6Y2G\nYWPXbGNB3wVhJOvuWFBEARUPoHaaQcb6Avu46aFxMY1TM9Yh/zZMp14IaLnPNZGJ\nRKUzlloSo3YLUHAhJKm1NAVYtZkaZ8wEBEFVf1Mq9f30pup6DppYE0Ilrs002L71\n6gR4HnY/lEEc/SOovrroCM7JYa6P7XFmExnGbzaWM81f3vEnMECbRHYF0LDjbCsI\nJwIDAQAB\n-----END PUBLIC KEY-----",
-      "avatar_url": "http://lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion/media/avatars/cow_276ff113bd68.png",
+      "username": "uat_user_e721fc36",
+      "nickname": "uat-runner-e721fc36",
+      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmHsCmL8fS3N6bsjOSZwu\nZ8bBji7FTUei/IYS+JkTohZKQiJGDUy1VpqQpOwPvGG9s0CHyDM4b/d8zk8dXDER\ncRJmmf10iJwoGxfxI3ExgIMv5wrtTtH5OR31NWXO/kC7pZ5cygHO+jkDugfLacDj\n8nvaAI+8KVrGGcZvCC1moD4H9c2Bw8PRBeMYKxHUwUNUB2f5lPmfjhiQTs04rMat\nUIYNluwAjjIUhEgg3suYKSOb+jSXnNnkvLlcEecjtkhaAVTbkZnbSEn86PGosi3t\n1ChhvksAROZBazj+Ds9vfAwjp19hlEQ5eiMnR2pz2dK99dAxDUCtx3ZfpfaDuXck\nXwIDAQAB\n-----END PUBLIC KEY-----",
+      "avatar_url": "http://lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion/media/avatars/cow_f80107bab023.png",
       "karma": 10,
       "is_moderator": false,
       "timezone": null
@@ -31,25 +31,25 @@
     "step": "4) Upload Attachment",
     "status": "PASS",
     "details": {
-      "id": "0b9cfd85-9bb9-4249-88dc-37d005a3dcf1",
-      "content": "This is a test file for UAT run 2e4e8d06."
+      "id": "36de3b78-b087-42c3-8f6a-53ff37dc352e",
+      "content": "This is a test file for UAT run e721fc36."
     }
   },
   {
     "step": "5) Create Message with Attachment",
     "status": "PASS",
     "details": {
-      "message_id": "69336343-bfa1-4eaa-a178-50c0a0094e52",
-      "subject": "UAT Post from UAT-Runner-2e4e8d06"
+      "message_id": "232782f1-b9d4-4726-993a-03a4f6c46e13",
+      "subject": "UAT Post from UAT-Runner-e721fc36"
     }
   },
   {
     "step": "6) Send PM to Peer BBS User",
     "status": "PASS",
     "details": {
-      "subject": "UAT PM from UAT-Runner-2e4e8d06",
+      "subject": "UAT PM from UAT-Runner-e721fc36",
       "body": "This is a UAT private message.",
-      "sender_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1v/7Tj2ZU6JGcJWT+Ypw\nWc0w1lkt2iVZb5zgdaCBJckMQ8H3CHagKCN1E3lO7KAOPt5MoZOe0oEneas3MPdF\n9pm2hAtT/dU+s+qMpKzAYHfyAF4gTDKw1Bk7rGP8KDa2OFsAk7JfwUKjur+s6Y2G\nYWPXbGNB3wVhJOvuWFBEARUPoHaaQcb6Avu46aFxMY1TM9Yh/zZMp14IaLnPNZGJ\nRKUzlloSo3YLUHAhJKm1NAVYtZkaZ8wEBEFVf1Mq9f30pup6DppYE0Ilrs002L71\n6gR4HnY/lEEc/SOovrroCM7JYa6P7XFmExnGbzaWM81f3vEnMECbRHYF0LDjbCsI\nJwIDAQAB\n-----END PUBLIC KEY-----"
+      "sender_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmHsCmL8fS3N6bsjOSZwu\nZ8bBji7FTUei/IYS+JkTohZKQiJGDUy1VpqQpOwPvGG9s0CHyDM4b/d8zk8dXDER\ncRJmmf10iJwoGxfxI3ExgIMv5wrtTtH5OR31NWXO/kC7pZ5cygHO+jkDugfLacDj\n8nvaAI+8KVrGGcZvCC1moD4H9c2Bw8PRBeMYKxHUwUNUB2f5lPmfjhiQTs04rMat\nUIYNluwAjjIUhEgg3suYKSOb+jSXnNnkvLlcEecjtkhaAVTbkZnbSEn86PGosi3t\n1ChhvksAROZBazj+Ds9vfAwjp19hlEQ5eiMnR2pz2dK99dAxDUCtx3ZfpfaDuXck\nXwIDAQAB\n-----END PUBLIC KEY-----"
     }
   },
   {
@@ -70,32 +70,12 @@
   {
     "step": "7d) Report Message from Second User",
     "status": "PASS",
-    "details": "Successfully reported message ID 69336343-bfa1-4eaa-a178-50c0a0094e52."
-  },
-  {
-    "step": "7a) Register Second User",
-    "status": "PASS",
-    "details": "User registered successfully."
-  },
-  {
-    "step": "7b) Login as Second User",
-    "status": "PASS",
-    "details": "Logged in successfully."
-  },
-  {
-    "step": "7c) Unlock Identity of Second User",
-    "status": "PASS",
-    "details": "Identity unlocked."
-  },
-  {
-    "step": "7d) Report Message from Second User",
-    "status": "PASS",
-    "details": "Successfully reported message ID 69336343-bfa1-4eaa-a178-50c0a0094e52."
+    "details": "Successfully reported message ID 232782f1-b9d4-4726-993a-03a4f6c46e13."
   },
   {
     "step": "8) Change Nickname",
     "status": "PASS",
-    "details": "Nickname change to 'UAT-Runner-2e4e8d06-Updated' submitted."
+    "details": "Nickname change to 'UAT-Runner-e721fc36-Updated' submitted."
   },
   {
     "step": "9) Upload Avatar",
@@ -134,6 +114,7 @@
   },
   {
     "step": "14) Verify Peer Attachment",
-    "status": "PENDING"
+    "status": "FAIL",
+    "details": "Timed out waiting for peer attachment."
   }
 ]
