@@ -289,6 +289,7 @@ class SyncService:
                     if len(existing_attachments) != len(required_hashes):
                         logger.warning(f"Message {content_hash[:10]} is waiting for attachments to download. Will retry processing later.")
                         return # Abort processing for now, will be picked up by _resume_incomplete_downloads
+                
                 # --- CHANGE END ---
                 
                 author_pubkey = content.get('pubkey')
@@ -427,6 +428,7 @@ class SyncService:
                  with open(chunk_path, 'rb') as f:
                     downloaded_chunks[i] = f.read()
 
+        
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         chunks_to_download = [i for i in range(num_chunks) if i not in downloaded_chunks]
         with ThreadPoolExecutor(max_workers=4, thread_name_prefix='chunk_worker') as executor:
@@ -442,7 +444,7 @@ class SyncService:
                     if chunk_save_path:
                          os.makedirs(os.path.dirname(chunk_save_path), exist_ok=True)
                          with open(chunk_save_path, 'wb') as f:
-                            f.write(chunk_data)
+                             f.write(chunk_data)
                     logger.info(f"  - Chunk {chunk_index + 1}/{num_chunks} for '{item_name}' downloaded.")
                 else: 
                      logger.error(f"   - Failed to download/verify chunk {chunk_index + 1} for '{item_name}'. Will retry on next sync.")
@@ -476,6 +478,7 @@ class SyncService:
             obj = model.objects.filter(**{f'{field_name}__content_hash': content_hash}).first()
             if obj:
                 return getattr(obj, field_name)
+        
         return None
     
     def _download_chunk(self, seeder_url, content_hash, chunk_index, proxies):

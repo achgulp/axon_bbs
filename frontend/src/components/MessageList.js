@@ -8,8 +8,8 @@
 //
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-// See the GNU General Public License for more details.
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -34,7 +34,7 @@ const AttachmentItem = ({ attachment, onDownload }) => {
         setStatus('error');
       });
   }, [attachment.id]);
-useEffect(() => {
+  useEffect(() => {
     fetchStatus();
     const interval = setInterval(() => {
       if (status === 'syncing') {
@@ -43,7 +43,7 @@ useEffect(() => {
     }, 5000);
     return () => clearInterval(interval);
   }, [status, fetchStatus]);
-return (
+  return (
     <li key={attachment.id} className="flex items-center gap-4">
       <span className="text-gray-200">{attachment.filename}</span>
       <span className="text-gray-400 text-sm">({Math.round(attachment.size / 1024)} KB)</span>
@@ -80,7 +80,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
       setMessages(response.data);
     } catch (err) { console.error("Failed to fetch messages:", err); }
   }, [board.id]);
-useEffect(() => { fetchMessages(); }, [fetchMessages]);
+  useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
   const handlePostMessage = useCallback(async () => {
     setError('');
@@ -100,7 +100,8 @@ useEffect(() => { fetchMessages(); }, [fetchMessages]);
     }
   }, [subject, body, board.name, attachments, fetchMessages]);
   const handleFileUpload = async () => {
-    if (!selectedFile) { setUploadError('Please select a file first.'); return; }
+    if (!selectedFile) { setUploadError('Please select a file first.'); return;
+    }
     setIsUploading(true); setUploadError('');
     const formData = new FormData();
     formData.append('file', selectedFile);
@@ -145,7 +146,6 @@ useEffect(() => { fetchMessages(); }, [fetchMessages]);
     setSelectedMessage(null);
     setShowPostForm(true);
   };
-  
   const handleUnlockSuccess = () => {
     setNeedsUnlock(false);
     if (postUnlockAction) {
@@ -161,8 +161,10 @@ useEffect(() => { fetchMessages(); }, [fetchMessages]);
         throw new Error(err.response?.data?.error || 'An unexpected error occurred.');
     }
   };
-
   if (selectedMessage) {
+    const videoAttachments = selectedMessage.attachments?.filter(att => att.content_type?.startsWith('video/')) || [];
+    const otherAttachments = selectedMessage.attachments?.filter(att => !att.content_type?.startsWith('video/')) || [];
+
     return (
       <div>
         <ReportModal 
@@ -172,12 +174,12 @@ useEffect(() => { fetchMessages(); }, [fetchMessages]);
             onSubmit={handleReportSubmit}
         />
         <div className="flex justify-between items-center mb-4">
-            <button onClick={() => setSelectedMessage(null)} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
+             <button onClick={() => setSelectedMessage(null)} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
               ← Back to {board.name}
             </button>
              <div className="flex gap-2">
                 <button onClick={handleReply} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                    Reply
+                   Reply
                 </button>
                 <button onClick={() => onStartPrivateMessage(selectedMessage.pubkey, selectedMessage.author_display)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded">
                     Send Private Message
@@ -189,17 +191,31 @@ useEffect(() => { fetchMessages(); }, [fetchMessages]);
         </div>
         <div className="bg-gray-800 p-4 rounded border border-gray-700">
           <h3 className="text-xl font-bold text-white mb-1">{selectedMessage.subject}</h3>
-          <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
+           <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
             <img src={selectedMessage.author_avatar_url || '/default_avatar.png'} alt="author avatar" className="w-6 h-6 rounded-full bg-gray-700" />
             <span>by {selectedMessage.author_display} on {new Date(selectedMessage.created_at).toLocaleString([], { timeZone: displayTimezone })}</span>
           </div>
           <p className="text-gray-300 whitespace-pre-wrap mb-4">{selectedMessage.body}</p>
           
-          {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
+          {videoAttachments.length > 0 && (
             <div className="border-t border-gray-700 pt-4 mt-4">
-              <h4 className="font-bold text-gray-300 mb-2">Attachments:</h4>
+              <h4 className="font-bold text-gray-300 mb-2">Video Attachments:</h4>
+              <div className="space-y-4">
+                {videoAttachments.map(att => (
+                  <video key={att.id} controls preload="metadata" className="w-full max-w-2xl rounded bg-black">
+                    <source src={`/api/content/stream/${att.metadata_manifest.content_hash}/`} type={att.content_type} />
+                    Your browser does not support the video tag.
+                  </video>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {otherAttachments.length > 0 && (
+            <div className="border-t border-gray-700 pt-4 mt-4">
+              <h4 className="font-bold text-gray-300 mb-2">File Attachments:</h4>
               <ul className="space-y-2">
-                {selectedMessage.attachments.map(att => (
+                {otherAttachments.map(att => (
                   <AttachmentItem key={att.id} attachment={att} onDownload={handleFileDownload} />
                 ))}
               </ul>
@@ -218,7 +234,7 @@ useEffect(() => { fetchMessages(); }, [fetchMessages]);
         <div>
           <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded mr-2">← Boards</button>
           <button onClick={() => setShowPostForm(!showPostForm)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-            {showPostForm ? 'Cancel' : 'New Post'}
+             {showPostForm ? 'Cancel' : 'New Post'}
           </button>
         </div>
       </div>
@@ -238,7 +254,7 @@ useEffect(() => { fetchMessages(); }, [fetchMessages]);
               {uploadError && <p className="text-red-500 text-xs italic mt-2">{uploadError}</p>}
               {attachments.length > 0 && (
                 <div className="mt-4">
-                  <h4 className="text-sm font-bold text-gray-300">Attached:</h4>
+                   <h4 className="text-sm font-bold text-gray-300">Attached:</h4>
                   <ul className="list-disc list-inside text-gray-400">
                     {attachments.map((att) => (
                       <li key={att.id}>

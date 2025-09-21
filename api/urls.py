@@ -7,14 +7,12 @@
 # (at your option) any later version.
 #
 # This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY;
-# without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.
-# If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/api/urls.py
@@ -44,7 +42,8 @@ from .views import (
     PrivateMessageListView,
     PrivateMessageOutboxView,
     DeletePrivateMessageView,
-    DownloadContentView, # <-- ADD THIS LINE
+    DownloadContentView,
+    StreamContentView,
     FileUploadView,
     AppletListView,
     GetSaveAppletDataView,
@@ -121,7 +120,8 @@ urlpatterns = [
     path('content/request-extension/', RequestContentExtensionView.as_view(), name='request-extension'),
     path('content/review-extension/<int:pk>/', ReviewContentExtensionView.as_view(), name='review-extension'),
     path('content/unpin/', UnpinContentView.as_view(), name='unpin-content'),
-    path('content/download/<str:content_hash>/', DownloadContentView.as_view(), name='content-download'), # <-- ADD THIS LINE
+    path('content/download/<str:content_hash>/', DownloadContentView.as_view(), name='content-download'),
+    path('content/stream/<str:content_hash>/', StreamContentView.as_view(), name='content-stream'),
 
     # Applet Framework
     path('applets/', AppletListView.as_view(), name='applet-list'),

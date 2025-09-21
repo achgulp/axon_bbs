@@ -7,14 +7,12 @@
 # (at your option) any later version.
 #
 # This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY;
-# without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.
-# If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/api/views/content_views.py
@@ -23,12 +21,15 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
-from django.http import HttpResponse # <-- ADD THIS LINE
+from django.http import HttpResponse, StreamingHttpResponse
 import logging
 import json
 import base64
 import hashlib
+import os
 from rest_framework.parsers import MultiPartParser, FormParser
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.padding import PKCS7
 
 from core.services.encryption_utils import encrypt_for_recipients_only, generate_checksum, decrypt_for_recipients_only
 from ..serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer, FileAttachmentSerializer
@@ -197,7 +198,7 @@ class PrivateMessageListView(generics.ListAPIView):
         private_key = request.session.get('unencrypted_priv_key')
         if not private_key:
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
-            
+        
         queryset = self.get_queryset()
         for message in queryset:
             # First, decrypt the outer metadata envelope
@@ -304,7 +305,6 @@ class DeletePrivateMessageView(views.APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-# --- NEW VIEW ---
 class DownloadContentView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -350,9 +350,14 @@ class FileUploadView(views.APIView):
         
         file = request.FILES['file']
         
-        # Basic validation
-        if file.size > 5 * 1024 * 1024: # 5MB limit for generic files
-            return Response({"error": "File size cannot exceed 5MB."}, status=status.HTTP_400_BAD_REQUEST)
+        # --- FIX START ---
+        # The 5MB file size limit has been commented out to allow for large video uploads.
+        # A production environment should implement streaming uploads or configure the webserver
+        # (e.g., Nginx) to handle large request bodies gracefully.
+        #
+        # if file.size > 5 * 1024 * 1024: # 5MB limit for generic files
+        #     return Response({"error": "File size cannot exceed 5MB."}, status=status.HTTP_400_BAD_REQUEST)
+        # --- FIX END ---
 
         try:
             user = request.user
@@ -384,3 +389,67 @@ class FileUploadView(views.APIView):
         except Exception as e:
             logger.error(f"Could not process file upload for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred during file upload."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+def stream_content_generator(content_hash):
+    """A generator function to fetch, decrypt, and yield chunks for streaming."""
+    sync_service = service_manager.sync_service
+    bitsync_service = service_manager.bitsync_service
+
+    try:
+        manifest = sync_service.get_manifest_by_content_hash(content_hash)
+        if not manifest:
+            logger.warning(f"Stream requested for unknown content hash: {content_hash}")
+            return
+
+        aes_key = bitsync_service.get_decrypted_aes_key(manifest)
+        iv = base64.b64decode(manifest['encryption_iv'])
+        
+        cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
+        decryptor = cipher.decryptor()
+        unpadder = PKCS7(algorithms.AES.block_size).unpadder()
+
+        num_chunks = len(manifest.get('chunk_hashes', []))
+        
+        for i in range(num_chunks):
+            chunk_path = bitsync_service.get_chunk_path(content_hash, i)
+            
+            if not os.path.exists(chunk_path):
+                sync_service._download_single_chunk(manifest, i)
+
+            if os.path.exists(chunk_path):
+                with open(chunk_path, 'rb') as f:
+                    encrypted_chunk = f.read()
+                
+                if i < num_chunks - 1:
+                    yield decryptor.update(encrypted_chunk)
+                else:
+                    # Last chunk needs finalization and unpadding
+                    final_decrypted = decryptor.update(encrypted_chunk) + decryptor.finalize()
+                    unpadded_final = unpadder.update(final_decrypted) + unpadder.finalize()
+                    yield unpadded_final
+            else:
+                logger.error(f"Failed to obtain chunk {i} for streaming {content_hash}")
+                return # Abort stream if a chunk can't be found/downloaded
+
+    except Exception as e:
+        logger.error(f"Error during content stream for {content_hash}: {e}", exc_info=True)
+        return
+
+class StreamContentView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, content_hash, *args, **kwargs):
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        manifest = service_manager.sync_service.get_manifest_by_content_hash(content_hash)
+        if not manifest:
+            return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        content_type = manifest.get('content_type_val', 'application/octet-stream')
+        
+        response = StreamingHttpResponse(
+            stream_content_generator(content_hash),
+            content_type=content_type
+        )
+        return response
