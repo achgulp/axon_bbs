@@ -30,7 +30,7 @@ from .bitsync_service import BitSyncService
 
 logger = logging.getLogger(__name__)
 
-class UATVerifierAgentService:
+class UatVerifierAgentService:
     def __init__(self, poll_interval=30):
         self.poll_interval = poll_interval
         self.shutdown_event = threading.Event()
