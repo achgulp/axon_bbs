@@ -7,14 +7,13 @@
 # (at your option) any later version.
 #
 # This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY;
+# but WITHOUT ANY WARRANTY; #
 # without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.
-# If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/uat_runner.py
@@ -134,7 +133,7 @@ def test_post_message_with_attachment(client, board_name, subject, body, attachm
         raise Exception(f"Post message failed. Status: {response.status_code}, Body: {response.text}")
     
     response_data = response.json()
-    return {"message_id": response_data['message_id'], "subject": subject}
+    return {"message_id": response_data['id'], "subject": subject}
 
 def test_report_message(client, message_id, comment):
     payload = {"message_id": message_id, "comment": comment}
@@ -247,6 +246,7 @@ def run_uat_suite(peer_onion_url):
         pm_subject = f"UAT PM from {NICKNAME}"
         pm_body = "This is a UAT private message."
         pm_result = client.run_test("6) Send PM to Peer BBS User", test_send_pm, client, "pibbs_user", pm_subject, pm_body)
+        
         # Add the sender pubkey to the log for the verifier
         pm_result['sender_pubkey'] = profile['pubkey']
 

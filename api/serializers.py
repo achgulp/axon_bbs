@@ -13,8 +13,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-
 # Full path: axon_bbs/api/serializers.py
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
@@ -195,6 +193,7 @@ class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
 class ContentExtensionRequestSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField()
     reviewed_by = serializers.StringRelatedField()
+    
     class Meta:
         model = ContentExtensionRequest
         fields = ('id', 'content_id', 'content_type', 'user', 'request_date', 'status', 'reviewed_by', 'reviewed_at')

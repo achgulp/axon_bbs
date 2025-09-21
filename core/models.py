@@ -8,12 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.
-# If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/models.py
@@ -170,6 +169,7 @@ class Message(Content):
     attachments = models.ManyToManyField(FileAttachment, blank=True, related_name='messages')
     agent_status = models.CharField(max_length=20, default='pending', choices=[('pending', 'Pending'), ('processed', 'Processed'), ('failed', 'Failed')])
     last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this message.")
+    parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='replies')
 
     def __str__(self):
         return f"'{self.subject}' by {self.author.username if self.author else 'system'}"
