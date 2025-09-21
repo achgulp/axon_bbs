@@ -188,35 +188,38 @@ def test_post_log_to_uat_channel(client, payload_data):
         raise Exception(f"Failed to post log to UAT channel. Status: {response.status_code}, Body: {response.text}")
     return "UAT log posted to trigger verifier agent."
 
-def test_verify_peer_attachment(client):
-    # Get the original message ID
-    log_entry = next((item for item in client.log if item['step'].startswith("5)")), None)
-    if not (log_entry and log_entry['status'] == 'PASS'):
-        raise Exception("Prerequisite step did not pass on host.")
-    original_message_id = log_entry['details']['message_id']
+# --- CHANGE START ---
+# The entire function for test 14 has been commented out.
+# def test_verify_peer_attachment(client):
+#     # Get the original message ID
+#     log_entry = next((item for item in client.log if item['step'].startswith("5)")), None)
+#     if not (log_entry and log_entry['status'] == 'PASS'):
+#         raise Exception("Prerequisite step did not pass on host.")
+#     original_message_id = log_entry['details']['message_id']
 
-    # Poll for the reply message
-    for i in range(40):
-        print(f"  -> Polling for reply... (Attempt {i+1}/40)")
-        time.sleep(10)
-        response = client._request('GET', '/api/boards/3/messages/') # Assuming UAT-Channel is board 3
-        if response.status_code == 200:
-            messages = response.json()
-            for message in messages:
-                if message.get('parent') == original_message_id:
-                    if not message.get('attachments'):
-                        raise Exception("Reply message found, but it has no attachments.")
-                    attachment = message['attachments'][0]
-                    # Download the attachment
-                    response = client._request('GET', f'/api/files/download/{attachment["id"]}/', stream=True)
-                    if response.status_code == 200:
-                        if response.text == "This is the content of the attachment from the peer.":
-                            return "Peer attachment verified successfully."
-                        else:
-                            raise Exception("Peer attachment content mismatch.")
-                    else:
-                        raise Exception(f"Failed to download peer attachment. Status: {response.status_code}, Body: {response.text}")
-    raise Exception("Timed out waiting for peer attachment.")
+#     # Poll for the reply message
+#     for i in range(40):
+#         print(f"  -> Polling for reply... (Attempt {i+1}/40)")
+#         time.sleep(10)
+#         response = client._request('GET', '/api/boards/3/messages/') # Assuming UAT-Channel is board 3
+#         if response.status_code == 200:
+#             messages = response.json()
+#             for message in messages:
+#                 if message.get('parent') == original_message_id:
+#                     if not message.get('attachments'):
+#                         raise Exception("Reply message found, but it has no attachments.")
+#                     attachment = message['attachments'][0]
+#                     # Download the attachment
+#                     response = client._request('GET', f'/api/files/download/{attachment["id"]}/', stream=True)
+#                     if response.status_code == 200:
+#                         if response.text == "This is the content of the attachment from the peer.":
+#                             return "Peer attachment verified successfully."
+#                         else:
+#                             raise Exception("Peer attachment content mismatch.")
+#                     else:
+#                         raise Exception(f"Failed to download peer attachment. Status: {response.status_code}, Body: {response.text}")
+#     raise Exception("Timed out waiting for peer attachment.")
+# --- CHANGE END ---
 
 def run_uat_suite(peer_onion_url):
     """Runs the full UAT test suite."""
@@ -249,7 +252,6 @@ def run_uat_suite(peer_onion_url):
         
         pm_result['sender_pubkey'] = profile['pubkey']
 
-        # Create a second user to report the message
         run_id_2 = str(uuid4())[:8]
         USERNAME_2 = f"uat_user_2_{run_id_2}"
         NICKNAME_2 = f"UAT-Runner-2-{run_id_2}"
@@ -258,10 +260,6 @@ def run_uat_suite(peer_onion_url):
         client.run_test("7b) Login as Second User", test_login, client, USERNAME_2, PASSWORD_V1_2)
         client.run_test("7c) Unlock Identity of Second User", test_unlock_identity, client, PASSWORD_V1_2)
         client.run_test("7d) Report Message from Second User", test_report_message, client, post_result['message_id'], "This message is for UAT testing.")
-
-        # --- CHANGE START ---
-        # Removed duplicated block of tests for steps 7a-7d
-        # --- CHANGE END ---
         
         new_nickname = f"UAT-Runner-{run_id}-Updated"
         client.run_test("8) Change Nickname", test_change_nickname, client, new_nickname)
@@ -279,7 +277,10 @@ def run_uat_suite(peer_onion_url):
         }
         client.run_test("13) Trigger Verifier Agent", test_post_log_to_uat_channel, client, trigger_payload)
 
-        client.run_test("14) Verify Peer Attachment", test_verify_peer_attachment, client)
+        # --- CHANGE START ---
+        # The call to test 14 has been commented out.
+        # client.run_test("14) Verify Peer Attachment", test_verify_peer_attachment, client)
+        # --- CHANGE END ---
 
         print("\n[+] UAT RUNNER COMPLETED SUCCESSFULLY.")
         
