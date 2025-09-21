@@ -178,14 +178,11 @@ def test_logout(client):
     return "Logged out successfully."
 
 def test_post_log_to_uat_channel(client, payload_data):
-    # --- CHANGE START ---
-    # The body now contains the entire payload (log and pubkey)
     payload = {
         "board_name": "UAT-Channel",
         "subject": "start_uat",
         "body": json.dumps(payload_data, indent=2)
     }
-    # --- CHANGE END ---
     response = client._request('POST', '/api/messages/post/', json=payload)
     if response.status_code != 201:
         raise Exception(f"Failed to post log to UAT channel. Status: {response.status_code}, Body: {response.text}")
@@ -199,13 +196,16 @@ def test_verify_peer_attachment(client):
     original_message_id = log_entry['details']['message_id']
 
     # Poll for the reply message
-    for _ in range(15):
+    for i in range(40):
+        print(f"  -> Polling for reply... (Attempt {i+1}/40)")
         time.sleep(10)
         response = client._request('GET', '/api/boards/3/messages/') # Assuming UAT-Channel is board 3
         if response.status_code == 200:
             messages = response.json()
             for message in messages:
-                if message['parent'] == original_message_id:
+                if message.get('parent') == original_message_id:
+                    if not message.get('attachments'):
+                        raise Exception("Reply message found, but it has no attachments.")
                     attachment = message['attachments'][0]
                     # Download the attachment
                     response = client._request('GET', f'/api/files/download/{attachment["id"]}/', stream=True)
@@ -249,6 +249,7 @@ def run_uat_suite(peer_onion_url):
         
         pm_result['sender_pubkey'] = profile['pubkey']
 
+        # Create a second user to report the message
         run_id_2 = str(uuid4())[:8]
         USERNAME_2 = f"uat_user_2_{run_id_2}"
         NICKNAME_2 = f"UAT-Runner-2-{run_id_2}"
@@ -258,15 +259,9 @@ def run_uat_suite(peer_onion_url):
         client.run_test("7c) Unlock Identity of Second User", test_unlock_identity, client, PASSWORD_V1_2)
         client.run_test("7d) Report Message from Second User", test_report_message, client, post_result['message_id'], "This message is for UAT testing.")
 
-        run_id_2 = str(uuid4())[:8]
-        USERNAME_2 = f"uat_user_2_{run_id_2}"
-        NICKNAME_2 = f"UAT-Runner-2-{run_id_2}"
-        PASSWORD_V1_2 = f"password_{run_id_2}_v1"
-        client.run_test("7a) Register Second User", test_register, client, USERNAME_2, PASSWORD_V1_2, NICKNAME_2)
-        client.run_test("7b) Login as Second User", test_login, client, USERNAME_2, PASSWORD_V1_2)
-        client.run_test("7c) Unlock Identity of Second User", test_unlock_identity, client, PASSWORD_V1_2)
-        client.run_test("7d) Report Message from Second User", test_report_message, client, post_result['message_id'], "This message is for UAT testing.")
-
+        # --- CHANGE START ---
+        # Removed duplicated block of tests for steps 7a-7d
+        # --- CHANGE END ---
         
         new_nickname = f"UAT-Runner-{run_id}-Updated"
         client.run_test("8) Change Nickname", test_change_nickname, client, new_nickname)
@@ -278,14 +273,11 @@ def run_uat_suite(peer_onion_url):
         client.run_test("12) Log in with New Password", test_login, client, USERNAME, PASSWORD_V2)
         client.run_test("12a) Unlock Identity with New Password", test_unlock_identity, client, PASSWORD_V2)
         
-        # --- CHANGE START ---
-        # The payload now includes the public key of the UAT user.
         trigger_payload = {
             "run_log": client.log,
             "uat_user_pubkey": profile['pubkey']
         }
         client.run_test("13) Trigger Verifier Agent", test_post_log_to_uat_channel, client, trigger_payload)
-        # --- CHANGE END ---
 
         client.run_test("14) Verify Peer Attachment", test_verify_peer_attachment, client)
 

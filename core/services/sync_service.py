@@ -8,12 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.
-# If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 # Full path: axon_bbs/core/services/sync_service.py
@@ -36,6 +35,7 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
+from django.db import IntegrityError
 
 from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey, Alias, Applet, AppletData
 from core.services.encryption_utils import generate_checksum, generate_short_id, decrypt_for_recipients_only
@@ -282,42 +282,28 @@ class SyncService:
                 content = json.loads(decrypted_data)
                 
                 author_pubkey = content.get('pubkey')
-                if author_pubkey and not User.objects.filter(pubkey=author_pubkey).exists():
+                if author_pubkey:
+                    # --- CHANGE START ---
+                    # Use get_or_create to safely handle existing federated users.
+                    short_id = generate_short_id(author_pubkey, length=8)
+                    defaults = {
+                        'nickname': f"Moo-{short_id}",
+                        'is_active': False,
+                        'password': User.objects.make_random_password()
+                    }
                     try:
-                        short_id = generate_short_id(author_pubkey, length=8)
-                        new_nickname = f"Moo-{short_id}"
-                        
-                        avatar_content_file, avatar_filename = generate_cow_avatar(author_pubkey)
-                        
-                        new_user = User.objects.create(
-                            username=f"federated_{short_id}",
-                            nickname=new_nickname,
-                            pubkey=author_pubkey,
-                            is_active=False,
-                            password=User.objects.make_random_password()
-                        )
-                        new_user.avatar.save(avatar_filename, avatar_content_file, save=True)
-                        logger.info(f"Discovered new federated user. Created profile '{new_nickname}' with a unique cow avatar.")
-
-                        pending_actions = FederatedAction.objects.filter(
-                            pubkey_target=new_user.pubkey,
-                            action_type='update_profile'
-                        ).order_by('created_at')
-
-                        if pending_actions.exists():
-                            logger.info(f"Found {pending_actions.count()} pending profile actions for new user {new_user.username}. Applying them now.")
-                            for action in pending_actions:
-                                details = action.action_details
-                                new_user.nickname = details.get('nickname', new_user.nickname)
-                                new_user.karma = details.get('karma', new_user.karma)
-                                new_user.save()
-                            
-                                avatar_hash = details.get('avatar_hash')
-                                if avatar_hash:
-                                    self._apply_avatar_from_hash(new_user, avatar_hash)
-
-                    except Exception as user_create_e:
-                        logger.error(f"Failed to create federated user profile for pubkey {author_pubkey[:12]}: {user_create_e}")
+                        new_user, created = User.objects.get_or_create(pubkey=author_pubkey, defaults={**defaults, 'username': f"federated_{short_id}"})
+                        if created:
+                            avatar_content_file, avatar_filename = generate_cow_avatar(author_pubkey)
+                            new_user.avatar.save(avatar_filename, avatar_content_file, save=True)
+                            logger.info(f"Discovered new federated user. Created profile '{new_user.nickname}' with a unique cow avatar.")
+                    except IntegrityError:
+                        # This can happen if two messages from different pubkeys generate the same short_id nickname. Retry with a random suffix.
+                        random_suffix = uuid.uuid4().hex[:4]
+                        new_user, created = User.objects.get_or_create(pubkey=author_pubkey, defaults={**defaults, 'username': f"federated_{short_id}_{random_suffix}", 'nickname': f"Moo-{short_id}-{random_suffix}"})
+                        if created:
+                            logger.info(f"Created federated user with fallback nickname '{new_user.nickname}'.")
+                    # --- CHANGE END ---
                 
                 board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
                 message = Message.objects.create(
@@ -330,7 +316,6 @@ class SyncService:
                     existing_attachments = FileAttachment.objects.filter(metadata_manifest__content_hash__in=required_hashes)
                     if len(existing_attachments) != len(required_hashes):
                         logger.warning(f"Message {content_hash[:10]} is waiting for attachments to download. Will retry processing later.")
-                        # We delete the message we just created so it can be re-processed later
                         message.delete()
                         return
                     message.attachments.set(existing_attachments)
@@ -470,7 +455,7 @@ class SyncService:
                     if chunk_save_path:
                          os.makedirs(os.path.dirname(chunk_save_path), exist_ok=True)
                          with open(chunk_save_path, 'wb') as f:
-                             f.write(chunk_data)
+                            f.write(chunk_data)
                     logger.info(f"  - Chunk {chunk_index + 1}/{num_chunks} for '{item_name}' downloaded.")
                 else: 
                      logger.error(f"   - Failed to download/verify chunk {chunk_index + 1} for '{item_name}'. Will retry on next sync.")
