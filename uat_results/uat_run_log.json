@@ -1,7 +1,135 @@
 [
   {
     "step": "0) Register New User",
-    "status": "FAIL",
-    "details": "'idna' codec can't encode characters in position 0-69: label too long"
+    "status": "PASS",
+    "details": "User registered successfully."
+  },
+  {
+    "step": "1) Login",
+    "status": "PASS",
+    "details": "Logged in successfully."
+  },
+  {
+    "step": "2) Unlock Identity",
+    "status": "PASS",
+    "details": "Identity unlocked."
+  },
+  {
+    "step": "3) Get Self Profile",
+    "status": "PASS",
+    "details": {
+      "username": "uat_user_8e0dbc7a",
+      "nickname": "uat-runner-8e0dbc7a",
+      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzUWvTjHNxdfz6zL7Q5us\nZjEeUsoBVEfjcvd1supTDiunWZSlG/G+meFMJYsR/eGZlmtqwWBY/4lRNUynuzNJ\nNqaxs62Qu/+MckQWvScl1w/k+ULA6PzLP3iIg1Sc0M4kepihp8F+/QapmqZ65/E2\nJfof9ZZA+qkiIxUWYeqRTIBXGu5ljmgAyezymJcBRLdylGtCm9Dpv/21w4keQqvH\nReRJdb5VK3IY0RqTncMIDV0k0RsDkROPLTQdtBllUvhleIT0qEAMKp8TnWEuBo3w\nj4fpS81Z2DFroBYYN4MMBXnY6SEy7cxZVonz+dCMrzxM1UjA4FSOCWrD96AL4o+s\nqQIDAQAB\n-----END PUBLIC KEY-----",
+      "avatar_url": "http://lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion/media/avatars/cow_65413cf107a0.png",
+      "karma": 10,
+      "is_moderator": false,
+      "timezone": null
+    }
+  },
+  {
+    "step": "4) Upload Attachment",
+    "status": "PASS",
+    "details": {
+      "id": "12d8ad86-cc8f-4a6b-b9c5-df499eccf58a",
+      "content": "This is a test file for UAT run 8e0dbc7a."
+    }
+  },
+  {
+    "step": "5) Create Message with Attachment",
+    "status": "PASS",
+    "details": {
+      "message_id": "4d776e26-9f0e-4461-bd29-89799a9ff688",
+      "subject": "UAT Post from UAT-Runner-8e0dbc7a"
+    }
+  },
+  {
+    "step": "6) Send PM to Peer BBS User",
+    "status": "PASS",
+    "details": {
+      "subject": "UAT PM from UAT-Runner-8e0dbc7a",
+      "body": "This is a UAT private message.",
+      "sender_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzUWvTjHNxdfz6zL7Q5us\nZjEeUsoBVEfjcvd1supTDiunWZSlG/G+meFMJYsR/eGZlmtqwWBY/4lRNUynuzNJ\nNqaxs62Qu/+MckQWvScl1w/k+ULA6PzLP3iIg1Sc0M4kepihp8F+/QapmqZ65/E2\nJfof9ZZA+qkiIxUWYeqRTIBXGu5ljmgAyezymJcBRLdylGtCm9Dpv/21w4keQqvH\nReRJdb5VK3IY0RqTncMIDV0k0RsDkROPLTQdtBllUvhleIT0qEAMKp8TnWEuBo3w\nj4fpS81Z2DFroBYYN4MMBXnY6SEy7cxZVonz+dCMrzxM1UjA4FSOCWrD96AL4o+s\nqQIDAQAB\n-----END PUBLIC KEY-----"
+    }
+  },
+  {
+    "step": "7a) Register Second User",
+    "status": "PASS",
+    "details": "User registered successfully."
+  },
+  {
+    "step": "7b) Login as Second User",
+    "status": "PASS",
+    "details": "Logged in successfully."
+  },
+  {
+    "step": "7c) Unlock Identity of Second User",
+    "status": "PASS",
+    "details": "Identity unlocked."
+  },
+  {
+    "step": "7d) Report Message from Second User",
+    "status": "PASS",
+    "details": "Successfully reported message ID 4d776e26-9f0e-4461-bd29-89799a9ff688."
+  },
+  {
+    "step": "7a) Register Second User",
+    "status": "PASS",
+    "details": "User registered successfully."
+  },
+  {
+    "step": "7b) Login as Second User",
+    "status": "PASS",
+    "details": "Logged in successfully."
+  },
+  {
+    "step": "7c) Unlock Identity of Second User",
+    "status": "PASS",
+    "details": "Identity unlocked."
+  },
+  {
+    "step": "7d) Report Message from Second User",
+    "status": "PASS",
+    "details": "Successfully reported message ID 4d776e26-9f0e-4461-bd29-89799a9ff688."
+  },
+  {
+    "step": "8) Change Nickname",
+    "status": "PASS",
+    "details": "Nickname change to 'UAT-Runner-8e0dbc7a-Updated' submitted."
+  },
+  {
+    "step": "9) Upload Avatar",
+    "status": "PASS",
+    "details": "Avatar submitted for approval."
+  },
+  {
+    "step": "9a) Login as First User",
+    "status": "PASS",
+    "details": "Logged in successfully."
+  },
+  {
+    "step": "10) Change Password",
+    "status": "PASS",
+    "details": "Password changed successfully."
+  },
+  {
+    "step": "11) Logout",
+    "status": "PASS",
+    "details": "Logged out successfully."
+  },
+  {
+    "step": "12) Log in with New Password",
+    "status": "PASS",
+    "details": "Logged in successfully."
+  },
+  {
+    "step": "12a) Unlock Identity with New Password",
+    "status": "PASS",
+    "details": "Identity unlocked."
+  },
+  {
+    "step": "13) Trigger Verifier Agent",
+    "status": "PASS",
+    "details": "UAT log posted to trigger verifier agent."
   }
 ]

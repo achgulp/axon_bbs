@@ -55,7 +55,7 @@ class UATClient:
             headers['Authorization'] = f'Bearer {self.access_token}'
         
         kwargs["headers"] = headers
-        url = f"{HOST_BBS_ONION}{endpoint}"
+        url = f"http://{HOST_BBS_ONION}{endpoint}"
         return self.session.request(method, url, **kwargs)
 
     def run_test(self, description, func, *args, **kwargs):
@@ -218,19 +218,40 @@ def run_uat_suite(peer_onion_url):
         
         pm_subject = f"UAT PM from {NICKNAME}"
         pm_body = "This is a UAT private message."
-        pm_result = client.run_test("6) Send PM to Peer BBS User", test_send_pm, client, peer_onion_url, pm_subject, pm_body)
+        pm_result = client.run_test("6) Send PM to Peer BBS User", test_send_pm, client, USERNAME, pm_subject, pm_body)
         # Add the sender pubkey to the log for the verifier
         pm_result['sender_pubkey'] = profile['pubkey']
 
-        client.run_test("7) Report Message", test_report_message, client, post_result['message_id'], "This message is for UAT testing.")
+        # Create a second user to report the message
+        run_id_2 = str(uuid4())[:8]
+        USERNAME_2 = f"uat_user_2_{run_id_2}"
+        NICKNAME_2 = f"UAT-Runner-2-{run_id_2}"
+        PASSWORD_V1_2 = f"password_{run_id_2}_v1"
+        client.run_test("7a) Register Second User", test_register, client, USERNAME_2, PASSWORD_V1_2, NICKNAME_2)
+        client.run_test("7b) Login as Second User", test_login, client, USERNAME_2, PASSWORD_V1_2)
+        client.run_test("7c) Unlock Identity of Second User", test_unlock_identity, client, PASSWORD_V1_2)
+        client.run_test("7d) Report Message from Second User", test_report_message, client, post_result['message_id'], "This message is for UAT testing.")
+
+        # Create a second user to report the message
+        run_id_2 = str(uuid4())[:8]
+        USERNAME_2 = f"uat_user_2_{run_id_2}"
+        NICKNAME_2 = f"UAT-Runner-2-{run_id_2}"
+        PASSWORD_V1_2 = f"password_{run_id_2}_v1"
+        client.run_test("7a) Register Second User", test_register, client, USERNAME_2, PASSWORD_V1_2, NICKNAME_2)
+        client.run_test("7b) Login as Second User", test_login, client, USERNAME_2, PASSWORD_V1_2)
+        client.run_test("7c) Unlock Identity of Second User", test_unlock_identity, client, PASSWORD_V1_2)
+        client.run_test("7d) Report Message from Second User", test_report_message, client, post_result['message_id'], "This message is for UAT testing.")
+
         
         new_nickname = f"UAT-Runner-{run_id}-Updated"
         client.run_test("8) Change Nickname", test_change_nickname, client, new_nickname)
         client.run_test("9) Upload Avatar", test_upload_avatar, client)
         
+        client.run_test("9a) Login as First User", test_login, client, USERNAME, PASSWORD_V1)
         client.run_test("10) Change Password", test_change_password, client, PASSWORD_V1, PASSWORD_V2)
         client.run_test("11) Logout", test_logout, client)
         client.run_test("12) Log in with New Password", test_login, client, USERNAME, PASSWORD_V2)
+        client.run_test("12a) Unlock Identity with New Password", test_unlock_identity, client, PASSWORD_V2)
         
         # Final step: Post the log to the UAT channel to trigger the verifier
         client.run_test("13) Trigger Verifier Agent", test_post_log_to_uat_channel, client, client.log)
@@ -244,7 +265,9 @@ def run_uat_suite(peer_onion_url):
         client.save_log()
 
 if __name__ == "__main__":
-    peer_url = os.getenv("TEST_BBS_ONION")
-    if not peer_url:
-        raise ValueError("TEST_BBS_ONION environment variable not set.")
+    import sys
+    if len(sys.argv) != 2:
+        print("Usage: python uat_runner.py <peer_onion_url>")
+        sys.exit(1)
+    peer_url = sys.argv[1]
     run_uat_suite(peer_url)
