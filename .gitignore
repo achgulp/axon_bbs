@@ -30,7 +30,7 @@ venv.bak/
 data/
 
 # Migrations (optional, regenerate on new setups)
-migrations/
+#migrations/
 
 # Editor directories and files
 .gemini/
