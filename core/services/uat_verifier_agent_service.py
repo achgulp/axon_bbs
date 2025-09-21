@@ -13,8 +13,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-# File path: axon_bbs/core/services/uat_verifier_agent_service.py
 
+
+# Full path: axon_bbs/core/services/uat_verifier_agent_service.py
 import threading
 import time
 import logging
@@ -92,23 +93,30 @@ class UatVerifierAgentService:
         for trigger in triggers:
             try:
                 logger.info(f"UAT Verifier Agent processing trigger message {trigger.id}")
-                run_log = json.loads(trigger.body)
-                results = self.run_verification_suite(run_log)
+                # --- CHANGE START ---
+                # Parse the new payload structure
+                payload = json.loads(trigger.body)
+                run_log = payload.get("run_log")
+                uat_user_pubkey = payload.get("uat_user_pubkey")
+                if not run_log or not uat_user_pubkey:
+                    raise ValueError("Trigger message is missing run_log or uat_user_pubkey.")
+                # Pass the pubkey to the verification suite
+                results = self.run_verification_suite(run_log, uat_user_pubkey)
+                # --- CHANGE END ---
                 self.post_results(results)
                 trigger.agent_status = 'processed'
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse UAT run_log from trigger message {trigger.id}")
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.error(f"Failed to parse UAT payload from trigger message {trigger.id}: {e}")
                 trigger.agent_status = 'failed'
             except Exception as e:
                 logger.error(f"Error processing UAT trigger {trigger.id}: {e}", exc_info=True)
                 trigger.agent_status = 'failed'
             trigger.save()
 
-    def run_verification_suite(self, run_log):
+    def run_verification_suite(self, run_log, uat_user_pubkey):
         results = []
         logger.info("--- UAT Verification Suite Started ---")
         
-        # Give federation time to catch up initially
         time.sleep(60)
 
         results.append(self.verify_public_post(run_log))
@@ -127,7 +135,7 @@ class UatVerifierAgentService:
         results.append(self.verify_avatar_federation(run_log))
 
         logger.info("--- UAT: Sending attachment back to host ---")
-        results.append(self.send_attachment_to_host(run_log))
+        results.append(self.send_attachment_to_host(run_log, uat_user_pubkey))
 
         logger.info("--- UAT Verification Suite Finished ---")
         return results
@@ -280,18 +288,20 @@ class UatVerifierAgentService:
         Message.objects.create(board=self.log_board, author=self.agent_user, pubkey=self.agent_user.pubkey, subject=subject, body=body, metadata_manifest=manifest, agent_status='processed')
         logger.info(f"UAT Verifier Agent posted results: {final_status}")
 
-    def send_attachment_to_host(self, run_log):
+    def send_attachment_to_host(self, run_log, uat_user_pubkey):
+        # --- CHANGE START ---
+        # The logic to find the original message is no longer needed.
+        # We use the public key passed in directly.
         log_entry = self._get_log_entry(run_log, "5)")
         if not (log_entry and log_entry['status'] == 'PASS'):
             return {"check": "Send Attachment to Host", "result": "FAIL", "details": "Prerequisite step did not pass on host."}
         
         original_message_subject = log_entry['details']['subject']
-        try:
-            original_message = Message.objects.get(subject=original_message_subject)
-        except Message.DoesNotExist:
-            return {"check": "Send Attachment to Host", "result": "FAIL", "details": f"Could not find original message with subject '{original_message_subject}'."}
-
-        recipient_pubkey = original_message.author.pubkey
+        original_message = Message.objects.filter(subject=original_message_subject).first()
+        
+        recipient_pubkey = uat_user_pubkey
+        # --- CHANGE END ---
+        
         subject = f"Re: {original_message_subject}"
         body = "This is a reply from the UAT verifier agent with an attachment."
         attachment_content = "This is the content of the attachment from the peer."

@@ -18,10 +18,10 @@
     "step": "3) Get Self Profile",
     "status": "PASS",
     "details": {
-      "username": "uat_user_f08361d7",
-      "nickname": "uat-runner-f08361d7",
-      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqihA00oZVDdAo79tRGzL\nGPDuWn+g9gQrcEThjFaMpuTPbsgV6gRCyU9ajAVRmRDSx6yd2+7zpyfcALNds2Dk\n4NwSCfOiv45Ca39d7H2PKRKtadqXgiKlj4kk1BKkVTgTOKwr9ELoVpfgdBQ998M0\nLX9QE1wICx8fK5EA02S20USE7gMjuxkMSOhsaWzJvxDmt7PhiR58Th8wLMkl4LWR\nYCl35CTWcGSj1v8AYIFzBLwtYUJxEl+ZbLnInOTf5aSb2C2R4tJcaHnrP2u7ZYv/\n6eD0mcG7PJ9Z8G+BwXacvEjOxpx7vwqU1UG4idrCiOckSh6v8VZOb94TcnpCUjBl\nFQIDAQAB\n-----END PUBLIC KEY-----",
-      "avatar_url": "http://lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion/media/avatars/cow_acbbeedc87b0.png",
+      "username": "uat_user_bd6ffaf7",
+      "nickname": "uat-runner-bd6ffaf7",
+      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxya+Y9udMNFdOlI0qKgw\nAkogcmECeX4H+hwIdWS4Bu1amWSc8j5QsCRktvdu5Pwl8+VOOV/uhEQ+i/J44QYL\n5++HWPOy0FZx1ss1hkIV5aoDT+QtX0jC3nMGHp6mgEx9NKkzLbf2MqejLp/LGXqG\nRkJcNoz3YLQ2viLEjpkCC6sQZsEIvf+RW2Xa9c1vUkjflbkhYRalNeYya4dOpC26\n/ugh0IF48ElVzD2+zDCSolVkMn35/uhiVZ55V2vFPi0LNcEv/eBB8+HDbMdYzQ7m\n2RenNAhkAqk3QqBOEMPkjj5diFte2zZlwsYFRiYo0ngIwk8g6aO8n8V2J+MqhkvW\nNwIDAQAB\n-----END PUBLIC KEY-----",
+      "avatar_url": "http://lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion/media/avatars/cow_3afaba747ced.png",
       "karma": 10,
       "is_moderator": false,
       "timezone": null
@@ -31,13 +31,110 @@
     "step": "4) Upload Attachment",
     "status": "PASS",
     "details": {
-      "id": "e372b3e8-4df0-4766-83fc-d53f884f1cf8",
-      "content": "This is a test file for UAT run f08361d7."
+      "id": "40b69d8e-c361-4299-8451-1fafaa5bf4ef",
+      "content": "This is a test file for UAT run bd6ffaf7."
     }
   },
   {
     "step": "5) Create Message with Attachment",
+    "status": "PASS",
+    "details": {
+      "message_id": "004ba8ae-fbe3-445d-b720-e86d57e32373",
+      "subject": "UAT Post from UAT-Runner-bd6ffaf7"
+    }
+  },
+  {
+    "step": "6) Send PM to Peer BBS User",
+    "status": "PASS",
+    "details": {
+      "subject": "UAT PM from UAT-Runner-bd6ffaf7",
+      "body": "This is a UAT private message.",
+      "sender_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxya+Y9udMNFdOlI0qKgw\nAkogcmECeX4H+hwIdWS4Bu1amWSc8j5QsCRktvdu5Pwl8+VOOV/uhEQ+i/J44QYL\n5++HWPOy0FZx1ss1hkIV5aoDT+QtX0jC3nMGHp6mgEx9NKkzLbf2MqejLp/LGXqG\nRkJcNoz3YLQ2viLEjpkCC6sQZsEIvf+RW2Xa9c1vUkjflbkhYRalNeYya4dOpC26\n/ugh0IF48ElVzD2+zDCSolVkMn35/uhiVZ55V2vFPi0LNcEv/eBB8+HDbMdYzQ7m\n2RenNAhkAqk3QqBOEMPkjj5diFte2zZlwsYFRiYo0ngIwk8g6aO8n8V2J+MqhkvW\nNwIDAQAB\n-----END PUBLIC KEY-----"
+    }
+  },
+  {
+    "step": "7a) Register Second User",
+    "status": "PASS",
+    "details": "User registered successfully."
+  },
+  {
+    "step": "7b) Login as Second User",
+    "status": "PASS",
+    "details": "Logged in successfully."
+  },
+  {
+    "step": "7c) Unlock Identity of Second User",
+    "status": "PASS",
+    "details": "Identity unlocked."
+  },
+  {
+    "step": "7d) Report Message from Second User",
+    "status": "PASS",
+    "details": "Successfully reported message ID 004ba8ae-fbe3-445d-b720-e86d57e32373."
+  },
+  {
+    "step": "7a) Register Second User",
+    "status": "PASS",
+    "details": "User registered successfully."
+  },
+  {
+    "step": "7b) Login as Second User",
+    "status": "PASS",
+    "details": "Logged in successfully."
+  },
+  {
+    "step": "7c) Unlock Identity of Second User",
+    "status": "PASS",
+    "details": "Identity unlocked."
+  },
+  {
+    "step": "7d) Report Message from Second User",
+    "status": "PASS",
+    "details": "Successfully reported message ID 004ba8ae-fbe3-445d-b720-e86d57e32373."
+  },
+  {
+    "step": "8) Change Nickname",
+    "status": "PASS",
+    "details": "Nickname change to 'UAT-Runner-bd6ffaf7-Updated' submitted."
+  },
+  {
+    "step": "9) Upload Avatar",
+    "status": "PASS",
+    "details": "Avatar submitted for approval."
+  },
+  {
+    "step": "9a) Login as First User",
+    "status": "PASS",
+    "details": "Logged in successfully."
+  },
+  {
+    "step": "10) Change Password",
+    "status": "PASS",
+    "details": "Password changed successfully."
+  },
+  {
+    "step": "11) Logout",
+    "status": "PASS",
+    "details": "Logged out successfully."
+  },
+  {
+    "step": "12) Log in with New Password",
+    "status": "PASS",
+    "details": "Logged in successfully."
+  },
+  {
+    "step": "12a) Unlock Identity with New Password",
+    "status": "PASS",
+    "details": "Identity unlocked."
+  },
+  {
+    "step": "13) Trigger Verifier Agent",
+    "status": "PASS",
+    "details": "UAT log posted to trigger verifier agent."
+  },
+  {
+    "step": "14) Verify Peer Attachment",
     "status": "FAIL",
-    "details": "'id'"
+    "details": "Timed out waiting for peer attachment."
   }
 ]
