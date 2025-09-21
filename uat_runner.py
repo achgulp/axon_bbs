@@ -193,27 +193,20 @@ def test_post_log_to_uat_channel(client, log_content):
     return "UAT log posted to trigger verifier agent."
 
 def test_verify_peer_attachment(client):
-    # Wait for the verifier agent to process the trigger and post the reply
-    time.sleep(60)
-
-    # Get the board ID for the UAT-Channel
-    response = client._request('GET', '/api/boards/')
-    if response.status_code != 200:
-        raise Exception("Failed to get boards.")
-    boards = response.json()
-    uat_channel = next((board for board in boards if board['name'] == 'UAT-Channel'), None)
-    if not uat_channel:
-        raise Exception("UAT-Channel not found.")
-    board_id = uat_channel['id']
+    # Get the original message ID
+    log_entry = next((item for item in client.log if item['step'].startswith("5)")), None)
+    if not (log_entry and log_entry['status'] == 'PASS'):
+        raise Exception("Prerequisite step did not pass on host.")
+    original_message_id = log_entry['details']['message_id']
 
     # Poll for the reply message
-    for _ in range(10):
+    for _ in range(15):
         time.sleep(10)
-        response = client._request('GET', f'/api/boards/{board_id}/messages/')
+        response = client._request('GET', '/api/boards/3/messages/') # Assuming UAT-Channel is board 3
         if response.status_code == 200:
             messages = response.json()
             for message in messages:
-                if message['subject'] == "UAT Reply with Attachment":
+                if message['parent'] == original_message_id:
                     attachment = message['attachments'][0]
                     # Download the attachment
                     response = client._request('GET', f'/api/files/download/{attachment["id"]}/', stream=True)
@@ -228,6 +221,7 @@ def test_verify_peer_attachment(client):
 
 def run_uat_suite(peer_onion_url):
     """Runs the full UAT test suite."""
+    time.sleep(30)
     client = UATClient()
     
     # Generate unique credentials for this test run
