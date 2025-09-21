@@ -325,15 +325,7 @@ class SyncService:
                     if len(existing_attachments) != len(required_hashes):
                         logger.warning(f"Message {content_hash[:10]} is waiting for attachments to download. Will retry processing later.")
                         return
-        
-                
-                board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
-                message = Message.objects.create(
-                    board=board, subject=content.get('subject'), body=content.get('body'),
-                    pubkey=content.get('pubkey'), metadata_manifest=final_manifest
-                )
-                if required_hashes:
-                    message.attachments.set(attachments)
+                    message.attachments.set(existing_attachments)
                 logger.info(f"Successfully saved new message: '{message.subject}'")
 
             elif content_type == 'file':
