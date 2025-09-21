@@ -24,14 +24,19 @@ import os
 import json
 import base64
 from uuid import uuid4
+from dotenv import load_dotenv
+from PIL import Image
 
 # --- CONFIGURATION ---
-HOST_BBS_ONION = "http://ONION_ADDRESS=lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion" # Replace with your Host BBS onion address
-PIBBS_ONION = "http://sjyfz3kvijioripsryrg5xbfikanbewiemjcnlnvfbz5pwoktrgddhqd.onion"       # Replace with your PiBBS onion address
+load_dotenv()
+HOST_BBS_ONION = os.getenv("ONION_ADDRESS")
 TOR_PROXIES = {
     'http': 'socks5h://127.0.0.1:9050',
-    'httpss': 'socks5h://127.0.0.1:9050'
+    'https': 'socks5h://127.0.0.1:9050'
 }
+
+if not HOST_BBS_ONION:
+    raise ValueError("Please set ONION_ADDRESS in your .env file")
 # --- END CONFIGURATION ---
 
 class UATClient:
@@ -76,6 +81,10 @@ class UATClient:
             json.dump(self.log, f, indent=2)
         print(f"\n[!] Test log saved to {log_path}")
 
+import io
+
+from PIL import Image
+
 # --- Test Functions ---
 
 def test_register(client, username, password, nickname):
@@ -102,21 +111,55 @@ def test_unlock_identity(client, password):
         raise Exception(f"Identity unlock failed. Status: {response.status_code}, Body: {response.text}")
     return "Identity unlocked."
 
-def test_post_message_with_attachment(client, board_name, subject, body):
-    # This is a simplified test; it doesn't actually upload a file but uses the API structure.
-    # A full test would require a multipart file upload endpoint. For now, we pass an empty list.
-    payload = {"board_name": board_name, "subject": subject, "body": body, "attachment_ids": []}
+def test_get_self_profile(client):
+    response = client._request('GET', '/api/user/profile/')
+    if response.status_code != 200:
+        raise Exception(f"Failed to get user profile. Status: {response.status_code}, Body: {response.text}")
+    return response.json()
+
+def test_upload_file(client, filename, content):
+    file_content = io.BytesIO(content.encode('utf-8'))
+    files = {'file': (filename, file_content, 'text/plain')}
+    response = client._request('POST', '/api/files/upload/', files=files)
+    if response.status_code != 201:
+        raise Exception(f"File upload failed. Status: {response.status_code}, Body: {response.text}")
+    
+    response_data = response.json()
+    return {"id": response_data['id'], "content": content}
+
+def test_post_message_with_attachment(client, board_name, subject, body, attachment_id):
+    payload = {"board_name": board_name, "subject": subject, "body": body, "attachment_ids": [attachment_id]}
     response = client._request('POST', '/api/messages/post/', json=payload)
     if response.status_code != 201:
         raise Exception(f"Post message failed. Status: {response.status_code}, Body: {response.text}")
-    return f"Message '{subject}' posted to '{board_name}'."
+    
+    response_data = response.json()
+    return {"message_id": response_data['message_id'], "subject": subject}
+
+def test_report_message(client, message_id, comment):
+    payload = {"message_id": message_id, "comment": comment}
+    response = client._request('POST', '/api/messages/report/', json=payload)
+    if response.status_code != 201:
+        raise Exception(f"Failed to report message. Status: {response.status_code}, Body: {response.text}")
+    return f"Successfully reported message ID {message_id}."
+
+def test_upload_avatar(client):
+    img = Image.new('RGB', (60, 30), color = 'red')
+    buffer = io.BytesIO()
+    img.save(buffer, 'PNG')
+    buffer.seek(0)
+    files = {'avatar': ('test_avatar.png', buffer, 'image/png')}
+    response = client._request('POST', '/api/user/avatar/', files=files)
+    if response.status_code != 200:
+        raise Exception(f"Avatar upload failed. Status: {response.status_code}, Body: {response.text}")
+    return "Avatar submitted for approval."
 
 def test_send_pm(client, recipient, subject, body):
     payload = {"recipient_identifier": recipient, "subject": subject, "body": body}
     response = client._request('POST', '/api/pm/send/', json=payload)
     if response.status_code != 201:
         raise Exception(f"Send PM failed. Status: {response.status_code}, Body: {response.text}")
-    return f"PM '{subject}' sent to '{recipient}'."
+    return {"subject": subject, "body": body}
 
 def test_change_nickname(client, new_nickname):
     response = client._request('POST', '/api/user/nickname/', json={"nickname": new_nickname})
@@ -138,7 +181,19 @@ def test_logout(client):
     client.access_token = None
     return "Logged out successfully."
 
-if __name__ == "__main__":
+def test_post_log_to_uat_channel(client, log_content):
+    payload = {
+        "board_name": "UAT-Channel",
+        "subject": "start_uat",
+        "body": json.dumps(log_content, indent=2)
+    }
+    response = client._request('POST', '/api/messages/post/', json=payload)
+    if response.status_code != 201:
+        raise Exception(f"Failed to post log to UAT channel. Status: {response.status_code}, Body: {response.text}")
+    return "UAT log posted to trigger verifier agent."
+
+def run_uat_suite(peer_onion_url):
+    """Runs the full UAT test suite."""
     client = UATClient()
     
     # Generate unique credentials for this test run
@@ -148,28 +203,38 @@ if __name__ == "__main__":
     PASSWORD_V1 = f"password_{run_id}_v1"
     PASSWORD_V2 = f"password_{run_id}_v2"
     
-    # Define remote user for PM tests
-    PIBBS_USER_NICKNAME = "pibbs_user" # Assume this user exists on the PiBBS
-
     try:
         # --- Execute Test Plan ---
         client.run_test("0) Register New User", test_register, client, USERNAME, PASSWORD_V1, NICKNAME)
         client.run_test("1) Login", test_login, client, USERNAME, PASSWORD_V1)
         client.run_test("2) Unlock Identity", test_unlock_identity, client, PASSWORD_V1)
+        profile = client.run_test("3) Get Self Profile", test_get_self_profile, client)
         
+        attachment_content = f"This is a test file for UAT run {run_id}."
+        attachment_result = client.run_test("4) Upload Attachment", test_upload_file, client, f"uat_file_{run_id}.txt", attachment_content)
+
         post_subject = f"UAT Post from {NICKNAME}"
-        client.run_test("3) Create Message on Tech Board", test_post_message_with_attachment, client, "Tech", post_subject, "This is a UAT test message with an attachment.")
+        post_result = client.run_test("5) Create Message with Attachment", test_post_message_with_attachment, client, "Tech", post_subject, "This is a UAT test message with an attachment.", attachment_result['id'])
         
         pm_subject = f"UAT PM from {NICKNAME}"
-        client.run_test("5) Send PM to PiBBS User", test_send_pm, client, PIBBS_USER_NICKNAME, pm_subject, "This is a UAT private message.")
+        pm_body = "This is a UAT private message."
+        pm_result = client.run_test("6) Send PM to Peer BBS User", test_send_pm, client, peer_onion_url, pm_subject, pm_body)
+        # Add the sender pubkey to the log for the verifier
+        pm_result['sender_pubkey'] = profile['pubkey']
+
+        client.run_test("7) Report Message", test_report_message, client, post_result['message_id'], "This message is for UAT testing.")
         
         new_nickname = f"UAT-Runner-{run_id}-Updated"
-        client.run_test("12) Change Nickname", test_change_nickname, client, new_nickname)
+        client.run_test("8) Change Nickname", test_change_nickname, client, new_nickname)
+        client.run_test("9) Upload Avatar", test_upload_avatar, client)
         
-        client.run_test("14) Change Password", test_change_password, client, PASSWORD_V1, PASSWORD_V2)
-        client.run_test("15) Logout", test_logout, client)
-        client.run_test("16) Log in with New Password", test_login, client, USERNAME, PASSWORD_V2)
+        client.run_test("10) Change Password", test_change_password, client, PASSWORD_V1, PASSWORD_V2)
+        client.run_test("11) Logout", test_logout, client)
+        client.run_test("12) Log in with New Password", test_login, client, USERNAME, PASSWORD_V2)
         
+        # Final step: Post the log to the UAT channel to trigger the verifier
+        client.run_test("13) Trigger Verifier Agent", test_post_log_to_uat_channel, client, client.log)
+
         print("\n[+] UAT RUNNER COMPLETED SUCCESSFULLY.")
         
     except Exception as e:
@@ -177,3 +242,9 @@ if __name__ == "__main__":
     
     finally:
         client.save_log()
+
+if __name__ == "__main__":
+    peer_url = os.getenv("TEST_BBS_ONION")
+    if not peer_url:
+        raise ValueError("TEST_BBS_ONION environment variable not set.")
+    run_uat_suite(peer_url)

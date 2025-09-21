@@ -45,6 +45,7 @@ from .views import (
     PrivateMessageOutboxView,
     DeletePrivateMessageView,
     DownloadContentView, # <-- ADD THIS LINE
+    FileUploadView,
     AppletListView,
     GetSaveAppletDataView,
     HighScoreListView,
@@ -107,6 +108,7 @@ urlpatterns = [
     path('boards/', MessageBoardListView.as_view(), name='board-list'),
     path('boards/<int:pk>/messages/', MessageListView.as_view(), name='message-list'),
     path('messages/post/', PostMessageView.as_view(), name='post-message'),
+    path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('user/ignore/', IgnorePubkeyView.as_view(), name='ignore-pubkey'),
     path('messages/report/', ReportMessageView.as_view(), name='report-message'),
     path('moderation/queue/', ModeratorQueueView.as_view(), name='mod-queue'),

@@ -28,9 +28,10 @@ import logging
 import json
 import base64
 import hashlib
+from rest_framework.parsers import MultiPartParser, FormParser
 
 from core.services.encryption_utils import encrypt_for_recipients_only, generate_checksum, decrypt_for_recipients_only
-from ..serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
+from ..serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer, FileAttachmentSerializer
 from core.models import MessageBoard, Message, IgnoredPubkey, FileAttachment, PrivateMessage, User, Alias, TrustedInstance
 from core.services.service_manager import service_manager
 
@@ -106,7 +107,7 @@ class PostMessageView(views.APIView):
                 )
                 message.attachments.set(attachments)
                 logger.info(f"New message '{subject}' with {attachments.count()} attachment(s) posted.")
-                return Response({"status": "message_posted_and_synced"}, status=status.HTTP_201_CREATED)
+                return Response({"status": "message_posted_and_synced", "message_id": message.id}, status=status.HTTP_201_CREATED)
             else:
                 return Response({"error": "Sync service is unavailable."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
@@ -335,3 +336,51 @@ class DownloadContentView(views.APIView):
         except Exception as e:
             logger.error(f"Error downloading content {content_hash} for user {request.user.username}: {e}")
             return Response({"error": "An unexpected server error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class FileUploadView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        if 'file' not in request.FILES:
+            return Response({"error": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        file = request.FILES['file']
+        
+        # Basic validation
+        if file.size > 5 * 1024 * 1024: # 5MB limit for generic files
+            return Response({"error": "File size cannot exceed 5MB."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = request.user
+            file_content_bytes = file.read()
+
+            # Create the encrypted content and manifest
+            file_content_payload = {
+                "type": "file",
+                "filename": file.name,
+                "content_type": file.content_type,
+                "size": file.size,
+                "data": base64.b64encode(file_content_bytes).decode('ascii')
+            }
+            
+            _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(file_content_payload)
+            
+            # Create the FileAttachment record
+            attachment = FileAttachment.objects.create(
+                author=user,
+                filename=file.name,
+                content_type=file.content_type,
+                size=file.size,
+                metadata_manifest=manifest
+            )
+
+            serializer = FileAttachmentSerializer(attachment)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Could not process file upload for {request.user.username}: {e}", exc_info=True)
+            return Response({"error": "An unexpected error occurred during file upload."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -31,6 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes, serialization
 from django.conf import settings
 from django.utils.html import format_html
+from django.core.management import call_command
 from .services.avatar_generator import generate_cow_avatar
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
@@ -223,7 +224,25 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             'fields': ('added_at', 'last_synced_at')
         }),
     )
-    actions = ['generate_keys', 'fetch_peer_key', 'reset_sync_timestamp']
+    actions = ['generate_keys', 'fetch_peer_key', 'reset_sync_timestamp', 'run_full_uat_suite']
+
+    @admin.action(description='Run Full UAT Suite against selected peer(s)')
+    def run_full_uat_suite(self, request, queryset):
+        # We only run the UAT suite against the first selected peer.
+        if queryset.count() != 1:
+            self.message_user(request, "Please select exactly one peer to run the UAT against.", level='ERROR')
+            return
+        
+        peer = queryset.first()
+        if not peer.is_trusted_peer:
+            self.message_user(request, "UAT can only be run against a trusted peer, not the local instance.", level='ERROR')
+            return
+
+        try:
+            call_command('start_uat', peer.web_ui_onion_url)
+            self.message_user(request, f"UAT Suite started in the background against {peer.web_ui_onion_url}. Check the UAT-Channel board for results.", level='SUCCESS')
+        except Exception as e:
+            self.message_user(request, f"Failed to start UAT suite: {e}", level='ERROR')
 
     @admin.display(description='Pubkey Checksum')
     def pubkey_checksum(self, obj):

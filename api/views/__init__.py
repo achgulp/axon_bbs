@@ -49,6 +49,7 @@ from .content_views import (
     SendPrivateMessageView,
     DeletePrivateMessageView,
     DownloadContentView, # <-- ADD THIS LINE
+    FileUploadView,
 )
 
 from .moderation_views import (

@@ -1,0 +1,32 @@
+I have completed all the requested changes. The old UAT scripts have been
+  replaced with a new, fully automated system that can be triggered from the
+  admin panel.
+
+  Here is a summary of the new workflow:
+
+   1. Manual Setup (One Time): On your peer BBS (pibbs), ensure a user named
+      uat_verifier_agent exists and has the is_agent, is_active, and
+      is_moderator flags enabled. The agent will create this user
+      automatically, but you should confirm it is configured correctly.
+   2. Trigger the UAT: On your host BBS (liniadev), navigate to the "Trusted
+      Instances" page in the admin panel, select the pibbs instance, and choose
+      the "Run Full UAT Suite" action.
+   3. Automated Execution:
+       * The uat_runner will start in the background on liniadev and perform all
+         its actions (registering a user, posting a message with an attachment,
+         sending a PM, reporting the message, and uploading an avatar).
+       * It will then post its results log to the "UAT-Channel" message board.
+   4. Automated Verification:
+       * The UATVerifierAgentService running on pibbs will detect the log
+         message.
+       * It will automatically run all verification steps, including approving
+         the moderation requests for the message report and the avatar upload.
+   5. View Results: The verifier agent will post a final summary report to the
+      "UAT-Channel" board on pibbs, which will then federate back to liniadev
+      for you to view.
+
+
+  This new system is more robust, fully automated, and provides a
+  comprehensive end-to-end test of your application's core features.
+
+
