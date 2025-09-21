@@ -125,6 +125,9 @@ class UatVerifierAgentService:
         results.append(self.verify_message_deletion_after_report(run_log))
         results.append(self.verify_avatar_federation(run_log))
 
+        logger.info("--- UAT: Sending attachment back to host ---")
+        results.append(self.send_attachment_to_host(run_log))
+
         logger.info("--- UAT Verification Suite Finished ---")
         return results
 
@@ -275,3 +278,56 @@ class UatVerifierAgentService:
         _content_hash, manifest = self.bitsync_service.create_encrypted_content(content_to_encrypt)
         Message.objects.create(board=self.log_board, author=self.agent_user, pubkey=self.agent_user.pubkey, subject=subject, body=body, metadata_manifest=manifest, agent_status='processed')
         logger.info(f"UAT Verifier Agent posted results: {final_status}")
+
+    def send_attachment_to_host(self, run_log):
+        log_entry = self._get_log_entry(run_log, "3)")
+        if not (log_entry and log_entry['status'] == 'PASS'):
+            return {"check": "Send Attachment to Host", "result": "FAIL", "details": "Prerequisite step did not pass on host."}
+        
+        recipient_pubkey = log_entry['details']['pubkey']
+        subject = "UAT Reply with Attachment"
+        body = "This is a reply from the UAT verifier agent with an attachment."
+        attachment_content = "This is the content of the attachment from the peer."
+        attachment_filename = "peer_attachment.txt"
+
+        try:
+            self._create_and_send_reply(recipient_pubkey, subject, body, attachment_content, attachment_filename)
+            return {"check": "Send Attachment to Host", "result": "PASS"}
+        except Exception as e:
+            return {"check": "Send Attachment to Host", "result": "FAIL", "details": str(e)}
+
+    def _create_and_send_reply(self, recipient_pubkey, subject, body, attachment_content, attachment_filename):
+        file_content_payload = {
+            "type": "file",
+            "filename": attachment_filename,
+            "content_type": "text/plain",
+            "size": len(attachment_content),
+            "data": base64.b64encode(attachment_content.encode('utf-8')).decode('ascii')
+        }
+        _content_hash, manifest = self.bitsync_service.create_encrypted_content(file_content_payload)
+        attachment = FileAttachment.objects.create(
+            author=self.agent_user,
+            filename=attachment_filename,
+            content_type="text/plain",
+            size=len(attachment_content),
+            metadata_manifest=manifest
+        )
+
+        message_content = {
+            "type": "message",
+            "subject": subject,
+            "body": body,
+            "board": self.log_board.name,
+            "pubkey": self.agent_user.pubkey,
+            "attachment_hashes": [manifest.get('content_hash')]
+        }
+        _content_hash, message_manifest = self.bitsync_service.create_encrypted_content(message_content)
+        message = Message.objects.create(
+            board=self.log_board,
+            author=self.agent_user,
+            pubkey=self.agent_user.pubkey,
+            subject=subject,
+            body=body,
+            metadata_manifest=message_manifest
+        )
+        message.attachments.set([attachment])

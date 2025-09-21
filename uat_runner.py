@@ -192,6 +192,40 @@ def test_post_log_to_uat_channel(client, log_content):
         raise Exception(f"Failed to post log to UAT channel. Status: {response.status_code}, Body: {response.text}")
     return "UAT log posted to trigger verifier agent."
 
+def test_verify_peer_attachment(client):
+    # Wait for the verifier agent to process the trigger and post the reply
+    time.sleep(60)
+
+    # Get the board ID for the UAT-Channel
+    response = client._request('GET', '/api/boards/')
+    if response.status_code != 200:
+        raise Exception("Failed to get boards.")
+    boards = response.json()
+    uat_channel = next((board for board in boards if board['name'] == 'UAT-Channel'), None)
+    if not uat_channel:
+        raise Exception("UAT-Channel not found.")
+    board_id = uat_channel['id']
+
+    # Poll for the reply message
+    for _ in range(10):
+        time.sleep(10)
+        response = client._request('GET', f'/api/boards/{board_id}/messages/')
+        if response.status_code == 200:
+            messages = response.json()
+            for message in messages:
+                if message['subject'] == "UAT Reply with Attachment":
+                    attachment = message['attachments'][0]
+                    # Download the attachment
+                    response = client._request('GET', f'/api/files/download/{attachment["id"]}/', stream=True)
+                    if response.status_code == 200:
+                        if response.text == "This is the content of the attachment from the peer.":
+                            return "Peer attachment verified successfully."
+                        else:
+                            raise Exception("Peer attachment content mismatch.")
+                    else:
+                        raise Exception(f"Failed to download peer attachment. Status: {response.status_code}, Body: {response.text}")
+    raise Exception("Timed out waiting for peer attachment.")
+
 def run_uat_suite(peer_onion_url):
     """Runs the full UAT test suite."""
     client = UATClient()
@@ -218,7 +252,7 @@ def run_uat_suite(peer_onion_url):
         
         pm_subject = f"UAT PM from {NICKNAME}"
         pm_body = "This is a UAT private message."
-        pm_result = client.run_test("6) Send PM to Peer BBS User", test_send_pm, client, USERNAME, pm_subject, pm_body)
+        pm_result = client.run_test("6) Send PM to Peer BBS User", test_send_pm, client, "pibbs_user", pm_subject, pm_body)
         # Add the sender pubkey to the log for the verifier
         pm_result['sender_pubkey'] = profile['pubkey']
 
@@ -255,6 +289,8 @@ def run_uat_suite(peer_onion_url):
         
         # Final step: Post the log to the UAT channel to trigger the verifier
         client.run_test("13) Trigger Verifier Agent", test_post_log_to_uat_channel, client, client.log)
+
+        client.run_test("14) Verify Peer Attachment", test_verify_peer_attachment, client)
 
         print("\n[+] UAT RUNNER COMPLETED SUCCESSFULLY.")
         
