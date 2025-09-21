@@ -319,13 +319,22 @@ class SyncService:
                     except Exception as user_create_e:
                         logger.error(f"Failed to create federated user profile for pubkey {author_pubkey[:12]}: {user_create_e}")
                 
+                board, _ = MessageBoard.objects.get_or_create(name=content.get('board', 'general'))
+                message = Message.objects.create(
+                    board=board, subject=content.get('subject'), body=content.get('body'),
+                    pubkey=content.get('pubkey'), metadata_manifest=final_manifest
+                )
+
                 required_hashes = content.get('attachment_hashes', [])
                 if required_hashes:
                     existing_attachments = FileAttachment.objects.filter(metadata_manifest__content_hash__in=required_hashes)
                     if len(existing_attachments) != len(required_hashes):
                         logger.warning(f"Message {content_hash[:10]} is waiting for attachments to download. Will retry processing later.")
+                        # We delete the message we just created so it can be re-processed later
+                        message.delete()
                         return
                     message.attachments.set(existing_attachments)
+                
                 logger.info(f"Successfully saved new message: '{message.subject}'")
 
             elif content_type == 'file':
