@@ -1,0 +1,7 @@
+[
+  {
+    "step": "0) Register New User",
+    "status": "FAIL",
+    "details": "'idna' codec can't encode characters in position 0-69: label too long"
+  }
+]

@@ -26,8 +26,8 @@ import base64
 from uuid import uuid4
 
 # --- CONFIGURATION ---
-HOST_BBS_ONION = "http://YOUR_HOST_BBS.onion" # Replace with your Host BBS onion address
-PIBBS_ONION = "http://YOUR_PIBBS.onion"       # Replace with your PiBBS onion address
+HOST_BBS_ONION = "http://ONION_ADDRESS=lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion" # Replace with your Host BBS onion address
+PIBBS_ONION = "http://sjyfz3kvijioripsryrg5xbfikanbewiemjcnlnvfbz5pwoktrgddhqd.onion"       # Replace with your PiBBS onion address
 TOR_PROXIES = {
     'http': 'socks5h://127.0.0.1:9050',
     'httpss': 'socks5h://127.0.0.1:9050'
