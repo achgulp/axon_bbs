@@ -25,6 +25,7 @@ import base64
 from uuid import uuid4
 from dotenv import load_dotenv
 from PIL import Image
+import io
 
 # --- CONFIGURATION ---
 load_dotenv()
@@ -80,10 +81,6 @@ class UATClient:
             json.dump(self.log, f, indent=2)
         print(f"\n[!] Test log saved to {log_path}")
 
-import io
-
-from PIL import Image
-
 # --- Test Functions ---
 
 def test_register(client, username, password, nickname):
@@ -133,7 +130,10 @@ def test_post_message_with_attachment(client, board_name, subject, body, attachm
         raise Exception(f"Post message failed. Status: {response.status_code}, Body: {response.text}")
     
     response_data = response.json()
-    return {"message_id": response_data['id'], "subject": subject}
+    # --- FIX START ---
+    # The API returns 'message_id', not 'id'.
+    return {"message_id": response_data['message_id'], "subject": subject}
+    # --- FIX END ---
 
 def test_report_message(client, message_id, comment):
     payload = {"message_id": message_id, "comment": comment}
