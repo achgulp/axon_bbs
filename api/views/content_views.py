@@ -404,9 +404,11 @@ def stream_content_generator(content_hash):
 
         num_chunks = len(manifest.get('chunk_hashes', []))
         
-        # --- FIX START ---
-        # The decryption and unpadding logic is now handled correctly for streams.
-        # The unpadder is updated with all decrypted data before being finalized.
+        # --- FINAL FIX START ---
+        # The previous streaming unpadder was subtly corrupting the data.
+        # This simpler implementation decrypts all data first, then unpads at once.
+        # It is less memory-efficient for the server, but more robust.
+        decrypted_bytes = b''
         for i in range(num_chunks):
             chunk_path = bitsync_service.get_chunk_path(content_hash, i)
             
@@ -416,20 +418,16 @@ def stream_content_generator(content_hash):
             if os.path.exists(chunk_path):
                 with open(chunk_path, 'rb') as f:
                     encrypted_chunk = f.read()
-                
-                decrypted_chunk = decryptor.update(encrypted_chunk)
-                
-                # Yield the unpadded data as it becomes available.
-                # The unpadder will buffer the final block internally.
-                yield unpadder.update(decrypted_chunk)
+                decrypted_bytes += decryptor.update(encrypted_chunk)
             else:
                 logger.error(f"Failed to obtain chunk {i} for streaming {content_hash}")
                 return
 
-        # After all chunks are processed, finalize both operations.
-        final_decrypted = decryptor.finalize()
-        yield unpadder.update(final_decrypted) + unpadder.finalize()
-        # --- FIX END ---
+        decrypted_bytes += decryptor.finalize()
+        
+        unpadded_data = unpadder.update(decrypted_bytes) + unpadder.finalize()
+        yield unpadded_data
+        # --- FINAL FIX END ---
 
     except Exception as e:
         logger.error(f"Error during content stream for {content_hash}: {e}", exc_info=True)

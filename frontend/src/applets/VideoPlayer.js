@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-
+// Added for test.
 // Full path: axon_bbs/frontend/src/applets/VideoPlayer.js
 
 // --- Start of Applet API Helper (MANDATORY) ---
@@ -111,23 +111,58 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const videoObjectUrl = URL.createObjectURL(videoBlob);
         debugLog("Checkpoint 5: Created object URL for blob.");
 
-        const videoEl = document.createElement('video');
-        videoEl.setAttribute('controls', true);
-        videoEl.setAttribute('preload', 'auto');
-        videoEl.setAttribute('autoplay', true);
-        
-        const sourceEl = document.createElement('source');
-        sourceEl.setAttribute('src', videoObjectUrl);
-        sourceEl.setAttribute('type', context.content_type);
-
-        videoEl.appendChild(sourceEl);
-        videoEl.addEventListener('error', (err) => {
-            displayError(new Error("Browser could not play video. The format may be unsupported, the file may be corrupt, or there was a streaming error."));
-        });
-
+        // --- FINAL FIX START ---
+        // Display a play button to require user interaction, satisfying modern browser security.
+        const playButton = document.createElement('button');
+        playButton.textContent = '▶ Play Video';
+        playButton.className = 'play-button'; // Add a class for styling
         container.innerHTML = '';
-        container.appendChild(videoEl);
-        debugLog("Checkpoint 6: Video player created and rendered.");
+        container.appendChild(playButton);
+
+        // Add styles for the button
+        const buttonStyles = `
+            .play-button {
+                background-color: #4a5568; border: none; color: white; padding: 15px 32px;
+                text-align: center; font-size: 16px; cursor: pointer; border-radius: 5px;
+            }
+            .play-button:hover { background-color: #718096; }
+        `;
+        const buttonStyleSheet = document.createElement("style");
+        buttonStyleSheet.innerText = buttonStyles;
+        document.head.appendChild(buttonStyleSheet);
+
+        playButton.addEventListener('click', () => {
+            debugLog("Play button clicked. Creating video element...");
+            const videoEl = document.createElement('video');
+            videoEl.setAttribute('controls', true);
+            videoEl.setAttribute('preload', 'auto');
+            videoEl.muted = true; // Mute by default to comply with browser autoplay policies
+            
+            const sourceEl = document.createElement('source');
+            sourceEl.setAttribute('src', videoObjectUrl);
+            sourceEl.setAttribute('type', context.content_type);
+
+            videoEl.appendChild(sourceEl);
+            videoEl.addEventListener('error', (err) => {
+                displayError(new Error("Browser could not play video. The format may be unsupported, the file may be corrupt, or there was a streaming error."));
+            });
+
+            container.innerHTML = '';
+            container.appendChild(videoEl);
+            debugLog("Checkpoint 6: Video player created and rendered.");
+
+            debugLog("Checkpoint 7: Attempting to programmatically play video...");
+            const playPromise = videoEl.play();
+            if (playPromise !== undefined) {
+                playPromise.then(_ => {
+                    debugLog("Playback started successfully.");
+                }).catch(error => {
+                    debugLog(`Playback failed: ${error}`);
+                    displayError(new Error(`Browser prevented video from playing: ${error}`));
+                });
+            }
+        }, { once: true }); // The listener runs only once
+        // --- FINAL FIX END ---
 
     } catch (e) {
         displayError(e);
