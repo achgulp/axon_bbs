@@ -37,7 +37,6 @@ window.bbs = {
     });
   },
   getAttachmentContext: function() { return this._postMessage('getAttachmentContext'); },
-  // --- NEW API CALL ---
   getAttachmentBlob: function() { return this._postMessage('getAttachmentBlob'); },
 };
 window.addEventListener('message', (event) => window.bbs._handleMessage(event));
@@ -51,54 +50,86 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         .container { display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; }
         video { max-width: 100%; max-height: 100%; }
         .message { color: #cbd5e0; font-family: monospace; }
-        .error { color: #f56565; font-family: monospace; }
+        .error { color: #f56565; font-family: monospace; padding: 20px; text-align: center; }
+        #debug-dialog { display: none; position: absolute; bottom: 10px; left: 10px; width: 350px; height: 250px; background-color: rgba(0,0,0,0.8); border: 1px solid #4a5568; border-radius: 5px; color: #9AE6B4; font-family: monospace; font-size: 12px; overflow-y: scroll; padding-top: 25px; z-index: 1000; }
+        #debug-header { position: absolute; top: 0; left: 0; right: 0; background-color: #4a5568; color: white; font-weight: bold; padding: 3px; cursor: move; user-select: none; }
     `;
     const styleSheet = document.createElement("style");
     styleSheet.innerText = styles;
     document.head.appendChild(styleSheet);
 
     const root = document.getElementById('applet-root');
-    root.innerHTML = `<div class="container" id="container"><p class="message">Initializing player...</p></div>`;
+    root.innerHTML = `
+        <div id="debug-dialog"><div id="debug-header">DEBUG CONSOLE</div></div>
+        <div class="container" id="container"><p class="message">Loading player...</p></div>
+    `;
     const container = document.getElementById('container');
+    const debugDialog = document.getElementById('debug-dialog');
+
+    function debugLog(message) {
+        if (window.BBS_DEBUG_MODE !== true) return;
+        debugDialog.style.display = 'block';
+        const logEntry = document.createElement('div');
+        logEntry.textContent = `> ${message}`;
+        debugDialog.appendChild(logEntry);
+        debugDialog.scrollTop = debugDialog.scrollHeight;
+    }
+    
+    // --- MODIFICATION START: Added a more robust error display function ---
+    function displayError(e) {
+        let errorMessage;
+        if (e.message === 'identity_locked') {
+            errorMessage = `Identity is locked. Please close this view, unlock your identity, and try again.`;
+        } else {
+            errorMessage = `Failed to initialize video player: ${e.message}`;
+        }
+        container.innerHTML = `<p class="error">${errorMessage}</p>`;
+        debugLog(`FATAL ERROR: ${e.stack}`);
+        console.error("VideoPlayer Applet Error:", e);
+    }
+    // --- MODIFICATION END ---
 
     try {
+        debugLog("Applet initializing...");
+        
         container.innerHTML = `<p class="message">Fetching attachment info...</p>`;
+        debugLog("Checkpoint 1: Requesting attachment context...");
         const context = await window.bbs.getAttachmentContext();
+        debugLog("Checkpoint 2: Attachment context received.");
+
         if (!context || !context.content_hash || !context.content_type) {
             throw new Error("Invalid or missing attachment context from host.");
         }
+        debugLog(`Context OK: hash=${context.content_hash.substring(0,10)}..., type=${context.content_type}`);
 
         container.innerHTML = `<p class="message">Downloading and decrypting video stream...</p>`;
-        // --- FIX START ---
-        // Fetch the video data as a Blob using the new API call
+        debugLog("Checkpoint 3: Requesting attachment blob...");
         const videoBlob = await window.bbs.getAttachmentBlob();
+        debugLog(`Checkpoint 4: Blob received. Size: ${videoBlob.size} bytes.`);
+
         const videoObjectUrl = URL.createObjectURL(videoBlob);
-        // --- FIX END ---
+        debugLog("Checkpoint 5: Created object URL for blob.");
 
         const videoEl = document.createElement('video');
         videoEl.setAttribute('controls', true);
         videoEl.setAttribute('preload', 'auto');
-        videoEl.setAttribute('autoplay', true); // Autoplay the video once loaded
+        videoEl.setAttribute('autoplay', true);
         
         const sourceEl = document.createElement('source');
-        // Use the local object URL, which the browser can access without auth headers
         sourceEl.setAttribute('src', videoObjectUrl);
         sourceEl.setAttribute('type', context.content_type);
 
         videoEl.appendChild(sourceEl);
-        videoEl.addEventListener('error', () => {
-            container.innerHTML = `<p class="error">Error: Could not load video. The format may be unsupported or the file is corrupt.</p>`;
+        videoEl.addEventListener('error', (err) => {
+            // Use the more detailed error handler on video playback failure
+            displayError(new Error("Browser could not play video. The format may be unsupported, the file may be corrupt, or there was a streaming error."));
         });
 
         container.innerHTML = '';
         container.appendChild(videoEl);
+        debugLog("Checkpoint 6: Video player created and rendered.");
 
     } catch (e) {
-        if (e.message === 'identity_locked') {
-             container.innerHTML = `<p class="error">Identity is locked. Please close this view, unlock your identity, and try again.</p>`;
-        } else {
-             container.innerHTML = `<p class="error">Failed to initialize video player: ${e.message}</p>`;
-        }
-        console.error("VideoPlayer Applet Error:", e);
+        displayError(e);
     }
 })();
