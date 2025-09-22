@@ -19,47 +19,36 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
 import UnlockForm from './UnlockForm';
-import ReportModal from './ReportModal'; 
-import AuthenticatedVideoPlayer from './AuthenticatedVideoPlayer'; // <-- ADD THIS LINE
+import ReportModal from './ReportModal';
+import AppletRunner from './AppletRunner';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
-const AttachmentItem = ({ attachment, onDownload }) => {
-  const [status, setStatus] = useState('checking');
-  const fetchStatus = useCallback(() => {
-    apiClient.get(`/api/files/status/${attachment.id}/`)
-      .then(response => {
-        setStatus(response.data.status);
-      })
-      .catch(err => {
-        console.error(`Failed to fetch status for file ${attachment.id}`, err);
-        setStatus('error');
-      });
-  }, [attachment.id]);
-  useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(() => {
-      if (status === 'syncing') {
-        fetchStatus();
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [status, fetchStatus]);
+const AttachmentItem = ({ attachment, handlerApplet, onLaunch }) => {
+  // If a handler applet exists, show a "View" button, otherwise show "Download"
+  if (handlerApplet) {
+    return (
+        <li className="flex items-center gap-4">
+            <span className="text-gray-200">{attachment.filename}</span>
+            <span className="text-gray-400 text-sm">({Math.round(attachment.size / 1024)} KB)</span>
+            <div className="flex-grow"></div>
+            <button onClick={() => onLaunch(handlerApplet, attachment)} className="text-blue-400 hover:text-blue-300 hover:underline">
+                View Embedded
+            </button>
+        </li>
+    );
+  }
+
+  // Fallback to download link (logic for this can be added back if needed)
   return (
-    <li key={attachment.id} className="flex items-center gap-4">
+    <li className="flex items-center gap-4">
       <span className="text-gray-200">{attachment.filename}</span>
       <span className="text-gray-400 text-sm">({Math.round(attachment.size / 1024)} KB)</span>
-      <div className="flex-grow"></div>
-      {status === 'available' && (
-        <button onClick={() => onDownload(attachment.id, attachment.filename)} className="text-blue-400 hover:text-blue-300 hover:underline">
-          Download
-        </button>
-      )}
-      {status === 'syncing' && <span className="text-yellow-400 text-sm italic">Syncing...</span>}
-      {status === 'checking' && <span className="text-gray-400 text-sm italic">Checking...</span>}
-      {status === 'error' && <span className="text-red-500 text-sm italic">Error</span>}
+       <div className="flex-grow"></div>
+      <span className="text-gray-500 text-sm italic">No viewer available</span>
     </li>
   );
 };
+
 
 const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) => {
   const [messages, setMessages] = useState([]);
@@ -75,14 +64,29 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
   const [uploadError, setUploadError] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [applets, setApplets] = useState([]);
+  const [viewingApplet, setViewingApplet] = useState(null);
+
   const fetchMessages = useCallback(async () => {
     try {
-      const response = await apiClient.get(`/api/boards/${board.id}/messages/`);
-      setMessages(response.data);
-    } catch (err) { console.error("Failed to fetch messages:", err); }
+      const [msgResponse, appletResponse] = await Promise.all([
+          apiClient.get(`/api/boards/${board.id}/messages/`),
+          apiClient.get('/api/applets/')
+      ]);
+      setMessages(msgResponse.data);
+      setApplets(appletResponse.data);
+    } catch (err) { console.error("Failed to fetch messages or applets:", err); }
   }, [board.id]);
+  
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
+  const findHandlerAppletFor = (mimeType) => {
+      if (!mimeType) return null;
+      return applets.find(applet => 
+          applet.handles_mime_types && applet.handles_mime_types.split(',').includes(mimeType)
+      );
+  };
+  
   const handlePostMessage = useCallback(async () => {
     setError('');
     if (!subject || !body) { setError("Subject and body cannot be empty."); return; }
@@ -100,9 +104,9 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
       }
     }
   }, [subject, body, board.name, attachments, fetchMessages]);
+
   const handleFileUpload = async () => {
-    if (!selectedFile) { setUploadError('Please select a file first.'); return;
-    }
+    if (!selectedFile) { setUploadError('Please select a file first.'); return; }
     setIsUploading(true); setUploadError('');
     const formData = new FormData();
     formData.append('file', selectedFile);
@@ -116,29 +120,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
       setIsUploading(false);
     }
   };
-  const handleFileDownload = useCallback(async (fileId, filename) => {
-    try {
-      const response = await apiClient.get(`/api/files/download/${fileId}/`, {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      if (err.response && err.response.status === 401) {
-        setPostUnlockAction(() => () => handleFileDownload(fileId, filename));
-        setNeedsUnlock(true);
-      } else {
-        console.error("Download failed:", err);
-        alert("Could not download the file. See console for details.");
-      }
-    }
-  }, []);
+
   const handleReply = () => {
     if (!selectedMessage) return;
     const quotedBody = selectedMessage.body.split('\n').map(line => `> ${line}`).join('\n');
@@ -147,6 +129,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
     setSelectedMessage(null);
     setShowPostForm(true);
   };
+  
   const handleUnlockSuccess = () => {
     setNeedsUnlock(false);
     if (postUnlockAction) {
@@ -154,6 +137,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
       setPostUnlockAction(null);
     }
   };
+
   const handleReportSubmit = async (message_id, comment) => {
     try {
         await apiClient.post('/api/messages/report/', { message_id, comment });
@@ -162,10 +146,25 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
         throw new Error(err.response?.data?.error || 'An unexpected error occurred.');
     }
   };
-  if (selectedMessage) {
-    const videoAttachments = selectedMessage.attachments?.filter(att => att.content_type?.startsWith('video/')) || [];
-    const otherAttachments = selectedMessage.attachments?.filter(att => !att.content_type?.startsWith('video/')) || [];
 
+  if (viewingApplet) {
+      return (
+          <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex flex-col p-4">
+              <AppletRunner 
+                  key={viewingApplet.attachment.id}
+                  applet={viewingApplet.applet}
+                  attachmentContext={{
+                      content_hash: viewingApplet.attachment.metadata_manifest.content_hash,
+                      content_type: viewingApplet.attachment.content_type,
+                      filename: viewingApplet.attachment.filename,
+                  }}
+                  onBack={() => setViewingApplet(null)}
+              />
+          </div>
+      );
+  }
+  
+  if (selectedMessage) {
     return (
       <div>
         <ReportModal 
@@ -198,30 +197,17 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
           </div>
           <p className="text-gray-300 whitespace-pre-wrap mb-4">{selectedMessage.body}</p>
           
-          {videoAttachments.length > 0 && (
+          {selectedMessage.attachments && selectedMessage.attachments.length > 0 && (
             <div className="border-t border-gray-700 pt-4 mt-4">
-              <h4 className="font-bold text-gray-300 mb-2">Video Attachments:</h4>
-              <div className="space-y-4">
-                {videoAttachments.map(att => (
-                  // --- FIX START ---
-                  // Replace the standard <video> tag with our new authenticated component.
-                  <AuthenticatedVideoPlayer 
-                    key={att.id} 
-                    src={`/api/content/stream/${att.metadata_manifest.content_hash}/`} 
-                    type={att.content_type} 
-                  />
-                  // --- FIX END ---
-                ))}
-              </div>
-            </div>
-          )}
-
-          {otherAttachments.length > 0 && (
-            <div className="border-t border-gray-700 pt-4 mt-4">
-              <h4 className="font-bold text-gray-300 mb-2">File Attachments:</h4>
+              <h4 className="font-bold text-gray-300 mb-2">Attachments:</h4>
               <ul className="space-y-2">
-                {otherAttachments.map(att => (
-                  <AttachmentItem key={att.id} attachment={att} onDownload={handleFileDownload} />
+                {selectedMessage.attachments.map(att => (
+                  <AttachmentItem 
+                    key={att.id} 
+                    attachment={att} 
+                    handlerApplet={findHandlerAppletFor(att.content_type)}
+                    onLaunch={(applet, attachment) => setViewingApplet({applet, attachment})}
+                  />
                 ))}
               </ul>
             </div>

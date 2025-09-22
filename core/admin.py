@@ -8,8 +8,8 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -358,14 +358,17 @@ class AppletAdmin(admin.ModelAdmin):
     list_filter = ('category', 'is_local')
     search_fields = ('name', 'description')
     readonly_fields = ('id', 'created_at', 'code_manifest', 'code_checksum')
+    # --- MODIFICATION START ---
+    # Add the new handles_mime_types field to the admin interface
     fieldsets = (
         (None, {
-            'fields': ('name', 'description', 'category', 'event_board', 'author', 'author_pubkey', ('is_local', 'is_debug_mode'))
+            'fields': ('name', 'description', 'category', 'event_board', 'author', 'author_pubkey', ('is_local', 'is_debug_mode'), 'handles_mime_types')
         }),
         ('Code', {
             'fields': ('applet_code_file', 'code_manifest', 'code_checksum')
         }),
     )
+    # --- MODIFICATION END ---
     actions = [rekey_content_action]
 
     def save_model(self, request, obj, form, change):

@@ -295,6 +295,8 @@ class Applet(models.Model):
     category = models.ForeignKey(AppletCategory, on_delete=models.SET_NULL, null=True, blank=True)
     is_debug_mode = models.BooleanField(default=False, help_text="Enable to show the debug console when this applet is run.")
     event_board = models.ForeignKey(MessageBoard, on_delete=models.SET_NULL, null=True, blank=True, help_text="The message board this applet will use for its public events.")
+    # --- NEW FIELD ---
+    handles_mime_types = models.CharField(max_length=255, blank=True, help_text="Comma-separated list of MIME types this applet can view (e.g., image/png,image/jpeg)")
 
     def __str__(self):
         return self.name
