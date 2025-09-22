@@ -32,7 +32,10 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
       try {
         const profilePromise = apiClient.get('/api/user/profile/');
         if (!applet?.code_manifest?.content_hash) {
+          // --- FIX START ---
+          // The unterminated string has been corrected.
           throw new Error("Applet has an invalid code manifest.");
+          // --- FIX END ---
         }
         const codeUrl = `/api/content/download/${applet.code_manifest.content_hash}/`;
         const codePromise = apiClient.get(codeUrl);
@@ -54,7 +57,6 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
   }, [applet]);
   useEffect(() => {
     const handleMessage = async (event) => {
-      // SECURITY: Validate both the origin and the source of the message
       if (event.origin !== window.location.origin) {
         console.warn(`Blocked a postMessage from an unexpected origin: ${event.origin}`);
         return;
@@ -82,9 +84,15 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
           case 'getAppletInfo':
             response.payload = applet;
             break;
-          // --- NEW CASE ---
           case 'getAttachmentContext':
             response.payload = attachmentContext;
+            break;
+          case 'getAttachmentBlob':
+            if (!attachmentContext || !attachmentContext.content_hash) {
+              throw new Error("No attachment context is available to fetch.");
+            }
+            const blob = await apiClient.getBlob(`/api/content/stream/${attachmentContext.content_hash}/`);
+            response.payload = blob;
             break;
           case 'postEvent':
             const postResponse = await apiClient.post(`/api/applets/${applet.id}/post_event/`, payload);

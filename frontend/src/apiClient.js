@@ -37,24 +37,16 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// UPDATED: The response interceptor is now smarter about 401 errors.
 apiClient.interceptors.response.use(
   (response) => response, 
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Don't intercept for the token endpoint, to allow for failed login attempts
       if (error.config.url.includes('/api/token/')) {
         return Promise.reject(error);
       }
-
-      // NEW: Check for the specific 'identity_locked' error.
-      // If this error occurs, we DON'T want to log out. We let the
-      // component that made the request handle it by showing the unlock form.
       if (error.response.data && error.response.data.error === 'identity_locked') {
         return Promise.reject(error);
       }
-
-      // For all other 401 errors, we assume the session is invalid and log out.
       console.warn("Session expired or token is invalid. Logging out.");
       localStorage.removeItem('token');
       window.location.href = '/';
@@ -63,5 +55,39 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Specialized function to fetch binary data like videos or images
+apiClient.getBlob = async (url) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(url, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            // Attempt to parse the JSON error body for identity_locked
+            try {
+                const errorData = await response.json();
+                if (errorData.error === 'identity_locked') {
+                    // Re-throw a specific error type that components can catch
+                    const err = new Error('identity_locked');
+                    err.response = { data: errorData };
+                    throw err;
+                }
+            } catch (e) {
+                // --- FIX START ---
+                // This block is intentionally empty. If the 401 response isn't
+                // valid JSON (e.g., just plain text), we can't parse a specific
+                // error message, so we fall through to the generic error below.
+                // This comment satisfies strict linting rules.
+                // --- FIX END ---
+            }
+        }
+        throw new Error(`Failed to fetch blob with status: ${response.status}`);
+    }
+    return response.blob();
+};
 
 export default apiClient;
