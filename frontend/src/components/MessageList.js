@@ -24,7 +24,6 @@ import AppletRunner from './AppletRunner';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const AttachmentItem = ({ attachment, handlerApplet, onLaunch }) => {
-  // If a handler applet exists, show a "View" button, otherwise show "Download"
   if (handlerApplet) {
     return (
         <li className="flex items-center gap-4">
@@ -38,7 +37,6 @@ const AttachmentItem = ({ attachment, handlerApplet, onLaunch }) => {
     );
   }
 
-  // Fallback to download link (logic for this can be added back if needed)
   return (
     <li className="flex items-center gap-4">
       <span className="text-gray-200">{attachment.filename}</span>
@@ -83,7 +81,11 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
   const findHandlerAppletFor = (mimeType) => {
       if (!mimeType) return null;
       return applets.find(applet => 
-          applet.handles_mime_types && applet.handles_mime_types.split(',').includes(mimeType)
+          // --- FIX START ---
+          // Trim whitespace from each MIME type to prevent errors
+          // from user input like "video/mp4, video/webm".
+          applet.handles_mime_types && applet.handles_mime_types.split(',').map(m => m.trim()).includes(mimeType)
+          // --- FIX END ---
       );
   };
   

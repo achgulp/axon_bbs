@@ -79,11 +79,7 @@ class MessageBoardSerializer(serializers.ModelSerializer):
 class FileAttachmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = FileAttachment
-        # --- FIX START ---
-        # Added 'metadata_manifest' to the fields list so the frontend can
-        # access the content_hash needed for streaming URLs.
         fields = ('id', 'filename', 'content_type', 'size', 'created_at', 'metadata_manifest')
-        # --- FIX END ---
         read_only_fields = fields
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -167,12 +163,9 @@ class PrivateMessageOutboxSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_recipient_display(self, obj):
-        # In the outbox, the recipient object might not be set if they are a federated user.
-        # We need a robust way to find their details.
         if obj.recipient:
              return obj.recipient.nickname if obj.recipient.nickname else obj.recipient.username
         
-        # Fallback if recipient is not a local user
         if hasattr(obj, 'recipient_pubkey') and obj.recipient_pubkey:
             user = User.objects.filter(pubkey=obj.recipient_pubkey).first()
             if user:
@@ -209,7 +202,10 @@ class AppletSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True, default=None)
     class Meta:
         model = Applet
-        fields = ('id', 'name', 'description', 'author_pubkey', 'code_manifest', 'created_at', 'category_name', 'is_debug_mode')
+        # --- FIX START ---
+        # Added 'handles_mime_types' to the fields list.
+        fields = ('id', 'name', 'description', 'author_pubkey', 'code_manifest', 'created_at', 'category_name', 'is_debug_mode', 'handles_mime_types')
+        # --- FIX END ---
         read_only_fields = fields
 
 class HighScoreSerializer(serializers.ModelSerializer):
@@ -262,8 +258,6 @@ class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
         }
     
     def get_pending_avatar_url(self, obj):
-        # --- MODIFICATION START ---
-        # Look for the correct key and build a direct media URL
         temp_filename = obj.action_details.get('pending_avatar_filename')
         if not temp_filename:
             return None
@@ -273,4 +267,3 @@ class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
             media_url = getattr(settings, 'MEDIA_URL', '/media/')
             return request.build_absolute_uri(os.path.join(media_url, 'pending_avatars', temp_filename))
         return None
-        # --- MODIFICATION END ---
