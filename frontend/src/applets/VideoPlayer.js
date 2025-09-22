@@ -44,6 +44,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 
 // --- Main Applet Execution ---
+// --- FIX START ---
+// Reverted to a self-executing async function. The AppletRunner already ensures
+// the DOM is ready, so an extra listener here prevents the code from ever running.
 (async function() {
     const styles = `
         html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #000; }
@@ -75,7 +78,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         debugDialog.scrollTop = debugDialog.scrollHeight;
     }
     
-    // --- MODIFICATION START: Added a more robust error display function ---
     function displayError(e) {
         let errorMessage;
         if (e.message === 'identity_locked') {
@@ -87,7 +89,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         debugLog(`FATAL ERROR: ${e.stack}`);
         console.error("VideoPlayer Applet Error:", e);
     }
-    // --- MODIFICATION END ---
 
     try {
         debugLog("Applet initializing...");
@@ -121,7 +122,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         videoEl.appendChild(sourceEl);
         videoEl.addEventListener('error', (err) => {
-            // Use the more detailed error handler on video playback failure
             displayError(new Error("Browser could not play video. The format may be unsupported, the file may be corrupt, or there was a streaming error."));
         });
 
@@ -133,3 +133,4 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         displayError(e);
     }
 })();
+// --- FIX END ---

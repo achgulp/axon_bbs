@@ -25,6 +25,7 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
   const [error, setError] = useState('');
   const [profile, setProfile] = useState(null);
   const iframeRef = useRef(null);
+
   useEffect(() => {
     const loadAppletAndProfile = async () => {
       setIsLoading(true);
@@ -32,13 +33,11 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
       try {
         const profilePromise = apiClient.get('/api/user/profile/');
         if (!applet?.code_manifest?.content_hash) {
-          // --- FIX START ---
-          // The unterminated string has been corrected.
           throw new Error("Applet has an invalid code manifest.");
-          // --- FIX END ---
         }
         const codeUrl = `/api/content/download/${applet.code_manifest.content_hash}/`;
-        const codePromise = apiClient.get(codeUrl);
+        // Increase timeout to 30 seconds for potentially slow applet downloads
+        const codePromise = apiClient.get(codeUrl, { timeout: 30000 });
 
         const [profileResponse, codeResponse] = await Promise.all([profilePromise, codePromise]);
         
@@ -55,15 +54,13 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
     
     loadAppletAndProfile();
   }, [applet]);
+
   useEffect(() => {
     const handleMessage = async (event) => {
-      if (event.origin !== window.location.origin) {
-        console.warn(`Blocked a postMessage from an unexpected origin: ${event.origin}`);
-        return;
-      }
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return;
-      }
+      // Security checks
+      if (event.origin !== window.location.origin) return;
+      if (event.source !== iframeRef.current?.contentWindow) return;
+
       const { command, payload, requestId } = event.data;
       let response = { command: `response_${command}`, requestId, payload: null, error: null };
 
@@ -103,7 +100,7 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
             response.payload = readResponse.data;
             break;
           default:
-            return;
+            return; // Do not respond to unknown commands
         }
       } catch (e) {
         console.error(`Error processing applet command '${command}':`, e);
@@ -118,17 +115,17 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [profile, applet, attachmentContext]);
+
   const getIframeContent = () => {
     if (!appletCode) return '';
     const checksum = applet?.code_manifest?.content_hash || 'N/A';
     const debugMode = applet?.is_debug_mode || false;
 
+    // This wrapper is critical. It ensures the applet-root div exists before the applet's code runs.
     return `
       <!DOCTYPE html>
       <html>
-        <head>
-          <title>${applet.name}</title>
-        </head>
+        <head><title>${applet.name}</title></head>
         <body>
           <div id="applet-root"></div>
           <script>
@@ -150,13 +147,16 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
       </html>
     `;
   };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold text-gray-200">{applet.name}</h2>
-        <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
-          ← Back to Applets
-        </button>
+        {onBack && 
+            <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
+              ← Back
+            </button>
+        }
       </div>
       <div className="w-full h-[75vh] bg-gray-900 border border-gray-700 rounded overflow-hidden">
         {isLoading ? (
