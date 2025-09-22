@@ -20,6 +20,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
 import UnlockForm from './UnlockForm';
 import ReportModal from './ReportModal'; 
+import AuthenticatedVideoPlayer from './AuthenticatedVideoPlayer'; // <-- ADD THIS LINE
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const AttachmentItem = ({ attachment, onDownload }) => {
@@ -202,12 +203,14 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
               <h4 className="font-bold text-gray-300 mb-2">Video Attachments:</h4>
               <div className="space-y-4">
                 {videoAttachments.map(att => (
-                  <video key={att.id} controls preload="metadata" className="w-full max-w-2xl rounded bg-black">
-                    {/* --- FIX START --- */}
-                    <source src={`/api/content/stream/${att.metadata_manifest.content_hash}/`} type={att.content_type} />
-                    {/* --- FIX END --- */}
-                    Your browser does not support the video tag.
-                  </video>
+                  // --- FIX START ---
+                  // Replace the standard <video> tag with our new authenticated component.
+                  <AuthenticatedVideoPlayer 
+                    key={att.id} 
+                    src={`/api/content/stream/${att.metadata_manifest.content_hash}/`} 
+                    type={att.content_type} 
+                  />
+                  // --- FIX END ---
                 ))}
               </div>
             </div>
