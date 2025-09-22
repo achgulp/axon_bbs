@@ -330,7 +330,6 @@ class DownloadContentView(views.APIView):
                 applet_code = content.get('code', '')
                 return HttpResponse(applet_code, content_type='application/javascript')
             
-            # This endpoint could be expanded to handle other content types like files
             return Response({"error": "Unsupported content type for direct download."}, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:
@@ -350,20 +349,16 @@ class FileUploadView(views.APIView):
         
         file = request.FILES['file']
         
-        # --- FIX START ---
         # The 5MB file size limit has been commented out to allow for large video uploads.
-        # A production environment should implement streaming uploads or configure the webserver
-        # (e.g., Nginx) to handle large request bodies gracefully.
-        #
-        # if file.size > 5 * 1024 * 1024: # 5MB limit for generic files
+        # if file.size > 5 * 1024 * 1024:
         #     return Response({"error": "File size cannot exceed 5MB."}, status=status.HTTP_400_BAD_REQUEST)
-        # --- FIX END ---
 
         try:
             user = request.user
+            # This is still memory-intensive for very large files.
+            # A production system should use streaming file uploads.
             file_content_bytes = file.read()
 
-            # Create the encrypted content and manifest
             file_content_payload = {
                 "type": "file",
                 "filename": file.name,
@@ -374,7 +369,6 @@ class FileUploadView(views.APIView):
             
             _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(file_content_payload)
             
-            # Create the FileAttachment record
             attachment = FileAttachment.objects.create(
                 author=user,
                 filename=file.name,
@@ -410,6 +404,9 @@ def stream_content_generator(content_hash):
 
         num_chunks = len(manifest.get('chunk_hashes', []))
         
+        # --- FIX START ---
+        # The decryption and unpadding logic is now handled correctly for streams.
+        # The unpadder is updated with all decrypted data before being finalized.
         for i in range(num_chunks):
             chunk_path = bitsync_service.get_chunk_path(content_hash, i)
             
@@ -420,16 +417,19 @@ def stream_content_generator(content_hash):
                 with open(chunk_path, 'rb') as f:
                     encrypted_chunk = f.read()
                 
-                if i < num_chunks - 1:
-                    yield decryptor.update(encrypted_chunk)
-                else:
-                    # Last chunk needs finalization and unpadding
-                    final_decrypted = decryptor.update(encrypted_chunk) + decryptor.finalize()
-                    unpadded_final = unpadder.update(final_decrypted) + unpadder.finalize()
-                    yield unpadded_final
+                decrypted_chunk = decryptor.update(encrypted_chunk)
+                
+                # Yield the unpadded data as it becomes available.
+                # The unpadder will buffer the final block internally.
+                yield unpadder.update(decrypted_chunk)
             else:
                 logger.error(f"Failed to obtain chunk {i} for streaming {content_hash}")
-                return # Abort stream if a chunk can't be found/downloaded
+                return
+
+        # After all chunks are processed, finalize both operations.
+        final_decrypted = decryptor.finalize()
+        yield unpadder.update(final_decrypted) + unpadder.finalize()
+        # --- FIX END ---
 
     except Exception as e:
         logger.error(f"Error during content stream for {content_hash}: {e}", exc_info=True)

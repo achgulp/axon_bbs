@@ -13,6 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
 # Full path: axon_bbs/api/serializers.py
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
@@ -77,7 +79,11 @@ class MessageBoardSerializer(serializers.ModelSerializer):
 class FileAttachmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = FileAttachment
-        fields = ('id', 'filename', 'content_type', 'size', 'created_at')
+        # --- FIX START ---
+        # Added 'metadata_manifest' to the fields list so the frontend can
+        # access the content_hash needed for streaming URLs.
+        fields = ('id', 'filename', 'content_type', 'size', 'created_at', 'metadata_manifest')
+        # --- FIX END ---
         read_only_fields = fields
 
 class MessageSerializer(serializers.ModelSerializer):

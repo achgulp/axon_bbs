@@ -203,7 +203,9 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
               <div className="space-y-4">
                 {videoAttachments.map(att => (
                   <video key={att.id} controls preload="metadata" className="w-full max-w-2xl rounded bg-black">
+                    {/* --- FIX START --- */}
                     <source src={`/api/content/stream/${att.metadata_manifest.content_hash}/`} type={att.content_type} />
+                    {/* --- FIX END --- */}
                     Your browser does not support the video tag.
                   </video>
                 ))}
