@@ -385,9 +385,9 @@ class FileUploadView(views.APIView):
             return Response({"error": "An unexpected error occurred during file upload."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 def stream_content_generator(content_hash):
-    """A generator function to fetch, decrypt, and yield chunks for streaming."""
+    """A generator function to fetch, decrypt, and yield the raw bytes of a file attachment."""
     sync_service = service_manager.sync_service
-    bitsync_service = service_manager.bitsync_service
+    logger.debug(f"Starting stream for content hash: {content_hash}")
 
     try:
         manifest = sync_service.get_manifest_by_content_hash(content_hash)
@@ -395,39 +395,25 @@ def stream_content_generator(content_hash):
             logger.warning(f"Stream requested for unknown content hash: {content_hash}")
             return
 
-        aes_key = bitsync_service.get_decrypted_aes_key(manifest)
-        iv = base64.b64decode(manifest['encryption_iv'])
-        
-        cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
-        decryptor = cipher.decryptor()
-        unpadder = PKCS7(algorithms.AES.block_size).unpadder()
+        # Decrypt the entire JSON payload first.
+        decrypted_payload_bytes = sync_service.get_decrypted_content(manifest)
+        if not decrypted_payload_bytes:
+            logger.error(f"Failed to decrypt payload for stream: {content_hash}")
+            return
 
-        num_chunks = len(manifest.get('chunk_hashes', []))
-        
-        # --- FINAL FIX START ---
-        # The previous streaming unpadder was subtly corrupting the data.
-        # This simpler implementation decrypts all data first, then unpads at once.
-        # It is less memory-efficient for the server, but more robust.
-        decrypted_bytes = b''
-        for i in range(num_chunks):
-            chunk_path = bitsync_service.get_chunk_path(content_hash, i)
+        payload = json.loads(decrypted_payload_bytes.decode('utf-8'))
+
+        if payload.get('type') != 'file' or 'data' not in payload:
+            logger.error(f"Stream content is not a valid file payload: {content_hash}")
+            return
             
-            if not os.path.exists(chunk_path):
-                sync_service._download_single_chunk(manifest, i)
+        # Base64-decode the actual file data.
+        file_bytes = base64.b64decode(payload['data'])
 
-            if os.path.exists(chunk_path):
-                with open(chunk_path, 'rb') as f:
-                    encrypted_chunk = f.read()
-                decrypted_bytes += decryptor.update(encrypted_chunk)
-            else:
-                logger.error(f"Failed to obtain chunk {i} for streaming {content_hash}")
-                return
-
-        decrypted_bytes += decryptor.finalize()
-        
-        unpadded_data = unpadder.update(decrypted_bytes) + unpadder.finalize()
-        yield unpadded_data
-        # --- FINAL FIX END ---
+        # Yield the raw bytes of the file.
+        import io
+        yield from io.BytesIO(file_bytes)
+        logger.info(f"Successfully streamed {len(file_bytes)} bytes for hash: {content_hash}")
 
     except Exception as e:
         logger.error(f"Error during content stream for {content_hash}: {e}", exc_info=True)

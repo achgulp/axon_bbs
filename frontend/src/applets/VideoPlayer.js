@@ -136,7 +136,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             const videoEl = document.createElement('video');
             videoEl.setAttribute('controls', true);
             videoEl.setAttribute('preload', 'auto');
-            videoEl.muted = true; // Mute by default to comply with browser autoplay policies
             
             const sourceEl = document.createElement('source');
             sourceEl.setAttribute('src', videoObjectUrl);
