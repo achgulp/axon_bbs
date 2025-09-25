@@ -12,8 +12,7 @@ class MessageBoard(models.Model):
         return self.name
 
 class Message(Content):
-    # MODIFIED: Override author to change on_delete behavior
-    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='authored_%(class)ss', null=True)
+    # MODIFIED: Removed the redundant author override
     board = models.ForeignKey(MessageBoard, on_delete=models.CASCADE, related_name='messages')
     subject = models.CharField(max_length=255)
     body = models.TextField()
