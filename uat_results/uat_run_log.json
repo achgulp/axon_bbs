@@ -18,10 +18,10 @@
     "step": "3) Get Self Profile",
     "status": "PASS",
     "details": {
-      "username": "uat_user_dd26873a",
-      "nickname": "uat-runner-dd26873a",
-      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsZa9j4gPu6L1BJftmRe3\nhbSa6poamfPvuOejD6igSxOGpCvXT/+37bUJ6g7w7CvOsJ25P3GypMXo+fqKmGBb\nu3jTPqZy/xSkuT3edskq5dg39kqtpJMW1me6COARUenlYtQPhY98oCJ2KvWDGB3Y\nXSVqvp1wLtd384/HXkcwbwMI2V7oYjE27u2rx9hjvPOOonlVIEa9fVaC6Z8uGxPS\nA5PgvWATch+8A2tX7Dm8l+uYzvxsYT86GeErT7jxUlOmkPqaki2A5qUea7B574Of\n4ucjkLjx8Vg/s32zQuyGZSkwkMONdqdULW4a2Y1HXuj3ojyIvLwgwnz/P0dfzbHH\nNQIDAQAB\n-----END PUBLIC KEY-----",
-      "avatar_url": "http://lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion/media/avatars/cow_d9dc5b376fdf.png",
+      "username": "uat_user_a7c58241",
+      "nickname": "uat-runner-a7c58241",
+      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAy/+XccoW+BMNtNpWOvxS\nz/8X6Id58lTz5zSCAsCDZCW6O7H32udhUaWYBjZsCaVNiwDqY04/3X2IRTg+kXEH\nirh2wO9YQCsIHT2IaVJoZwnRt1Jiipbj5kxUl28h6q9aCh3QgEfWrCZNIMSpw5AR\nN5JLVETKsjMJrhQhn2nGbIPSTVOxaSTp0RXvOdtqplkm1qeL06jiba4aiWRoijzf\nzwxy0kiFwxrPx8JG37uuQuw3N7OmhmcU38m2lgDuzzmP9x2Pt/dFu3gzFOdZfV3r\nd935r7IHxeh1S+rZVmllD0fpHyyShXCzWPFI5ACssOtXaHghBJMIkGuVQbYrU/i6\n2wIDAQAB\n-----END PUBLIC KEY-----",
+      "avatar_url": "http://lpa4klsh6xbzlexh6pwdxtn7ezr4snztgyxxgejtbmvpl4zw6sqljoyd.onion/media/avatars/cow_bb5189c9fc72.png",
       "karma": 10,
       "is_moderator": false,
       "timezone": null
@@ -31,25 +31,25 @@
     "step": "4) Upload Attachment",
     "status": "PASS",
     "details": {
-      "id": "82639a9f-efb3-462c-96ab-3eb2235f9863",
-      "content": "This is a test file for UAT run dd26873a."
+      "id": "d85561be-c03a-44d8-b5f4-609c54e4d94c",
+      "content": "This is a test file for UAT run a7c58241."
     }
   },
   {
     "step": "5) Create Message with Attachment",
     "status": "PASS",
     "details": {
-      "message_id": "9db5a1ba-2935-47d9-93a1-8e136437a552",
-      "subject": "UAT Post from UAT-Runner-dd26873a"
+      "message_id": "3d53604e-f21b-4f1e-bb8a-dba30579d30f",
+      "subject": "UAT Post from UAT-Runner-a7c58241"
     }
   },
   {
     "step": "6) Send PM to Peer BBS User",
     "status": "PASS",
     "details": {
-      "subject": "UAT PM from UAT-Runner-dd26873a",
+      "subject": "UAT PM from UAT-Runner-a7c58241",
       "body": "This is a UAT private message.",
-      "sender_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsZa9j4gPu6L1BJftmRe3\nhbSa6poamfPvuOejD6igSxOGpCvXT/+37bUJ6g7w7CvOsJ25P3GypMXo+fqKmGBb\nu3jTPqZy/xSkuT3edskq5dg39kqtpJMW1me6COARUenlYtQPhY98oCJ2KvWDGB3Y\nXSVqvp1wLtd384/HXkcwbwMI2V7oYjE27u2rx9hjvPOOonlVIEa9fVaC6Z8uGxPS\nA5PgvWATch+8A2tX7Dm8l+uYzvxsYT86GeErT7jxUlOmkPqaki2A5qUea7B574Of\n4ucjkLjx8Vg/s32zQuyGZSkwkMONdqdULW4a2Y1HXuj3ojyIvLwgwnz/P0dfzbHH\nNQIDAQAB\n-----END PUBLIC KEY-----"
+      "sender_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAy/+XccoW+BMNtNpWOvxS\nz/8X6Id58lTz5zSCAsCDZCW6O7H32udhUaWYBjZsCaVNiwDqY04/3X2IRTg+kXEH\nirh2wO9YQCsIHT2IaVJoZwnRt1Jiipbj5kxUl28h6q9aCh3QgEfWrCZNIMSpw5AR\nN5JLVETKsjMJrhQhn2nGbIPSTVOxaSTp0RXvOdtqplkm1qeL06jiba4aiWRoijzf\nzwxy0kiFwxrPx8JG37uuQuw3N7OmhmcU38m2lgDuzzmP9x2Pt/dFu3gzFOdZfV3r\nd935r7IHxeh1S+rZVmllD0fpHyyShXCzWPFI5ACssOtXaHghBJMIkGuVQbYrU/i6\n2wIDAQAB\n-----END PUBLIC KEY-----"
     }
   },
   {
@@ -70,12 +70,12 @@
   {
     "step": "7d) Report Message from Second User",
     "status": "PASS",
-    "details": "Successfully reported message ID 9db5a1ba-2935-47d9-93a1-8e136437a552."
+    "details": "Successfully reported message ID 3d53604e-f21b-4f1e-bb8a-dba30579d30f."
   },
   {
     "step": "8) Change Nickname",
     "status": "PASS",
-    "details": "Nickname change to 'UAT-Runner-dd26873a-Updated' submitted."
+    "details": "Nickname change to 'UAT-Runner-a7c58241-Updated' submitted."
   },
   {
     "step": "9) Upload Avatar",
@@ -109,7 +109,7 @@
   },
   {
     "step": "13) Trigger Verifier Agent",
-    "status": "FAIL",
-    "details": "Failed to post log to UAT channel. Status: 403, Body: {\"error\":\"You do not have permission to post on this board.\"}"
+    "status": "PASS",
+    "details": "UAT log posted to trigger verifier agent."
   }
 ]

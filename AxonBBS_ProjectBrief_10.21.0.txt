@@ -26,8 +26,7 @@ Unified Moderation Hub: All moderation tasks (message reports, profile approvals
 4. Immediate To-Do List / Roadmap
 This is the prioritized list of features to be implemented next:
 
-Bug Fix: last_login Timestamp: The UPDATE_LAST_LOGIN setting in settings.py for SIMPLE_JWT needs to be set to True.
-Implement Moderation Overhaul:
+Bug Fix: Nothing to report at this time.
 
 Phase 1 (Model Changes): Adapt the ModerationReport model to handle general inquiries by making reported_message optional and adding a report_type field.
 Phase 2 (Backend API): Create a new /api/moderation/unified_queue/ endpoint to gather all pending items (reports, profile approvals, inquiries).
@@ -56,3 +55,11 @@ Notify on Key Events:
 
 Clearly state when a database migration is required and provide the commands to run.
 Clearly state when the frontend needs to be rebuilt and provide the command to run.
+
+
+
+Other Files that may help with project Specs:
+AxonBBS_ProjectBrief_10.21.0.txt
+AxonBBS_FileTree_10.21.0.txt
+AxonBBS_ArchBlueprint_10.21.0.txt
+AxonBBSProductRequirementsDocument_10.21.0.txt

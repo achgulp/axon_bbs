@@ -291,9 +291,7 @@ def run_uat_suite(peer_onion_url):
         client.save_log()
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 2:
-        print("Usage: python uat_runner.py <peer_onion_url>")
-        sys.exit(1)
-    peer_url = sys.argv[1]
+    peer_url = os.getenv("TEST_BBS_ONION")
+    if not peer_url:
+        raise ValueError("Please set TEST_BBS_ONION in your .env file")
     run_uat_suite(peer_url)
