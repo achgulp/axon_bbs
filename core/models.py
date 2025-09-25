@@ -26,9 +26,6 @@ class User(AbstractUser):
     last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this user.")
     timezone = models.CharField(max_length=50, blank=True, null=True, help_text="User's preferred display timezone (IANA name).")
 
-    # MODIFIED: The conflicting 'groups' and 'user_permissions' fields have been removed.
-    # They are now correctly inherited from the parent AbstractUser class.
-
     def __str__(self):
         return self.username
 
@@ -57,7 +54,8 @@ class ValidFileType(models.Model):
 
 class Content(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='authored_%(class)ss', null=True)
+    # REVERTED: on_delete behavior goes back to CASCADE
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='authored_%(class)ss', null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(default=get_default_expires_at, null=True)
     is_pinned = models.BooleanField(default=False)
@@ -66,6 +64,7 @@ class Content(models.Model):
         abstract = True
 
 class FileAttachment(Content):
+    # REVERTED: Removed the author override to inherit CASCADE correctly
     filename = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)
     size = models.PositiveIntegerField()
