@@ -27,10 +27,8 @@ from django.core.files.base import ContentFile
 import io
 import base64
 import logging
-# --- MODIFICATION START ---
 import uuid
 import os
-# --- MODIFICATION END ---
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import UnsupportedAlgorithm
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -210,7 +208,10 @@ class ExportIdentityView(views.APIView):
 
             encrypted_pem_bytes = private_key_obj.private_bytes(
                 encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8Encrypted,
+                # --- BUG FIX START ---
+                # Corrected the attribute name from PKCS8Encrypted to PKCS8
+                format=serialization.PrivateFormat.PKCS8,
+                # --- BUG FIX END ---
                 encryption_algorithm=serialization.BestAvailableEncryption(password.encode('utf-8'))
             )
             
@@ -238,8 +239,6 @@ class UpdateNicknameView(views.APIView):
             user.nickname = nickname
             user.save()
 
-            # Create an approval request. If an avatar exists, use its temporary name if available,
-            # otherwise, this action is for a nickname-only change.
             action_details = {
                 'nickname': user.nickname,
                 'karma': user.karma,
@@ -301,8 +300,6 @@ class UploadAvatarView(views.APIView):
             
             user = request.user
             
-            # --- MODIFICATION START ---
-            # Save to a temporary, unguessable location for moderation
             pending_dir = os.path.join(settings.MEDIA_ROOT, 'pending_avatars')
             os.makedirs(pending_dir, exist_ok=True)
             
@@ -319,10 +316,9 @@ class UploadAvatarView(views.APIView):
                 action_details={
                     'nickname': user.nickname,
                     'karma': user.karma,
-                    'pending_avatar_filename': temp_filename, # Store the temp name
+                    'pending_avatar_filename': temp_filename,
                 }
             )
-            # --- MODIFICATION END ---
 
             return Response({"status": "Avatar update submitted for approval."})
 

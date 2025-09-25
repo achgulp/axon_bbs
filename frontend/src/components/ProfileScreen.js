@@ -36,6 +36,9 @@ const ProfileScreen = () => {
   const [sa1, setSa1] = useState('');
   const [sq2, setSq2] = useState('');
   const [sa2, setSa2] = useState('');
+  // --- MODIFICATION START ---
+  const [exportPassword, setExportPassword] = useState('');
+  // --- MODIFICATION END ---
 
   // State for timezone
   const [timezones, setTimezones] = useState([]);
@@ -128,7 +131,8 @@ useEffect(() => {
         });
         setSuccess('Security questions have been reset successfully!');
         setCurrentPasswordForReset('');
-        setSq1(''); setSa1(''); setSq2(''); setSa2('');
+        setSq1(''); setSa1('');
+        setSq2(''); setSa2('');
     } catch (err) {
         setError(err.response?.data?.error || 'Failed to reset security questions.');
     } finally {
@@ -149,6 +153,40 @@ useEffect(() => {
         setIsLoading(false);
     }
   };
+
+  // --- MODIFICATION START: New handler for identity export ---
+  const handleExportIdentity = async (e) => {
+    e.preventDefault();
+    if (!exportPassword) {
+      setError("You must enter your current password to export your key.");
+      return;
+    }
+    setError(''); setSuccess(''); setIsLoading(true);
+    try {
+      const response = await apiClient.post('/api/identity/export/', { password: exportPassword }, { responseType: 'blob' });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${profile.username}_axon_identity_encrypted.pem`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      setSuccess('Your encrypted identity key has been downloaded.');
+      setExportPassword('');
+
+    } catch (err) {
+        const errorText = await err.response?.data?.text();
+        let errorJson = {};
+        try { errorJson = JSON.parse(errorText); } catch {}
+        setError(errorJson?.error || 'Failed to export identity. Please check your password.');
+    } finally {
+        setIsLoading(false);
+    }
+  };
+  // --- MODIFICATION END ---
 
   if (isLoading && !profile) { return <div>Loading profile...</div>; }
 
@@ -190,6 +228,19 @@ useEffect(() => {
             </button>
           </form>
         </div>
+
+        {/* --- MODIFICATION START: New Export Identity section --- */}
+        <div className="bg-gray-800 p-4 rounded border border-gray-700">
+          <SubHeader text="Export Identity" />
+          <p className="text-gray-400 text-xs italic mb-2">Download a backup of your private key, encrypted with your password.</p>
+          <form onSubmit={handleExportIdentity} className="flex items-center gap-4">
+            <input type="password" value={exportPassword} onChange={e => setExportPassword(e.target.value)} placeholder="Enter current password" required className="shadow appearance-none border rounded w-full py-2 px-3 bg-gray-700 text-gray-200 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            <button type="submit" disabled={isLoading || !exportPassword} className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:bg-gray-500 whitespace-nowrap">
+              Export Key
+            </button>
+          </form>
+        </div>
+        {/* --- MODIFICATION END --- */}
 
         <div className="bg-gray-800 p-4 rounded border border-gray-700">
             <SubHeader text="Display Timezone" />
