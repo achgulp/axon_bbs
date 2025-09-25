@@ -208,10 +208,7 @@ class ExportIdentityView(views.APIView):
 
             encrypted_pem_bytes = private_key_obj.private_bytes(
                 encoding=serialization.Encoding.PEM,
-                # --- BUG FIX START ---
-                # Corrected the attribute name from PKCS8Encrypted to PKCS8
                 format=serialization.PrivateFormat.PKCS8,
-                # --- BUG FIX END ---
                 encryption_algorithm=serialization.BestAvailableEncryption(password.encode('utf-8'))
             )
             

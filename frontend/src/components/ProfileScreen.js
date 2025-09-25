@@ -36,9 +36,7 @@ const ProfileScreen = () => {
   const [sa1, setSa1] = useState('');
   const [sq2, setSq2] = useState('');
   const [sa2, setSa2] = useState('');
-  // --- MODIFICATION START ---
   const [exportPassword, setExportPassword] = useState('');
-  // --- MODIFICATION END ---
 
   // State for timezone
   const [timezones, setTimezones] = useState([]);
@@ -154,7 +152,6 @@ useEffect(() => {
     }
   };
 
-  // --- MODIFICATION START: New handler for identity export ---
   const handleExportIdentity = async (e) => {
     e.preventDefault();
     if (!exportPassword) {
@@ -186,7 +183,6 @@ useEffect(() => {
         setIsLoading(false);
     }
   };
-  // --- MODIFICATION END ---
 
   if (isLoading && !profile) { return <div>Loading profile...</div>; }
 
@@ -229,7 +225,6 @@ useEffect(() => {
           </form>
         </div>
 
-        {/* --- MODIFICATION START: New Export Identity section --- */}
         <div className="bg-gray-800 p-4 rounded border border-gray-700">
           <SubHeader text="Export Identity" />
           <p className="text-gray-400 text-xs italic mb-2">Download a backup of your private key, encrypted with your password.</p>
@@ -240,7 +235,6 @@ useEffect(() => {
             </button>
           </form>
         </div>
-        {/* --- MODIFICATION END --- */}
 
         <div className="bg-gray-800 p-4 rounded border border-gray-700">
             <SubHeader text="Display Timezone" />
