@@ -191,6 +191,22 @@ class FileAttachmentAdmin(admin.ModelAdmin):
     readonly_fields = ('id', 'created_at', 'expires_at', 'pinned_by')
     actions = [rekey_content_action]
 
+    # NEW: Override the default delete behavior
+    def delete_queryset(self, request, queryset):
+        """
+        Manually clears the ManyToMany relationship from Messages before
+        deleting the FileAttachments to prevent an IntegrityError.
+        """
+        for attachment in queryset:
+            # The related_name on Message.attachments is 'messages', which gives us
+            # the reverse relationship from the attachment back to the message.
+            for msg in attachment.messages.all():
+                msg.attachments.remove(attachment)
+        
+        # Now that the links are severed, call the original method
+        # to safely delete the FileAttachment objects.
+        super().delete_queryset(request, queryset)
+
 @admin.register(BannedPubkey)
 class BannedPubkeyAdmin(admin.ModelAdmin):
     list_display = ('pubkey', 'is_temporary', 'expires_at')
