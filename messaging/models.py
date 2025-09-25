@@ -12,7 +12,6 @@ class MessageBoard(models.Model):
         return self.name
 
 class Message(Content):
-    # MODIFIED: Removed the incorrect author override
     board = models.ForeignKey(MessageBoard, on_delete=models.CASCADE, related_name='messages')
     subject = models.CharField(max_length=255)
     body = models.TextField()
@@ -27,8 +26,7 @@ class Message(Content):
         return f"'{self.subject}' by {self.author.username if self.author else 'system'}"
 
 class PrivateMessage(Content):
-    # MODIFIED: Changed on_delete behavior for the recipient field to SET_NULL
-    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='received_mail', null=True, blank=True)
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_mail', null=True, blank=True)
     sender_pubkey = models.TextField(blank=True, null=True)
     metadata_manifest = models.JSONField(null=True, blank=True, help_text="BitSync manifest for BBS-level metadata.")
     e2e_encrypted_content = models.TextField(blank=True, null=True, help_text="The end-to-end encrypted message body and subject.")

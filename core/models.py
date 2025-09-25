@@ -54,7 +54,6 @@ class ValidFileType(models.Model):
 
 class Content(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # REVERTED: on_delete behavior goes back to CASCADE
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='authored_%(class)ss', null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(default=get_default_expires_at, null=True)
@@ -64,7 +63,6 @@ class Content(models.Model):
         abstract = True
 
 class FileAttachment(Content):
-    # REVERTED: Removed the author override to inherit CASCADE correctly
     filename = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)
     size = models.PositiveIntegerField()
