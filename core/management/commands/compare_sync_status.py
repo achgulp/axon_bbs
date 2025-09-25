@@ -27,7 +27,8 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.fernet import Fernet
 
-from core.models import TrustedInstance, Message, FileAttachment
+from core.models import TrustedInstance, FileAttachment
+from messaging.models import Message
 
 class Command(BaseCommand):
     help = 'Compares local content with a remote peer to see what needs to be synced.'

@@ -22,7 +22,7 @@ from django.db import connection
 from .bitsync_service import BitSyncService
 from .tor_service import TorService
 from .sync_service import SyncService
-from .high_score_service import HighScoreService
+from applets.high_score_service import HighScoreService
 
 logger = logging.getLogger(__name__)
 
@@ -35,15 +35,19 @@ class ServiceManager:
         self.game_agents = {}
 
     def initialize_services(self):
+        from core.models import TrustedInstance
         logger.info("Initializing Tor service...")
         # self.tor_service.start()
 
         logger.info("Initializing BitSync service...")
         self.bitsync_service = BitSyncService()
         
-        logger.info("Initializing and starting SyncService thread...")
-        self.sync_service = SyncService()
-        self.sync_service.start()
+        if TrustedInstance.objects.filter(is_trusted_peer=False).exists():
+            logger.info("Initializing and starting SyncService thread...")
+            self.sync_service = SyncService()
+            self.sync_service.start()
+        else:
+            logger.warning("No local instance found. SyncService will not be started.")
         
         logger.info("Initializing and starting HighScoreService thread...")
         self.high_score_service = HighScoreService()
@@ -57,7 +61,17 @@ class ServiceManager:
         """Helper function to load and start a single agent service."""
         try:
             username = agent_user.username
-            module_name = f"core.services.{username}_service"
+            
+            if username == 'overlord_agent':
+                module_name = 'applets.overlord_agent_service'
+            elif username == 'moderator_agent':
+                module_name = 'federation.moderator_agent_service'
+            elif username == 'uat_verifier_agent':
+                module_name = 'federation.uat_verifier_agent_service'
+            else:
+                logger.error(f"Unknown agent type for user '{username}'. No service path defined.")
+                return False
+
             class_name = ''.join(word.capitalize() for word in username.split('_')) + 'Service'
             
             logger.info(f"Attempting to start agent: {class_name} from {module_name}")
@@ -89,7 +103,6 @@ class ServiceManager:
             logger.error(f"Database connection not ready, skipping agent initialization: {e}")
             return
 
-        # --- MODIFIED: Query now checks for is_active=True as well ---
         agent_users = User.objects.filter(is_agent=True, is_active=True)
         
         if not agent_users.exists():

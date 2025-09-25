@@ -29,7 +29,7 @@ django.setup()
 # --- End Django Setup ---
 
 from django.conf import settings
-from core.services.identity_service import IdentityService
+from accounts.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password
 
 def extract_private_key():

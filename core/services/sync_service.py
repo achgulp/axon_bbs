@@ -38,9 +38,13 @@ from cryptography.hazmat.primitives.padding import PKCS7
 from django.db import IntegrityError
 import uuid
 
-from core.models import TrustedInstance, Message, MessageBoard, FileAttachment, PrivateMessage, User, FederatedAction, BannedPubkey, Alias, Applet, AppletData
+from core.models import TrustedInstance, FileAttachment, User
+from messaging.models import Message, PrivateMessage, MessageBoard
+from applets.models import Applet, AppletData
+from federation.models import FederatedAction
+from accounts.models import BannedPubkey
 from core.services.encryption_utils import generate_checksum, generate_short_id, decrypt_for_recipients_only
-from .avatar_generator import generate_cow_avatar
+from accounts.avatar_generator import generate_cow_avatar
 
 logger = logging.getLogger(__name__)
 
@@ -281,16 +285,12 @@ class SyncService:
             if content_type == 'message':
                 content = json.loads(decrypted_data)
                 
-                # --- CHANGE START ---
-                # Check if attachments are downloaded before saving the message
                 required_hashes = content.get('attachment_hashes', [])
                 if required_hashes:
                     existing_attachments = FileAttachment.objects.filter(metadata_manifest__content_hash__in=required_hashes)
                     if len(existing_attachments) != len(required_hashes):
                         logger.warning(f"Message {content_hash[:10]} is waiting for attachments to download. Will retry processing later.")
-                        return # Abort processing for now, will be picked up by _resume_incomplete_downloads
-                
-                # --- CHANGE END ---
+                        return
                 
                 author_pubkey = content.get('pubkey')
                 if author_pubkey:
@@ -366,6 +366,7 @@ class SyncService:
                             'is_active': False
                         }
                     )
+                
                     if created:
                         logger.info(f"Created new federated user profile for PM recipient: {recipient_user.username}")
 

@@ -1,0 +1,17 @@
+
+✦ Of course. Here is a summary of where we are:
+
+  We are in the middle of a major backend refactoring to make the project more modular. We've completed Phase 1, where I created the new app structure (accounts,
+  messaging, etc.).
+
+  We are currently in Phase 2, which involves moving the database models to their new apps. I have:
+
+   1. Moved the model definitions from core/models.py to their new respective apps.
+   2. Updated all the import statements across the project to reflect these new locations.
+   3. Created and applied the necessary database migrations to reflect these changes.
+
+  However, the UAT is still failing with a "Server error" when trying to post a message. The logs indicate a database error (no such table: messaging_message), even
+  though I have verified that the table does, in fact, exist with the correct name.
+
+  My next step is to continue investigating the root cause of this database error.
+

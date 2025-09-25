@@ -20,7 +20,11 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group
 from django import forms
-from .models import User, MessageBoard, Message, PrivateMessage, TrustedInstance, Alias, BannedPubkey, ContentExtensionRequest, ValidFileType, FileAttachment, Applet, AppletData, AppletCategory, HighScore, AppletSharedState, ModerationReport
+from .models import User, TrustedInstance, ValidFileType, FileAttachment
+from accounts.models import Alias, BannedPubkey
+from messaging.models import MessageBoard, Message, PrivateMessage
+from applets.models import Applet, AppletData, AppletCategory, HighScore, AppletSharedState
+from federation.models import ContentExtensionRequest, ModerationReport, FederatedAction
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
 import base64
@@ -32,7 +36,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from django.conf import settings
 from django.utils.html import format_html
 from django.core.management import call_command
-from .services.avatar_generator import generate_cow_avatar
+from accounts.avatar_generator import generate_cow_avatar
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
 
@@ -139,14 +143,11 @@ class UserAdmin(BaseUserAdmin):
                 continue
             
             try:
-                # Delete the old avatar file from storage
                 if user.avatar:
                     user.avatar.delete(save=False)
 
-                # Generate a new cow avatar
                 avatar_content_file, avatar_filename = generate_cow_avatar(user.pubkey)
                 
-                # Save the new avatar
                 user.avatar.save(avatar_filename, avatar_content_file, save=True)
                 updated_count += 1
             except Exception as e:
@@ -228,7 +229,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
 
     @admin.action(description='Run Full UAT Suite against selected peer(s)')
     def run_full_uat_suite(self, request, queryset):
-        # We only run the UAT suite against the first selected peer.
         if queryset.count() != 1:
             self.message_user(request, "Please select exactly one peer to run the UAT against.", level='ERROR')
             return
@@ -358,8 +358,6 @@ class AppletAdmin(admin.ModelAdmin):
     list_filter = ('category', 'is_local')
     search_fields = ('name', 'description')
     readonly_fields = ('id', 'created_at', 'code_manifest', 'code_checksum')
-    # --- MODIFICATION START ---
-    # Add the new handles_mime_types field to the admin interface
     fieldsets = (
         (None, {
             'fields': ('name', 'description', 'category', 'event_board', 'author', 'author_pubkey', ('is_local', 'is_debug_mode'), 'handles_mime_types')
@@ -368,7 +366,6 @@ class AppletAdmin(admin.ModelAdmin):
             'fields': ('applet_code_file', 'code_manifest', 'code_checksum')
         }),
     )
-    # --- MODIFICATION END ---
     actions = [rekey_content_action]
 
     def save_model(self, request, obj, form, change):

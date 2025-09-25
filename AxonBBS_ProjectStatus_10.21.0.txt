@@ -1,0 +1,101 @@
+Project Status & Roadmap
+Date: 2025-09-25
+Version: 10.21.0 (In Progress)
+
+This document summarizes the development progress, outlining completed tasks and the remaining work required to fulfill the project brief and architectural blueprint.
+
+I. Completed Work
+We have successfully addressed several critical bugs and completed the majority of the planned backend refactoring. The application is currently in a stable, runnable state.
+
+A. Bug Fixes Resolved
+last_login Timestamp: The UPDATE_LAST_LOGIN setting was corrected, ensuring user activity is properly tracked.
+
+Moderation Crashes: Fixed two separate bugs in the moderation queue that caused the server to crash when approving actions for federated users who did not exist on the local instance.
+
+Identity Export: Re-implemented the "Export Identity" feature on the user profile page, which was missing from the UI.
+
+Sync Service Authentication: Resolved a 401 Unauthorized error by implementing a self-healing mechanism that automatically generates instance keys on startup if they are missing.
+
+Refactoring ImportError: Corrected all invalid import statements that arose during the backend refactoring process.
+
+B. Backend Refactoring Progress
+The backend modularization, as defined in the Architectural Blueprint, is nearly complete.
+
+Phase 1: App Structure (✅ Complete)
+
+Created the new Django apps: accounts, messaging, applets, and federation.
+
+Registered the new apps in the project's settings.
+
+Phase 2: Model Relocation (✅ Complete)
+
+Moved all Django models from core/models.py into their respective new apps.
+
+Successfully rebuilt the database schema and migration files to reflect the new structure without data loss.
+
+Phase 3: Views & Serializers (✅ Complete)
+
+Moved all API views and serializers from the api app into their new, modular app locations.
+
+Reconfigured the project's URL patterns to point to the new view locations.
+
+The api app is now a thin layer, and its legacy files are ready for removal.
+
+II. Remaining Work
+The remaining work consists of the final phase of the backend refactoring and the implementation of several new, high-level features defined in the project brief.
+
+A. Backend Refactoring To-Do
+Phase 4: Service Layer Refactoring
+
+Goal: Move business logic from core/services into service modules within the new, more specific apps (accounts, messaging, etc.).
+
+Files to Modify: core/services/identity_service.py, core/services/moderator_agent_service.py, etc.
+
+Action: Create new services.py files in the relevant apps and move the corresponding classes and functions.
+
+Final Cleanup
+
+Goal: Remove the now-empty api app from the project.
+
+Action: Delete the api directory and remove it from INSTALLED_APPS in settings.py.
+
+B. New Features (from Project Brief & Blueprint)
+The following major features are pending implementation:
+
+Unified Moderation Hub:
+
+Goal: Consolidate all moderation tasks (reports, profile approvals, inquiries) into a single queue.
+
+Work Required:
+
+Backend: Create a new API endpoint (/api/moderation/unified_queue/).
+
+Frontend: Refactor the ModerationDashboard to handle different "ticket" types.
+
+Universal Embed Framework:
+
+Goal: Allow any file type to be viewed directly within messages using dedicated, sandboxed applets.
+
+Work Required:
+
+Backend: Ensure the Applet model's handles_mime_types field is utilized.
+
+Frontend: Refactor the MessageList component to use an AttachmentRenderer that launches the correct applet based on MIME type.
+
+User-Managed Applets:
+
+Goal: Allow users to upload and manage their own applets.
+
+Work Required:
+
+Backend: Add owner and is_active fields to the Applet model and create API endpoints for upload and management.
+
+Frontend: Create a new "My Applets" view.
+
+Browser History Integration:
+
+Goal: Prevent the browser's back button from exiting the application by using a proper routing library.
+
+Work Required:
+
+Frontend: Integrate the React Router library to manage navigation and browser history.

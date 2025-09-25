@@ -17,7 +17,8 @@
 
 # Full path: axon_bbs/core/management/commands/check_local_content.py
 from django.core.management.base import BaseCommand
-from core.models import FileAttachment, Message
+from core.models import FileAttachment
+from messaging.models import Message
 from core.services.service_manager import service_manager
 from core.services.sync_service import SyncService
 

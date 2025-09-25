@@ -19,7 +19,7 @@
 # Full path: axon_bbs/core/management/commands/upgradeschema.py
 from django.core.management.base import BaseCommand
 from django.db import connection, transaction
-from core.models import PrivateMessage
+from messaging.models import PrivateMessage
 
 class Command(BaseCommand):
     help = 'Manually upgrades the database schema to the version 10.13.0 state without using migrations.'

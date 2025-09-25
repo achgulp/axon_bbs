@@ -18,7 +18,8 @@
 # Full path: axon_bbs/core/management/commands/diagnose_sync_content.py
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from core.models import FileAttachment, Message, PrivateMessage
+from core.models import FileAttachment
+from messaging.models import Message, PrivateMessage
 
 class Command(BaseCommand):
     help = 'Scans all content and diagnoses issues that would prevent them from syncing.'

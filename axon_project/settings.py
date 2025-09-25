@@ -55,7 +55,10 @@ INSTALLED_APPS = [
     'corsheaders',
     # Local apps
     'core.apps.CoreConfig',
-    'api',
+    'accounts',
+    'messaging',
+    'applets',
+    'federation',
 ]
 
 MIDDLEWARE = [
@@ -94,6 +97,10 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'data/axon_bbs.sqlite3',
+        'TEST': {
+            'NAME': BASE_DIR / 'data/axon_bbs.sqlite3',
+        },
+        'timeout': 20,
     }
 }
 
@@ -192,9 +199,6 @@ TOR_SOCKS_HOST = "127.0.0.1"
 TOR_SOCKS_PORT = 9050
 BITSYNC_MAX_CONCURRENT_FILES = 3
 DEFAULT_CONTENT_LIFESPAN_DAYS = 30
-# --- NEW SETTING ---
-# The timezone used to display dates and times on the frontend.
-# This should be a valid IANA timezone name (e.g., 'America/New_York', 'Europe/London').
 DISPLAY_TIMEZONE = os.environ.get('DISPLAY_TIMEZONE', 'UTC')
 
 

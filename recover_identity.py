@@ -33,7 +33,7 @@ except Exception as e:
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from core.services.identity_service import IdentityService
+from accounts.identity_service import IdentityService
 from core.services.encryption_utils import derive_key_from_password, generate_salt
 
 User = get_user_model()

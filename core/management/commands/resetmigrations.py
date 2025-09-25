@@ -26,9 +26,15 @@ class Command(BaseCommand):
     help = 'Deletes all migration files for a specified app, leaving only the __init__.py file.'
     def add_arguments(self, parser):
         parser.add_argument('app_name', type=str, help='The name of the Django app whose migrations should be reset.')
+        parser.add_argument(
+            '--no-input',
+            action='store_true',
+            help='Delete migration files without asking for confirmation.',
+        )
 
     def handle(self, *args, **options):
         app_name = options['app_name']
+        no_input = options['no_input']
         
         try:
             app_config = apps.get_app_config(app_name)
@@ -41,11 +47,12 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"No 'migrations' directory found for app '{app_name}'. No action taken."))
             return
 
-        self.stdout.write(self.style.WARNING(f"This will delete migration files for the app '{app_name}'. This cannot be undone."))
-        confirm = input("Are you sure you want to continue? [y/N] ")
-        if confirm.lower() != 'y':
-            self.stdout.write(self.style.ERROR("Operation cancelled."))
-            return
+        if not no_input:
+            self.stdout.write(self.style.WARNING(f"This will delete migration files for the app '{app_name}'. This cannot be undone."))
+            confirm = input("Are you sure you want to continue? [y/N] ")
+            if confirm.lower() != 'y':
+                self.stdout.write(self.style.ERROR("Operation cancelled."))
+                return
 
         deleted_count = 0
         for filename in os.listdir(migrations_dir):

@@ -18,19 +18,17 @@
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 from core.models import User
-from core.services.avatar_generator import generate_cow_avatar
+from accounts.avatar_generator import generate_cow_avatar
 
 class Command(BaseCommand):
     help = 'Scans for active users who have a public key but no avatar and generates a unique avatar for them.'
 
-    # --- START FIX ---
     def add_arguments(self, parser):
         parser.add_argument(
             '--force',
             action='store_true',
             help='Force regeneration of all existing cow avatars, overwriting the old ones.',
         )
-    # --- END FIX ---
 
     def handle(self, *args, **options):
         force_regeneration = options['force']
@@ -38,14 +36,12 @@ class Command(BaseCommand):
         if force_regeneration:
             self.stdout.write(self.style.WARNING("--- Starting Avatar Backfill Process in --force mode ---"))
             self.stdout.write("This will overwrite existing cow avatars.")
-            # Find all users with an avatar that looks like a generated cow avatar
             users_to_update = User.objects.filter(
                 avatar__startswith='avatars/cow_',
                 pubkey__isnull=False,
             ).exclude(pubkey__exact='')
         else:
             self.stdout.write(self.style.SUCCESS("--- Starting Avatar Backfill Process ---"))
-            # Find all active, non-agent users who have a pubkey and an empty avatar field
             users_to_update = User.objects.filter(
                 Q(avatar__isnull=True) | Q(avatar=''),
                 pubkey__isnull=False,
@@ -64,14 +60,11 @@ class Command(BaseCommand):
         for user in users_to_update:
             self.stdout.write(f" - Processing user: {user.username}...")
             try:
-                # If forcing, delete the old avatar file first
                 if force_regeneration and user.avatar:
-                    user.avatar.delete(save=False) # Delete file from storage
+                    user.avatar.delete(save=False)
 
-                # Generate a unique, deterministic avatar from their public key
                 avatar_content_file, avatar_filename = generate_cow_avatar(user.pubkey)
                 
-                # Save the new avatar to the user's profile
                 user.avatar.save(avatar_filename, avatar_content_file, save=True)
                 
                 self.stdout.write(self.style.SUCCESS(f"   Successfully generated and saved new avatar for {user.username}."))
