@@ -27,7 +27,6 @@ from django.conf.urls.static import static
 from django.views.generic import TemplateView
 from django.views.static import serve
 
-# --- ADD IMPORTS FROM THE DELETED api/urls.py ---
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -45,14 +44,14 @@ from messaging.views import (
 )
 from federation.views import (
     SyncView, BitSyncHasContentView, BitSyncChunkView, IgnorePubkeyView, BanPubkeyView,
-    ReportMessageView, ModeratorQueueView, ReviewReportView, RequestContentExtensionView,
-    ReviewContentExtensionView, UnpinContentView, PendingProfileUpdatesQueueView, ReviewProfileUpdateView
+    ReportMessageView, ReviewReportView, RequestContentExtensionView,
+    ReviewContentExtensionView, UnpinContentView, ReviewProfileUpdateView,
+    UnifiedQueueView, ContactModeratorsView # MODIFIED: Imported new views
 )
 from applets.views import (
     AppletListView, GetSaveAppletDataView, HighScoreListView, PostAppletEventView,
     ReadAppletEventsView, AppletSharedStateView, AppletStateVersionView
 )
-# --- END ADDED IMPORTS ---
 
 
 class NoCacheTemplateView(TemplateView):
@@ -63,7 +62,6 @@ class NoCacheTemplateView(TemplateView):
         response['Expires'] = '0'
         return response
 
-# --- ADD URLS FROM THE DELETED api/urls.py ---
 api_urlpatterns = [
     # Auth & Config
     path('register/', RegisterView.as_view(), name='register'),
@@ -102,9 +100,11 @@ api_urlpatterns = [
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('user/ignore/', IgnorePubkeyView.as_view(), name='ignore-pubkey'),
     path('messages/report/', ReportMessageView.as_view(), name='report-message'),
-    path('moderation/queue/', ModeratorQueueView.as_view(), name='mod-queue'),
+
+    # --- MODIFIED: Replaced old mod queues with new unified system ---
+    path('moderation/contact/', ContactModeratorsView.as_view(), name='moderation-contact'),
+    path('moderation/unified_queue/', UnifiedQueueView.as_view(), name='moderation-unified-queue'),
     path('moderation/review/<int:report_id>/', ReviewReportView.as_view(), name='mod-review'),
-    path('moderation/profile_queue/', PendingProfileUpdatesQueueView.as_view(), name='mod-profile-queue'),
     path('moderation/profile_review/<uuid:action_id>/', ReviewProfileUpdateView.as_view(), name='mod-profile-review'),
     
     # Admin & Moderator Actions
@@ -129,12 +129,10 @@ api_urlpatterns = [
     path('bitsync/has_content/<str:content_hash>/', BitSyncHasContentView.as_view(), name='bitsync-has-content'),
     path('bitsync/chunk/<str:content_hash>/<int:chunk_index>/', BitSyncChunkView.as_view(), name='bitsync-chunk'),
 ]
-# --- END ADDED URLS ---
 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    # MODIFIED: Include the api_urlpatterns list defined above
     path('api/', include(api_urlpatterns)),
     re_path(r'^(?P<path>manifest\.json)$', serve, {'document_root': os.path.join(settings.BASE_DIR, 'frontend/build')}),
     re_path(r'^(?P<path>favicon\.ico)$', serve, {'document_root': os.path.join(settings.BASE_DIR, 'frontend/build')}),

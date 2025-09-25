@@ -37,7 +37,7 @@ from messaging.models import Message, PrivateMessage
 from applets.models import Applet, AppletData
 from accounts.models import IgnoredPubkey, BannedPubkey
 from core.models import FileAttachment, User, TrustedInstance
-from .serializers import ModerationReportSerializer, FederatedActionProfileUpdateSerializer, ContentExtensionRequestSerializer
+from .serializers import ModerationReportSerializer, FederatedActionProfileUpdateSerializer, ContentExtensionRequestSerializer, ModerationInquirySerializer
 from core.services.service_manager import service_manager
 from accounts.avatar_generator import generate_cow_avatar
 from core.services.encryption_utils import generate_short_id
@@ -180,7 +180,7 @@ class ReportMessageView(views.APIView):
             report, created = ModerationReport.objects.get_or_create(
                 reported_message=message_to_report,
                 reporting_user=request.user,
-                defaults={'comment': comment}
+                defaults={'comment': comment, 'report_type': 'message_report'}
             )
 
             if not created:
@@ -193,10 +193,56 @@ class ReportMessageView(views.APIView):
             logger.error(f"Error creating report by user {request.user.username}: {e}")
             return Response({"error": "An error occurred while creating the report."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class ModeratorQueueView(generics.ListAPIView):
+# NEW: View for user inquiries
+class ContactModeratorsView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ModerationInquirySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        ModerationReport.objects.create(
+            reporting_user=request.user,
+            comment=serializer.validated_data['comment'],
+            report_type='general_inquiry',
+            status='pending'
+        )
+        return Response({"status": "Your inquiry has been sent to the moderators."}, status=status.HTTP_201_CREATED)
+
+# NEW: View for the unified queue
+class UnifiedQueueView(views.APIView):
     permission_classes = [IsModeratorOrAdmin]
-    serializer_class = ModerationReportSerializer
-    queryset = ModerationReport.objects.filter(status='pending').order_by('created_at')
+
+    def get(self, request, *args, **kwargs):
+        # 1. Fetch pending reports
+        pending_reports = ModerationReport.objects.filter(status='pending')
+        serialized_reports = []
+        for report in pending_reports:
+            data = ModerationReportSerializer(report, context={'request': request}).data
+            # Add ticket type for frontend routing
+            data['ticket_type'] = report.report_type 
+            serialized_reports.append(data)
+
+        # 2. Fetch pending profile updates
+        pending_profile_updates = FederatedAction.objects.filter(
+            action_type='update_profile',
+            status='pending_approval'
+        )
+        serialized_profile_updates = []
+        for update in pending_profile_updates:
+            data = FederatedActionProfileUpdateSerializer(update, context={'request': request}).data
+            # Add ticket type for frontend routing
+            data['ticket_type'] = 'profile_update'
+            serialized_profile_updates.append(data)
+
+        # 3. Combine and sort
+        combined_queue = sorted(
+            serialized_reports + serialized_profile_updates,
+            key=lambda x: x['created_at'],
+            reverse=True
+        )
+        
+        return Response(combined_queue)
 
 class ReviewReportView(views.APIView):
     permission_classes = [IsModeratorOrAdmin]
@@ -241,16 +287,6 @@ class ReviewReportView(views.APIView):
             return Response({"status": "Report rejected."})
 
         return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
-
-class PendingProfileUpdatesQueueView(generics.ListAPIView):
-    permission_classes = [IsModeratorOrAdmin]
-    serializer_class = FederatedActionProfileUpdateSerializer
-
-    def get_queryset(self):
-        return FederatedAction.objects.filter(
-            action_type='update_profile',
-            status='pending_approval'
-        ).order_by('created_at')
 
 class ReviewProfileUpdateView(views.APIView):
     permission_classes = [IsModeratorOrAdmin]

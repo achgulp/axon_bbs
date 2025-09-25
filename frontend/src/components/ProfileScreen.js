@@ -18,8 +18,11 @@
 // Full path: axon_bbs/frontend/src/components/ProfileScreen.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
+import ContactModeratorsModal from './ContactModeratorsModal'; // MODIFIED: Import the new modal
+
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const SubHeader = ({ text }) => <h3 className="text-lg font-semibold text-gray-300 mb-3">{text}</h3>;
+
 const ProfileScreen = () => {
   const [profile, setProfile] = useState(null);
   const [nickname, setNickname] = useState('');
@@ -27,7 +30,6 @@ const ProfileScreen = () => {
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // State for credential management forms
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -38,11 +40,13 @@ const ProfileScreen = () => {
   const [sa2, setSa2] = useState('');
   const [exportPassword, setExportPassword] = useState('');
 
-  // State for timezone
   const [timezones, setTimezones] = useState([]);
   const [selectedTimezone, setSelectedTimezone] = useState('');
-
   const [avatarFile, setAvatarFile] = useState(null);
+  
+  // NEW: State for the contact modal
+  const [showContactModal, setShowContactModal] = useState(false);
+
   const fetchProfile = useCallback(() => {
     setIsLoading(true);
     apiClient.get('/api/user/profile/')
@@ -57,11 +61,11 @@ const ProfileScreen = () => {
       })
       .finally(() => setIsLoading(false));
   }, []);
-useEffect(() => { 
+
+  useEffect(() => { 
     fetchProfile(); 
-    // Populate the list of timezones from the browser's Intl API
     setTimezones(Intl.supportedValuesOf('timeZone'));
-}, [fetchProfile]);
+  }, [fetchProfile]);
 
   const handleNicknameChange = async (e) => {
     e.preventDefault();
@@ -87,8 +91,8 @@ useEffect(() => {
       const response = await apiClient.post('/api/user/avatar/', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setSuccess(response.data.status || 'Avatar update submitted for approval!');
       setAvatarFile(null);
-      e.target.reset(); // Clear the file input
-      fetchProfile(); // Refresh profile to show new avatar
+      e.target.reset();
+      fetchProfile();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to upload avatar.');
     } finally {
@@ -188,6 +192,7 @@ useEffect(() => {
 
   return (
     <div>
+      <ContactModeratorsModal show={showContactModal} onClose={() => setShowContactModal(false)} />
       <Header text="User Profile" />
       {error && <div className="bg-red-800 border border-red-600 text-red-200 p-3 rounded mb-4" role="alert">{error}</div>}
       {success && <div className="bg-green-800 border border-green-600 text-green-200 p-3 rounded mb-4" role="alert">{success}</div>}
@@ -234,6 +239,15 @@ useEffect(() => {
               Export Key
             </button>
           </form>
+        </div>
+        
+        {/* MODIFIED: Added Contact Moderators button */}
+        <div className="bg-gray-800 p-4 rounded border border-gray-700">
+            <SubHeader text="Support" />
+            <p className="text-gray-400 text-xs italic mb-2">Have a general question or concern for the moderators?</p>
+            <button onClick={() => setShowContactModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">
+                Contact Moderators
+            </button>
         </div>
 
         <div className="bg-gray-800 p-4 rounded border border-gray-700">

@@ -1,3 +1,20 @@
+# Axon BBS - A modern, anonymous, federated bulletin board system.
+# Copyright (C) 2025 Achduke7
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
 # Full path: axon_bbs/federation/models.py
 from django.db import models
 from django.conf import settings
@@ -54,7 +71,13 @@ class ModerationReport(models.Model):
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
     ]
-    reported_message = models.ForeignKey(Message, on_delete=models.SET_NULL, null=True, related_name='reports')
+    # MODIFIED: Added choices for the new report_type field
+    REPORT_TYPE_CHOICES = [
+        ('message_report', 'Message Report'),
+        ('general_inquiry', 'General Inquiry'),
+    ]
+    # MODIFIED: made reported_message optional by adding blank=True
+    reported_message = models.ForeignKey(Message, on_delete=models.SET_NULL, null=True, blank=True, related_name='reports')
     reporting_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reports_filed')
     comment = models.TextField(blank=True, help_text="Reason for the report.")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
@@ -62,6 +85,10 @@ class ModerationReport(models.Model):
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reports_reviewed')
     reviewed_at = models.DateTimeField(null=True, blank=True)
     is_logged = models.BooleanField(default=False, help_text="True if this report's outcome has been logged.")
+    # NEW: Added report_type field
+    report_type = models.CharField(max_length=20, choices=REPORT_TYPE_CHOICES, default='message_report')
 
     def __str__(self):
+        if self.report_type == 'general_inquiry':
+            return f"General Inquiry by {self.reporting_user.username}"
         return f"Report by {self.reporting_user.username} on message {self.reported_message.id if self.reported_message else '[deleted]'}"
