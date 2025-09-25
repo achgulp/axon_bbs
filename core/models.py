@@ -79,6 +79,8 @@ class Content(models.Model):
         abstract = True
 
 class FileAttachment(Content):
+    # MODIFIED: Changed on_delete behavior for the author field
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='authored_%(class)ss', null=True)
     filename = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)
     size = models.PositiveIntegerField()

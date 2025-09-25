@@ -18,10 +18,10 @@
     "step": "3) Get Self Profile",
     "status": "PASS",
     "details": {
-      "username": "uat_user_10c3c653",
-      "nickname": "uat-runner-10c3c653",
-      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmSOEkCChjdE4m3hdXR0u\ntJHu+syd2HjU41YwcoxQZus1SlX4p++aPBLXNtoimhDG59nbVWRLvdD7haQYVf2t\nLS5xHExfPeAJJFPmJo2FYw5u0IQmejsBEIW8/iZpK6vAyLWMFx8RlcmzGzCGaWl4\naGUQq+XhzsLAwc/zuUi0F9SIxwvgFvKHrAITHsLcsc0dfBtHeOIBBIqcsumWnXcr\nnAk4MDkWuwqVfb4Fpki343noiKkyt2TXsFrQnSs1Rm0n4i5fedDSswRpc9YYkhZQ\n5ZJ+mCRkkglwhswzbQOCrX77nNs03lo7ktxcMFLnRor/hiSRvmp7/7oLpJpKU9fr\niQIDAQAB\n-----END PUBLIC KEY-----",
-      "avatar_url": "http://sjyfz3kvijioripsryrg5xbfikanbewiemjcnlnvfbz5pwoktrgddhqd.onion/media/avatars/cow_f581e5e056f9.png",
+      "username": "uat_user_3dd1f096",
+      "nickname": "uat-runner-3dd1f096",
+      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtU3dN2yRI+kXvYLHDGDU\nkqmmkk5324PfCTTBQKsFnW81axmwWBXLvih7AOQW2c5Akt1t6JbvhZZRuSRFMznt\nn5scD0fi+5f2GQ5Xmz4Dz1RlbEMrJrXdOaVdwAneqvR6bGVYIAoc4Hcb3aNISNe7\nEtgKngHZwJy7uafQfLRRbAjAQScYgb2P17pUHdnmtycN/iUnOTZ0w3BoOXHedN8b\nvXkQe+ckvUu2cmwa4WbaIhDFKERq2eLMcNK0LeSgOZ9sP4S+0pKG317wkveg6iLL\nPoEk2shtb8UGoOlZHOAKoZnCmibCpRt3bERYPWVpuQA0TKtmhbMX0qj6KeOQ9l2K\nIwIDAQAB\n-----END PUBLIC KEY-----",
+      "avatar_url": "http://sjyfz3kvijioripsryrg5xbfikanbewiemjcnlnvfbz5pwoktrgddhqd.onion/media/avatars/cow_ba041c46e4bc.png",
       "karma": 10,
       "is_moderator": false,
       "timezone": null
@@ -31,25 +31,25 @@
     "step": "4) Upload Attachment",
     "status": "PASS",
     "details": {
-      "id": "5b9e5ce4-2751-4111-9448-559546c8ef32",
-      "content": "This is a test file for UAT run 10c3c653."
+      "id": "f40cd5f1-891e-4a0d-8afd-f4d191872654",
+      "content": "This is a test file for UAT run 3dd1f096."
     }
   },
   {
     "step": "5) Create Message with Attachment",
     "status": "PASS",
     "details": {
-      "message_id": "c9e34a95-5f73-451a-bc6f-07c1936712db",
-      "subject": "UAT Post from UAT-Runner-10c3c653"
+      "message_id": "9829b7d2-254c-4d95-835d-0387cddf9314",
+      "subject": "UAT Post from UAT-Runner-3dd1f096"
     }
   },
   {
     "step": "6) Send PM to Peer BBS User",
     "status": "PASS",
     "details": {
-      "subject": "UAT PM from UAT-Runner-10c3c653",
+      "subject": "UAT PM from UAT-Runner-3dd1f096",
       "body": "This is a UAT private message.",
-      "sender_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmSOEkCChjdE4m3hdXR0u\ntJHu+syd2HjU41YwcoxQZus1SlX4p++aPBLXNtoimhDG59nbVWRLvdD7haQYVf2t\nLS5xHExfPeAJJFPmJo2FYw5u0IQmejsBEIW8/iZpK6vAyLWMFx8RlcmzGzCGaWl4\naGUQq+XhzsLAwc/zuUi0F9SIxwvgFvKHrAITHsLcsc0dfBtHeOIBBIqcsumWnXcr\nnAk4MDkWuwqVfb4Fpki343noiKkyt2TXsFrQnSs1Rm0n4i5fedDSswRpc9YYkhZQ\n5ZJ+mCRkkglwhswzbQOCrX77nNs03lo7ktxcMFLnRor/hiSRvmp7/7oLpJpKU9fr\niQIDAQAB\n-----END PUBLIC KEY-----"
+      "sender_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtU3dN2yRI+kXvYLHDGDU\nkqmmkk5324PfCTTBQKsFnW81axmwWBXLvih7AOQW2c5Akt1t6JbvhZZRuSRFMznt\nn5scD0fi+5f2GQ5Xmz4Dz1RlbEMrJrXdOaVdwAneqvR6bGVYIAoc4Hcb3aNISNe7\nEtgKngHZwJy7uafQfLRRbAjAQScYgb2P17pUHdnmtycN/iUnOTZ0w3BoOXHedN8b\nvXkQe+ckvUu2cmwa4WbaIhDFKERq2eLMcNK0LeSgOZ9sP4S+0pKG317wkveg6iLL\nPoEk2shtb8UGoOlZHOAKoZnCmibCpRt3bERYPWVpuQA0TKtmhbMX0qj6KeOQ9l2K\nIwIDAQAB\n-----END PUBLIC KEY-----"
     }
   },
   {
@@ -70,12 +70,12 @@
   {
     "step": "7d) Report Message from Second User",
     "status": "PASS",
-    "details": "Successfully reported message ID c9e34a95-5f73-451a-bc6f-07c1936712db."
+    "details": "Successfully reported message ID 9829b7d2-254c-4d95-835d-0387cddf9314."
   },
   {
     "step": "8) Change Nickname",
     "status": "PASS",
-    "details": "Nickname change to 'UAT-Runner-10c3c653-Updated' submitted."
+    "details": "Nickname change to 'UAT-Runner-3dd1f096-Updated' submitted."
   },
   {
     "step": "9) Upload Avatar",
