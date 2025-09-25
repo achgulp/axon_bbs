@@ -1,0 +1,81 @@
+Axon BBS - Architectural Blueprint
+Version: 10.21.0
+Last Updated: 2025-09-24
+
+This document outlines the high-level architectural plans and guiding principles for the Axon BBS project. It is intended for developers to understand the "why" behind the code structure.
+
+1. Core Principles
+Modularity: The system is composed of decoupled, single-responsibility modules. This applies to backend Django apps and frontend React components.
+
+Service-Oriented Backend: Complex business logic is encapsulated in service classes, keeping API views "thin" and focused on handling HTTP requests/responses.
+
+Secure by Default: All user content is encrypted. The frontend is treated as an untrusted client, and all security and permission checks are enforced on the backend.
+
+2. Backend Architecture: Feature Domains
+The backend is being refactored from two large apps (core, api) into a collection of smaller, self-contained apps, each representing a feature domain.
+
+core: Contains truly cross-cutting models (User, TrustedInstance, FileAttachment) and core services (BitSyncService, SyncService).
+
+accounts: Will contain user-related models and logic (Profile, IgnoredPubkey, BannedPubkey).
+
+messaging: Will contain all public and private messaging models and logic (Message, PrivateMessage, MessageBoard).
+
+applets: Will contain the applet framework models and logic (Applet, AppletData, HighScore).
+
+federation: Will contain models and services related to inter-server communication (FederatedAction).
+
+Communication Between Apps:
+
+Primary: Direct Python function/class imports.
+
+Secondary (for decoupling): Django Signals will be used when one app needs to trigger a side-effect in another without a direct dependency.
+
+3. Frontend Architecture: Component Decomposition
+The frontend follows standard modern React principles.
+
+Container/Presentational Pattern: "Smart" container components are responsible for fetching data and managing state. They pass this data down as props to "dumb" presentational components that are only responsible for rendering UI.
+
+Structured API Client: The apiClient.js will be refactored into a service with dedicated methods for each API call (e.g., apiClient.messaging.getMessages(boardId)), centralizing all API endpoint knowledge.
+
+Browser History: The React Router library will be implemented to manage browser history, providing unique URLs for different views and fixing the "back button" issue.
+
+4. Key System Blueprints
+4.1. The Universal Embed Framework
+This framework allows any file type to be displayed within a message thread using a dedicated, sandboxed applet.
+
+Mechanism: The Applet model has a handles_mime_types field (e.g., "video/mp4,video/webm").
+
+Frontend Flow:
+
+The MessageList component fetches all attachments for a message.
+
+For each attachment, it finds a corresponding handler by matching the attachment's content_type with an applet's handles_mime_types.
+
+If a handler is found, it renders the AppletRunner component.
+
+It passes the attachment's content_hash and content_type to the AppletRunner as attachmentContext.
+
+The AppletRunner makes this context available to the sandboxed viewer applet.
+
+The viewer applet then uses the getAttachmentBlob API call to securely fetch the file data and render it.
+
+4.2. The Unified Moderation Hub
+This system consolidates all moderation tasks into a single ticketing queue.
+
+Backend Unification: A new API endpoint, /api/moderation/unified_queue/, will gather all pending ModerationReport and FederatedAction (for profile approvals) objects, sort them by date, and return them as a single list.
+
+Flexible Reports: The ModerationReport model is adapted to support "general inquiries" from users that are not tied to a specific message. This is achieved by making its reported_message field optional and adding a report_type field.
+
+Frontend Dispatcher: The ModerationDashboard component fetches from the unified queue. It then uses conditional logic to render a different sub-component for each ticket type (message_report, profile_update, general_inquiry).
+
+Workflow:
+
+A user submits a report, a profile update, or a general inquiry.
+
+The action appears as a new "ticket" in the moderator's unified queue.
+
+The moderator reviews the ticket and clicks "Approve" or "Deny".
+
+The frontend calls the appropriate backend review endpoint.
+
+The backend processes the action (e.g., deletes a message, approves a nickname, or sends a PM acknowledgment for a closed inquiry).

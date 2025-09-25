@@ -1,0 +1,138 @@
+Axon BBS - Architectural Blueprint & Developer Guide
+
+1. Guiding Philosophy
+
+The primary goal of this architecture is to achieve high modularity and low coupling. As the project grows, it is critical to ensure that a developer can work on one feature (e.g., Private Messaging) without needing to understand the inner workings of another (e.g., the Applet Framework).
+
+This blueprint outlines a refactoring from the current structure into a domain-driven design, where the application is split into self-contained features.
+
+2. Backend Architecture: Feature-Based Apps
+
+The backend will be refactored from two large apps (core and api) into several smaller, feature-focused Django apps.
+
+App Responsibilities:
+
+core (The Foundation): This app is significantly slimmed down. It will only contain models and services that are truly universal and used by nearly every other part of the system.
+
+Models: User, TrustedInstance, FileAttachment.
+
+Services: BitSyncService, SyncService, EncryptionUtils.
+
+accounts (New App): Handles everything related to user identity, profiles, and authentication.
+
+Models: BannedPubkey, IgnoredPubkey, Alias.
+
+Views: LoginView, RegisterView, UserProfileView, UnlockIdentityView.
+
+Services: IdentityService, AvatarGenerator.
+
+messaging (New App): Manages all public and private communications.
+
+Models: MessageBoard, Message, PrivateMessage.
+
+Views: MessageListView, PostMessageView, SendPrivateMessageView.
+
+Services: (Could include future services like message formatting or spam detection).
+
+applets (New App): Contains all logic for the applet framework, including games and viewers.
+
+Models: Applet, AppletCategory, AppletData, HighScore.
+
+Views: AppletListView, GetSaveAppletDataView, HighScoreListView.
+
+Services: HighScoreService, OverlordAgentService, etc.
+
+federation (New App): Dedicated to handling inter-server communication and moderation actions.
+
+Models: FederatedAction, ModerationReport.
+
+Views: SyncView, BitSyncChunkView, ModeratorQueueView.
+
+Services: ModeratorAgentService.
+
+Backend Communication Rules:
+
+Primary Interface: Direct Python Calls: Since all apps run within the same Django project, the primary way they communicate is by importing each other's functions and classes. This is fast and simple. A view in the messaging app can directly import and use a model from the accounts app.
+
+Secondary Interface: Django Signals: For highly decoupled actions, use Django Signals. For example, when a new Message is saved in the messaging app, it could send a message_posted signal. A separate achievements app could listen for this signal to award a "First Post!" badge, without the messaging app ever knowing about achievements.
+
+3. Frontend Architecture: Decomposed Components
+
+The frontend will be refactored to break down large, multi-purpose components into smaller, single-responsibility components.
+
+The "Smart" and "Dumb" Component Pattern:
+
+Container (Smart) Components: Their job is to manage state and logic. They fetch data, handle user input, and pass data down to their children. Example: MessageListContainer.js would fetch the list of messages and applets.
+
+Presentational (Dumb) Components: Their job is to render UI. They receive data as props and display it. They are simple, reusable, and easy to test. Example: MessageTable.js would receive a list of messages and just render the table rows.
+
+Key Refactoring Targets:
+
+MessageList.js will be broken into:
+
+MessageListContainer.js (Handles data fetching and state)
+
+MessageTable.js (Displays the list of messages)
+
+MessageDetailView.js (Displays a single selected message)
+
+AttachmentRenderer.js (Handles the logic for finding and displaying viewer applets for attachments)
+
+PostForm.js (The component for creating a new post)
+
+apiClient.js will become more structured:
+
+We will create a structured API client to abstract away URL endpoints.
+
+Before: apiClient.get(\/api/boards/${board.id}/messages/`)`
+
+After: apiClient.messaging.getMessagesForBoard(board.id)
+
+This centralizes all API endpoint knowledge in one place, making future changes much easier.
+
+4. Future Enhancements & Technical Debt
+
+This section outlines planned features and necessary bug fixes to improve the platform.
+
+4.1 Admin Console Moderation
+
+User Story (SysOp): "I want to perform moderation actions (approve/deny reports, ban users) directly from the Django admin console as an alternative to the main UI for quick administrative tasks."
+
+Implementation Plan: Add custom "Admin Actions" to the ModerationReportAdmin and UserAdmin classes in core/admin.py. These actions will trigger the same service-layer logic as the main moderation dashboard, ensuring consistent behavior.
+
+4.2 User-Managed Applets
+
+User Story (User): "I want to create, upload, and manage my own private applets from the applet menu."
+
+User Story (User): "I want to be able to activate or inactivate my own applets without deleting them."
+
+Implementation Plan: This is a major feature that involves adding an owner foreign key to the Applet model, linking it to the User who created it. The frontend AppletView will be updated with tabs for "Public Applets" and "My Applets," and a new form will be created for users to upload their applet code and manage its properties (name, description, active status). Permissions will be strictly enforced to ensure users can only modify their own applets.
+
+4.3 Browser Back Button Integration
+
+User Story (User): "I want the application to manage the browser's history so that the back button navigates within the BBS instead of exiting the app."
+
+Implementation Plan: The current view-swapping logic in App.js will be replaced with a standard routing library, React Router. This will create distinct URLs for different parts of the application (e.g., /boards/7/, /profile, /applets). The library will manage the browser's History API, allowing the back and forward buttons to function intuitively within the single-page application, preventing accidental logouts.
+
+4.4 Contact Moderators Feature
+
+User Story (User): "I want a simple way to send a message to all system moderators for general inquiries that are not related to a specific message."
+
+Implementation Plan: A "Contact Moderators" button will be added to the UI. This will open a special private message composition view. When the user sends the message, the backend will identify all users with the is_moderator flag set to True and deliver a copy of the private message to each of them.
+
+4.5 Bug Fix: last_login Timestamp
+
+Issue: The last_login field for users is not being updated upon successful login.
+
+Cause: The djangorestframework-simplejwt library, used for authentication, disables this feature by default for performance reasons.
+
+Solution: This is a simple one-line fix in axon_project/settings.py. The SIMPLE_JWT configuration dictionary must be updated with the following key:
+
+SIMPLE_JWT = {
+    # ... other settings ...
+    "UPDATE_LAST_LOGIN": True,
+    # ... other settings ...
+}
+
+
+This will instruct the library to update the last_login timestamp whenever a user successfully obtains a new token.

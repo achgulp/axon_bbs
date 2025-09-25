@@ -1,0 +1,72 @@
+Axon BBS - Project Brief & Development Context
+Version: 10.21.0
+Last Updated: 2025-09-24
+
+1. Project Summary
+Axon BBS is a federated, anonymous, and modern bulletin board system. The core architecture is a Django backend with a React single-page application frontend. Key systems include a custom P2P data synchronization protocol (BitSync) and a sandboxed applet framework for extensibility.
+
+2. Core Architecture & Active Refactoring
+We are in the process of a planned architectural refactor to improve modularity.
+
+Backend: The monolithic core and api apps are being broken down into smaller, self-contained Django apps based on features: core, accounts, messaging, applets, and federation.
+
+Frontend: Large React components are being decomposed into smaller, single-responsibility components (e.g., MessageListContainer, MessageTable, AttachmentRenderer).
+
+3. Key Architectural Decisions (Precedents)
+These are established design patterns for the project:
+
+Universal Embed Framework: All file viewers (for videos, images, etc.) will be implemented as sandboxed applets. The backend Applet model has a handles_mime_types field to link applets to file types. The frontend's AttachmentRenderer will be responsible for dispatching to the correct applet.
+
+Browser History Management: To solve the "back button" issue, the frontend will be refactored to use the React Router library. This will manage the browser's history API, creating distinct URLs for different views within the single-page application.
+
+Backend Communication: Backend Django apps communicate primarily through direct Python function calls. For highly decoupled events, Django Signals will be used.
+
+API Client Structure: The frontend apiClient.js will be refactored to use a structured, service-based approach (e.g., apiClient.messaging.getMessages()) to centralize API endpoint definitions.
+
+Unified Moderation Hub: All moderation tasks (message reports, profile approvals, user inquiries) will be consolidated into a single backend queue and a unified frontend dashboard, functioning as a ticketing system.
+
+4. Immediate To-Do List / Roadmap
+This is the prioritized list of features to be implemented next:
+
+Bug Fix: last_login Timestamp: The UPDATE_LAST_LOGIN setting in settings.py for SIMPLE_JWT needs to be set to True.
+
+Implement Moderation Overhaul:
+
+Phase 1 (Model Changes): Adapt the ModerationReport model to handle general inquiries by making reported_message optional and adding a report_type field.
+
+Phase 2 (Backend API): Create a new /api/moderation/unified_queue/ endpoint to gather all pending items (reports, profile approvals, inquiries). Create the /api/moderation/contact/ endpoint for users to submit inquiries.
+
+Phase 3 (Frontend UI): Refactor the ModerationDashboard to consume the new unified queue and render different components for each ticket type. Implement the "Contact Moderators" modal.
+
+Phase 4 (Logic & Bugfix): Update the review logic to handle each ticket type correctly (e.g., sending a PM acknowledgment for inquiries) and fix the existing bug in the profile approval workflow.
+
+Implement User-Managed Applets:
+
+Add an owner (ForeignKey to User) and is_active (BooleanField) to the Applet model.
+
+Create a new frontend view for users to upload and manage their own applets.
+
+5. Standing Instructions & Development Workflow
+This section outlines our agreed-upon development process and the rules for the AI assistant (Gemini).
+
+Our Workflow
+Plan First: We will always discuss and agree upon a plan before modifying any code.
+
+Implement Fully: Once a plan is accepted, the AI should implement all required changes across all necessary files in a single response, unless interaction is absolutely necessary.
+
+AI Assistant (Gemini) Rules
+Provide Full Source: Every new or changed file must include its complete source code.
+
+Include Notices: Every file must have the copyright notice at the top and a full path comment (e.g., # Full path: axon_bbs/core/models.py).
+
+Check Integrations: Remember to check for common integration errors (e.g., forgetting to update __init__.py files).
+
+State Dependencies: Avoid new external dependencies. If one is required, state the reason clearly.
+
+Handle Migrations: When writing database migrations, ensure they handle potential real-world scenarios gracefully.
+
+Notify on Key Events:
+
+Clearly state when a database migration is required and provide the commands to run.
+
+Clearly state when the frontend needs to be rebuilt and provide the command to run.
