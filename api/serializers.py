@@ -202,10 +202,7 @@ class AppletSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True, default=None)
     class Meta:
         model = Applet
-        # --- FIX START ---
-        # Added 'handles_mime_types' to the fields list.
         fields = ('id', 'name', 'description', 'author_pubkey', 'code_manifest', 'created_at', 'category_name', 'is_debug_mode', 'handles_mime_types')
-        # --- FIX END ---
         read_only_fields = fields
 
 class HighScoreSerializer(serializers.ModelSerializer):
@@ -243,8 +240,16 @@ class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
 
     def get_user_info(self, obj):
         user = User.objects.filter(pubkey=obj.pubkey_target).first()
+        # --- BUG FIX START ---
+        # If the user is not found locally, return a default object structure
+        # instead of None to prevent the frontend from crashing.
         if not user:
-            return None
+            return {
+                "username": "Unknown/Federated User",
+                "current_nickname": "N/A",
+                "current_avatar_url": None
+            }
+        # --- BUG FIX END ---
         
         request = self.context.get('request')
         avatar_url = None
@@ -259,6 +264,7 @@ class FederatedActionProfileUpdateSerializer(serializers.ModelSerializer):
     
     def get_pending_avatar_url(self, obj):
         temp_filename = obj.action_details.get('pending_avatar_filename')
+        
         if not temp_filename:
             return None
         

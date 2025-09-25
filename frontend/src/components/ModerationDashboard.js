@@ -82,7 +82,7 @@ useEffect(() => {
                 <div key={report.id} className="bg-gray-800 p-4 rounded border border-gray-700">
                     <div className="border-b border-gray-600 pb-3 mb-3">
                     <p className="text-sm text-gray-400">
-                    Reported by: <span className="font-semibold text-gray-300">{report.reporting_user}</span> on {new Date(report.created_at).toLocaleString([], { timeZone: displayTimezone })}
+                        Reported by: <span className="font-semibold text-gray-300">{report.reporting_user}</span> on {new Date(report.created_at).toLocaleString([], { timeZone: displayTimezone })}
                     </p>
                     <p className="text-sm text-gray-400">
                     Reporter's Comment: <span className="text-yellow-400 italic">"{report.comment || 'No comment provided.'}"</span>
@@ -121,13 +121,14 @@ useEffect(() => {
                 <div key={update.id} className="bg-gray-800 p-4 rounded border border-gray-700">
                     <div className="border-b border-gray-600 pb-3 mb-3">
                         <p className="text-sm text-gray-400">
-                            Request by: <span className="font-semibold text-gray-300">{update.user_info.username}</span> on {new Date(update.created_at).toLocaleString([], { timeZone: displayTimezone })}
+                            {/* --- BUG FIX START: Use optional chaining (?.) to prevent crash if user_info is null --- */}
+                            Request by: <span className="font-semibold text-gray-300">{update.user_info?.username}</span> on {new Date(update.created_at).toLocaleString([], { timeZone: displayTimezone })}
                         </p>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <h4 className="font-bold text-gray-300 mb-2">Nickname Change</h4>
-                            <p className="text-sm text-gray-400">From: <span className="text-gray-200">{update.user_info.current_nickname || '[None]'}</span></p>
+                            <p className="text-sm text-gray-400">From: <span className="text-gray-200">{update.user_info?.current_nickname || '[None]'}</span></p>
                             <p className="text-sm text-green-400">To: <span className="font-bold">{update.action_details.nickname}</span></p>
                         </div>
                         <div>
@@ -146,6 +147,7 @@ useEffect(() => {
                             )}
                         </div>
                     </div>
+                    {/* --- BUG FIX END --- */}
                     <div className="flex justify-end gap-4 mt-4">
                         <button onClick={() => handleReviewProfile(update.id, 'deny')} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
                             Deny

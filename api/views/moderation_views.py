@@ -24,11 +24,14 @@ from django.utils import timezone
 from datetime import timedelta
 from django.apps import apps
 import logging
-# --- MODIFICATION START ---
 import os
 import base64
 from django.conf import settings
-# --- MODIFICATION END ---
+from django.db import IntegrityError
+import uuid
+from core.services.avatar_generator import generate_cow_avatar
+from core.services.encryption_utils import generate_short_id
+
 
 from ..serializers import ContentExtensionRequestSerializer, ModerationReportSerializer, FederatedActionProfileUpdateSerializer
 from ..permissions import IsModeratorOrAdmin
@@ -171,8 +174,22 @@ class ReviewProfileUpdateView(views.APIView):
         except FederatedAction.DoesNotExist:
             return Response({"error": "Profile update request not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
 
-        # --- MODIFICATION START ---
-        user = User.objects.get(pubkey=profile_action.pubkey_target)
+        short_id = generate_short_id(profile_action.pubkey_target, length=8)
+        defaults = {
+            'username': f"federated_{short_id}_{uuid.uuid4().hex[:4]}",
+            'nickname': f"Moo-{short_id}",
+            'is_active': False,
+            'password': User.objects.make_random_password()
+        }
+        try:
+            user, created = User.objects.get_or_create(pubkey=profile_action.pubkey_target, defaults=defaults)
+            if created:
+                logger.info(f"Created placeholder federated user '{user.username}' during moderation.")
+                avatar_content_file, avatar_filename = generate_cow_avatar(user.pubkey)
+                user.avatar.save(avatar_filename, avatar_content_file, save=True)
+        except IntegrityError:
+            user = User.objects.get(pubkey=profile_action.pubkey_target)
+        
         details = profile_action.action_details
         temp_filename = details.get('pending_avatar_filename')
 
@@ -180,22 +197,17 @@ class ReviewProfileUpdateView(views.APIView):
         source_path = os.path.join(pending_dir, temp_filename) if temp_filename else None
 
         if action == 'approve':
-            final_avatar_path = None
             if source_path and os.path.exists(source_path):
-                # This is an avatar update
                 final_dir = os.path.join(settings.MEDIA_ROOT, 'avatars')
                 os.makedirs(final_dir, exist_ok=True)
                 
                 final_filename = f"{user.username}_avatar.png"
                 final_path = os.path.join(final_dir, final_filename)
                 
-                # Move the file from pending to final destination
                 os.rename(source_path, final_path)
                 
-                # Update the user's profile to point to the new file
                 user.avatar.name = os.path.join('avatars', final_filename)
                 
-                # Now, create the FileAttachment and manifest for federation
                 with open(final_path, 'rb') as f:
                     image_bytes = f.read()
 
@@ -205,34 +217,36 @@ class ReviewProfileUpdateView(views.APIView):
                 }
                 _content_hash, manifest = service_manager.bitsync_service.create_encrypted_content(file_content)
                 
+                # --- BUG FIX START ---
+                # Corrected the field name from 'manifest' to 'metadata_manifest'
                 FileAttachment.objects.update_or_create(
                     author=user, filename=final_filename,
                     defaults={
-                        'content_type': 'image/png', 'size': len(image_bytes), 'manifest': manifest
+                        'content_type': 'image/png', 
+                        'size': len(image_bytes), 
+                        'metadata_manifest': manifest
                     }
                 )
+                # --- BUG FIX END ---
                 details['avatar_hash'] = manifest.get('content_hash')
 
-            # Update nickname regardless
             user.nickname = details.get('nickname', user.nickname)
+            
             user.save()
             
-            # Update the action for federation
             profile_action.status = 'approved'
-            profile_action.action_details = details # Save the new avatar_hash
+            profile_action.action_details = details
             profile_action.save()
             
             return Response({"status": "Profile update approved and will be federated."}, status=status.HTTP_200_OK)
             
         elif action == 'deny':
-            # If the update is denied, delete the temporary file
             if source_path and os.path.exists(source_path):
                 os.remove(source_path)
                 
             profile_action.status = 'denied'
             profile_action.save()
             return Response({"status": "Profile update denied."}, status=status.HTTP_200_OK)
-        # --- MODIFICATION END ---
 
         return Response({"error": "Invalid action. Must be 'approve' or 'deny'."}, status=status.HTTP_400_BAD_REQUEST)
 
