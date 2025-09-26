@@ -174,10 +174,6 @@ def test_logout(client):
     client.access_token = None
     return "Logged out successfully."
 
-def test_post_log_to_uat_channel(client, payload_data):
-    return "Skipping log post on peer-side verification."
-
-# NEW: Test function to post the final log for cleanup purposes.
 def test_post_final_log(client, run_id):
     """Reads the local log file and posts its contents to the UAT-Channel."""
     try:
@@ -196,7 +192,6 @@ def test_post_final_log(client, run_id):
     except FileNotFoundError:
         raise Exception("uat_run_log.json not found. Cannot post for cleanup.")
     except Exception as e:
-        # Re-raise to be caught by run_test
         raise e
 
 def run_uat_suite(peer_onion_url):
@@ -233,7 +228,15 @@ def run_uat_suite(peer_onion_url):
         USERNAME_2 = f"uat_user_2_{run_id_2}"
         NICKNAME_2 = f"UAT-Runner-2-{run_id_2}"
         PASSWORD_V1_2 = f"password_{run_id_2}_v1"
+        
+        # MODIFIED: Save details for user 2 after creation
         client.run_test("7a) Register Second User", test_register, client, USERNAME_2, PASSWORD_V1_2, NICKNAME_2)
+        client.log[-1]['details'] = {
+            'username': USERNAME_2,
+            'nickname': NICKNAME_2,
+            'summary': "User registered successfully."
+        }
+        
         client.run_test("7b) Login as Second User", test_login, client, USERNAME_2, PASSWORD_V1_2)
         client.run_test("7c) Unlock Identity of Second User", test_unlock_identity, client, PASSWORD_V1_2)
         client.run_test("7d) Report Message from Second User", test_report_message, client, post_result['message_id'], "This message is for UAT testing.")
@@ -248,8 +251,6 @@ def run_uat_suite(peer_onion_url):
         client.run_test("12) Log in with New Password", test_login, client, USERNAME, PASSWORD_V2)
         client.run_test("12a) Unlock Identity with New Password", test_unlock_identity, client, PASSWORD_V2)
         
-        # MODIFIED: Added a final step to post the log for cleanup
-        # This needs to happen before the final log save.
         client.run_test("14) Post Final Log for Cleanup", test_post_final_log, client, run_id)
 
         print("\n[+] UAT RUNNER COMPLETED SUCCESSFULLY.")

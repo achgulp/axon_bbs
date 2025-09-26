@@ -46,29 +46,32 @@ class Command(BaseCommand):
         try:
             log_data = json.loads(log_message.body)
             
-            # Find the pubkey from the "Get Self Profile" step
+            # Find the pubkey for the first user
             profile_step = next((item for item in log_data if item['step'].startswith("3)")), None)
             if profile_step and profile_step['status'] == 'PASS' and profile_step['details'].get('pubkey'):
                 pubkey = profile_step['details']['pubkey']
                 pubkeys_to_delete.add(pubkey)
                 self.stdout.write(f" -> Found pubkey for first UAT user: {pubkey[:20]}...")
-
-            # Find the second user's pubkey from the database via its username
-            # This is less ideal but necessary as it doesn't log in to get a profile.
+            
+            # Find the pubkey for the second user
             from core.models import User
             user2_step = next((item for item in log_data if item['step'].startswith("7a)")), None)
             if user2_step and user2_step['status'] == 'PASS':
-                # The nickname is unique and consistent
-                nickname = f"UAT-Runner-2-{user2_step['details']['run_id_2']}"
-                try:
-                    user2 = User.objects.get(nickname=nickname)
-                    if user2.pubkey:
-                        pubkeys_to_delete.add(user2.pubkey)
-                        self.stdout.write(f" -> Found pubkey for second UAT user: {user2.pubkey[:20]}...")
-                except User.DoesNotExist:
-                    self.stdout.write(self.style.WARNING(f" -> Could not find second UAT user with nickname {nickname}."))
+                # MODIFIED: Read the nickname from the details dictionary
+                nickname = user2_step['details'].get('nickname')
+                if nickname:
+                    try:
+                        user2 = User.objects.get(nickname=nickname)
+                        if user2.pubkey:
+                            pubkeys_to_delete.add(user2.pubkey)
+                            self.stdout.write(f" -> Found pubkey for second UAT user: {user2.pubkey[:20]}...")
+                    except User.DoesNotExist:
+                        self.stdout.write(self.style.WARNING(f" -> Could not find second UAT user with nickname {nickname}."))
+                else:
+                    self.stdout.write(self.style.WARNING(" -> Log entry for second user was missing details."))
 
-        except (json.JSONDecodeError, KeyError) as e:
+
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
             raise CommandError(f"Could not parse UAT log message body. Error: {e}")
 
         if not pubkeys_to_delete:

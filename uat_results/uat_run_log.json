@@ -18,10 +18,10 @@
     "step": "3) Get Self Profile",
     "status": "PASS",
     "details": {
-      "username": "uat_user_f313d2af",
-      "nickname": "uat-runner-f313d2af",
-      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1qmMAZL7fuFm9GhLntir\nPROb3EQxOnM5pBX/+e2rgskv4qHyHeZXr3Iu1R+M0yBfmXhrnhaMIl0psUJiQf1o\n8Cb1nvu27INAP293wv12V6Z0BD17nQwFrNVgV/uZFV9VwWifq39Zwyi8fxe37uVl\nwUGHkXRKN+wsDc3o1AAno46k+QvFqycbuuinAfUjekw0bscW3VJ6a1PvoV7WzHq8\na+2+0n9+LL7nH1n2W0JnMx95NH1N6RGr6nOEwVme/NgSVAwMvDG5Y14eKPksfN1a\nyx0I+CVi4neMW84Qc7fA+wKVcFAKPMulW0b/eWQuWFTWY0aZYG83BF0h0aQI0gBM\nqQIDAQAB\n-----END PUBLIC KEY-----",
-      "avatar_url": "http://sjyfz3kvijioripsryrg5xbfikanbewiemjcnlnvfbz5pwoktrgddhqd.onion/media/avatars/cow_c6f4f68f9f60.png",
+      "username": "uat_user_16e4565c",
+      "nickname": "uat-runner-16e4565c",
+      "pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1/b4DZjCFQm5j0tC54hX\njuGlh97k9v5pk8Q7eQtUGk2MoyKGJV+Pq2KvSDrLQcQwkx5CJcAcB1/fCCd56HJ/\nu86rWwEwhon8W4vnETZnfUreAOU0Xmo7JINvdl35vl807eAE4/EV8mdP5QHXOc3O\nhiolyKnBChFk3mwG82lUH3bYlFLa+pDYAR466YigNiuj1dgLx22d5xg66qouHC/Y\n0JY2s2M2ysTzFDPrsm/jIGtfuIQOgvg1lHF5yAw1VJnWrO6g1l54DIrzMkJvScu8\n3/qbx4F/EYIN7LGwETDIwVKtewyp2IWRCtnNEk8mLfCv2g6whdQh1gwMtFcY1c4z\n8QIDAQAB\n-----END PUBLIC KEY-----",
+      "avatar_url": "http://sjyfz3kvijioripsryrg5xbfikanbewiemjcnlnvfbz5pwoktrgddhqd.onion/media/avatars/cow_fd3603bc1a41.png",
       "karma": 10,
       "is_moderator": false,
       "timezone": null
@@ -31,25 +31,25 @@
     "step": "4) Upload Attachment",
     "status": "PASS",
     "details": {
-      "id": "2b8e2628-9b2d-4119-949f-7e853b273622",
-      "content": "This is a test file for UAT run f313d2af."
+      "id": "0f531d77-89e4-4074-929b-7084ff3b4f73",
+      "content": "This is a test file for UAT run 16e4565c."
     }
   },
   {
     "step": "5) Create Message with Attachment",
     "status": "PASS",
     "details": {
-      "message_id": "bdcdbe1e-bc70-4171-afef-3b40708796ab",
-      "subject": "UAT Post from UAT-Runner-f313d2af"
+      "message_id": "99da5d2f-c265-4547-9727-72bcf1353635",
+      "subject": "UAT Post from UAT-Runner-16e4565c"
     }
   },
   {
     "step": "6) Send PM to Peer BBS User",
     "status": "PASS",
     "details": {
-      "subject": "UAT PM from UAT-Runner-f313d2af",
+      "subject": "UAT PM from UAT-Runner-16e4565c",
       "body": "This is a UAT private message.",
-      "sender_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1qmMAZL7fuFm9GhLntir\nPROb3EQxOnM5pBX/+e2rgskv4qHyHeZXr3Iu1R+M0yBfmXhrnhaMIl0psUJiQf1o\n8Cb1nvu27INAP293wv12V6Z0BD17nQwFrNVgV/uZFV9VwWifq39Zwyi8fxe37uVl\nwUGHkXRKN+wsDc3o1AAno46k+QvFqycbuuinAfUjekw0bscW3VJ6a1PvoV7WzHq8\na+2+0n9+LL7nH1n2W0JnMx95NH1N6RGr6nOEwVme/NgSVAwMvDG5Y14eKPksfN1a\nyx0I+CVi4neMW84Qc7fA+wKVcFAKPMulW0b/eWQuWFTWY0aZYG83BF0h0aQI0gBM\nqQIDAQAB\n-----END PUBLIC KEY-----"
+      "sender_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1/b4DZjCFQm5j0tC54hX\njuGlh97k9v5pk8Q7eQtUGk2MoyKGJV+Pq2KvSDrLQcQwkx5CJcAcB1/fCCd56HJ/\nu86rWwEwhon8W4vnETZnfUreAOU0Xmo7JINvdl35vl807eAE4/EV8mdP5QHXOc3O\nhiolyKnBChFk3mwG82lUH3bYlFLa+pDYAR466YigNiuj1dgLx22d5xg66qouHC/Y\n0JY2s2M2ysTzFDPrsm/jIGtfuIQOgvg1lHF5yAw1VJnWrO6g1l54DIrzMkJvScu8\n3/qbx4F/EYIN7LGwETDIwVKtewyp2IWRCtnNEk8mLfCv2g6whdQh1gwMtFcY1c4z\n8QIDAQAB\n-----END PUBLIC KEY-----"
     }
   },
   {
@@ -70,12 +70,12 @@
   {
     "step": "7d) Report Message from Second User",
     "status": "PASS",
-    "details": "Successfully reported message ID bdcdbe1e-bc70-4171-afef-3b40708796ab."
+    "details": "Successfully reported message ID 99da5d2f-c265-4547-9727-72bcf1353635."
   },
   {
     "step": "8) Change Nickname",
     "status": "PASS",
-    "details": "Nickname change to 'UAT-Runner-f313d2af-Updated' submitted."
+    "details": "Nickname change to 'UAT-Runner-16e4565c-Updated' submitted."
   },
   {
     "step": "9) Upload Avatar",
@@ -108,8 +108,8 @@
     "details": "Identity unlocked."
   },
   {
-    "step": "13) Trigger Verifier Agent",
+    "step": "14) Post Final Log for Cleanup",
     "status": "PASS",
-    "details": "Skipping log post on peer-side verification."
+    "details": "Cleanup log posted successfully."
   }
 ]
