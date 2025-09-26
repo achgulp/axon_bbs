@@ -179,7 +179,7 @@ class SyncService:
         content_hash = manifest.get('content_hash')
         if content_hash in self.currently_downloading: return
         
-        item_name = manifest.get('filename') or manifest.get('content_type', 'Content')
+        item_name = manifest.get('filename', content_hash[:16])
         logger.info(f"Scheduling download for: '{item_name}' ({content_hash[:10]}...)")
         self.currently_downloading.add(content_hash)
         
@@ -282,9 +282,9 @@ class SyncService:
         
         content_type = final_manifest.get('content_type')
         try:
+            content = json.loads(decrypted_data)
+
             if content_type == 'message':
-                content = json.loads(decrypted_data)
-                
                 required_hashes = content.get('attachment_hashes', [])
                 if required_hashes:
                     existing_attachments = FileAttachment.objects.filter(metadata_manifest__content_hash__in=required_hashes)
@@ -325,13 +325,14 @@ class SyncService:
 
             elif content_type == 'file':
                 attachment = FileAttachment.objects.create(
-                    filename=final_manifest.get('filename', 'unknown'),
-                    content_type=final_manifest.get('content_type_val', 'application/octet-stream'),
-                    size=final_manifest.get('size', 0),
+                    filename=content.get('filename', 'unknown'),
+                    content_type=content.get('content_type', 'application/octet-stream'),
+                    size=content.get('size', 0),
                     metadata_manifest=final_manifest
                 )
-                logger.info(f"Successfully saved new file: '{final_manifest.get('filename')}'")
+                logger.info(f"Successfully saved new file: '{content.get('filename')}'")
                 
+                # MODIFIED: Immediately check if this new attachment fulfills a pending action
                 pending_actions = FederatedAction.objects.filter(
                     action_type='update_profile',
                     action_details__avatar_hash=content_hash
@@ -342,19 +343,18 @@ class SyncService:
                         self._apply_avatar_from_attachment(user_to_update, attachment)
 
             elif content_type == 'pm':
-                metadata = json.loads(decrypted_data.decode('utf-8'))
-                recipient_pubkey_checksum = metadata.get('recipient_pubkey_checksum')
+                recipient_pubkey_checksum = content.get('recipient_pubkey_checksum')
                 
                 local_user_pubkeys = User.objects.filter(is_active=True).values_list('pubkey', flat=True)
                 local_user_checksums = {generate_checksum(pk) for pk in local_user_pubkeys if pk}
 
                 if recipient_pubkey_checksum in local_user_checksums:
-                    e2e_content_b64 = metadata.get('e2e_encrypted_content_b64')
+                    e2e_content_b64 = content.get('e2e_encrypted_content_b64')
                     if not e2e_content_b64:
                         logger.error("Downloaded PM manifest is missing the E2E content payload.")
                         return
 
-                    recipient_pubkey = metadata.get('recipient_pubkey')
+                    recipient_pubkey = content.get('recipient_pubkey')
                     if not recipient_pubkey:
                         logger.warning(f"PM received without a recipient public key. Discarding.")
                         return
@@ -372,7 +372,7 @@ class SyncService:
 
                     PrivateMessage.objects.create(
                         recipient=recipient_user,
-                        sender_pubkey=metadata.get('sender_pubkey'),
+                        sender_pubkey=content.get('sender_pubkey'),
                         e2e_encrypted_content=e2e_content_b64,
                         metadata_manifest=final_manifest
                     )
