@@ -22,7 +22,8 @@ import AuthenticatedImage from './AuthenticatedImage';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
-const ModerationDashboard = ({ displayTimezone }) => {
+// MODIFIED: Accept the onStartPrivateMessage prop
+const ModerationDashboard = ({ displayTimezone, onStartPrivateMessage }) => {
   const [queue, setQueue] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -49,7 +50,7 @@ const ModerationDashboard = ({ displayTimezone }) => {
   const handleReviewReport = async (reportId, action) => {
     try {
       await apiClient.post(`/api/moderation/review/${reportId}/`, { action });
-      fetchQueue(); // Refresh the entire queue after an action
+      fetchQueue();
     } catch (err) {
       console.error(`Failed to ${action} report:`, err);
       alert(`Could not ${action} the report. Please try again.`);
@@ -59,7 +60,7 @@ const ModerationDashboard = ({ displayTimezone }) => {
   const handleReviewProfile = async (actionId, action) => {
       try {
           await apiClient.post(`/api/moderation/profile_review/${actionId}/`, { action });
-          fetchQueue(); // Refresh the entire queue after an action
+          fetchQueue();
       } catch(err) {
           console.error(`Failed to ${action} profile update:`, err);
           alert(`Could not ${action} the profile update.`);
@@ -164,6 +165,10 @@ const ModerationDashboard = ({ displayTimezone }) => {
             </p>
         </div>
         <div className="flex justify-end gap-4 mt-4">
+            {/* NEW: Reply button */}
+            <button onClick={() => onStartPrivateMessage(inquiry.reporting_user_pubkey, inquiry.reporting_user)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                Reply to User
+            </button>
             <button onClick={() => handleReviewReport(inquiry.id, 'reject')} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
                 Dismiss
             </button>

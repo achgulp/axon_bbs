@@ -28,20 +28,23 @@ import AppletView from './components/AppletView';
 import HighScoreBoard from './components/HighScoreBoard';
 import ModerationDashboard from './components/ModerationDashboard';
 import PrivateMessageClient from './components/PrivateMessageClient';
+
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 const SideBarButton = ({ onClick, children, disabled, className = '' }) => (
   <button onClick={onClick} disabled={disabled} className={`w-full text-left py-2 px-4 rounded hover:bg-gray-700 text-gray-300 transition duration-150 ease-in-out disabled:text-gray-500 disabled:cursor-not-allowed ${className}`}>
     {children}
   </button>
 );
+
 const MessageBoardList = ({ onSelectBoard }) => {
   const [boards, setBoards] = useState([]);
-useEffect(() => {
+  useEffect(() => {
     apiClient.get('/api/boards/')
       .then(response => setBoards(response.data))
       .catch(err => console.error(err));
   }, []);
-return (
+
+  return (
     <div>
       <Header text="Message Boards" />
       <div className="space-y-2">
@@ -83,7 +86,8 @@ function App() {
     }
     setToken(newToken);
   };
-useEffect(() => {
+
+  useEffect(() => {
     const fetchProfile = () => {
         apiClient.get('/api/user/profile/')
             .then(response => setProfile(response.data))
@@ -103,6 +107,7 @@ useEffect(() => {
     }
     fetchTimezone(); 
   }, [token]);
+
   const handleLogout = async () => {
     try {
       await apiClient.post('/api/logout/');
@@ -112,23 +117,28 @@ useEffect(() => {
       setAuthToken(null);
     }
   };
+
   const handleSelectBoard = (boardId, boardName) => {
     setSelectedBoard({ id: boardId, name: boardName });
     setCurrentView('boards');
   };
+
   const handleViewChange = (view) => {
     setSelectedBoard(null);
     setPmRecipient(null);
     setCurrentView(view);
   };
+
   const handleStartPrivateMessage = (pubkey, displayName) => {
     setPmRecipient({ pubkey: pubkey, displayName: displayName });
     setCurrentView('pm');
   };
+
   const handleUnlockSuccess = () => {
     setIdentityUnlocked(true);
     setNeedsUnlock(false);
   };
+
   if (!token) {
     return (
       <div className="bg-gray-800 min-h-screen">
@@ -153,7 +163,8 @@ useEffect(() => {
       return <HighScoreBoard applet={lastPlayedGame} onBack={() => handleViewChange('applets')} displayTimezone={displayTimezone} />;
     }
     if (currentView === 'moderation') {
-      return <ModerationDashboard displayTimezone={displayTimezone} />;
+      // MODIFIED: Pass the onStartPrivateMessage function to the dashboard
+      return <ModerationDashboard displayTimezone={displayTimezone} onStartPrivateMessage={handleStartPrivateMessage} />;
     }
     if (selectedBoard) {
       return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} onStartPrivateMessage={handleStartPrivateMessage} displayTimezone={displayTimezone} />;

@@ -24,6 +24,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import logging
 import os
+import json # MODIFIED: Added this import
 from datetime import timedelta
 from django.apps import apps
 import base64

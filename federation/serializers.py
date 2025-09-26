@@ -35,15 +35,16 @@ class ContentExtensionRequestSerializer(serializers.ModelSerializer):
 
 class ModerationReportSerializer(serializers.ModelSerializer):
     reporting_user = serializers.StringRelatedField()
+    # NEW: Added a field to get the reporting user's public key
+    reporting_user_pubkey = serializers.CharField(source='reporting_user.pubkey', read_only=True)
     reviewed_by = serializers.StringRelatedField()
     reported_message = MessageSerializer(read_only=True)
 
     class Meta:
         model = ModerationReport
-        # MODIFIED: Added report_type field
-        fields = ('id', 'reported_message', 'reporting_user', 'comment', 'status', 'created_at', 'reviewed_by', 'reviewed_at', 'report_type')
+        # MODIFIED: Added reporting_user_pubkey to the list of fields
+        fields = ('id', 'reported_message', 'reporting_user', 'reporting_user_pubkey', 'comment', 'status', 'created_at', 'reviewed_by', 'reviewed_at', 'report_type')
 
-# NEW: Serializer for the user contact form
 class ModerationInquirySerializer(serializers.ModelSerializer):
     class Meta:
         model = ModerationReport
