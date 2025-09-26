@@ -24,6 +24,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import logging
 import os
+import json
 from datetime import timedelta
 from django.apps import apps
 import base64
@@ -40,7 +41,7 @@ from core.models import FileAttachment, User, TrustedInstance
 from .serializers import ModerationReportSerializer, FederatedActionProfileUpdateSerializer, ContentExtensionRequestSerializer, ModerationInquirySerializer
 from core.services.service_manager import service_manager
 from accounts.avatar_generator import generate_cow_avatar
-from core.services.encryption_utils import generate_short_id
+from core.services.encryption_utils import generate_short_id, encrypt_for_recipients_only
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +194,6 @@ class ReportMessageView(views.APIView):
             logger.error(f"Error creating report by user {request.user.username}: {e}")
             return Response({"error": "An error occurred while creating the report."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# NEW: View for user inquiries
 class ContactModeratorsView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -209,21 +209,17 @@ class ContactModeratorsView(views.APIView):
         )
         return Response({"status": "Your inquiry has been sent to the moderators."}, status=status.HTTP_201_CREATED)
 
-# NEW: View for the unified queue
 class UnifiedQueueView(views.APIView):
     permission_classes = [IsModeratorOrAdmin]
 
     def get(self, request, *args, **kwargs):
-        # 1. Fetch pending reports
         pending_reports = ModerationReport.objects.filter(status='pending')
         serialized_reports = []
         for report in pending_reports:
             data = ModerationReportSerializer(report, context={'request': request}).data
-            # Add ticket type for frontend routing
             data['ticket_type'] = report.report_type 
             serialized_reports.append(data)
 
-        # 2. Fetch pending profile updates
         pending_profile_updates = FederatedAction.objects.filter(
             action_type='update_profile',
             status='pending_approval'
@@ -231,11 +227,9 @@ class UnifiedQueueView(views.APIView):
         serialized_profile_updates = []
         for update in pending_profile_updates:
             data = FederatedActionProfileUpdateSerializer(update, context={'request': request}).data
-            # Add ticket type for frontend routing
             data['ticket_type'] = 'profile_update'
             serialized_profile_updates.append(data)
 
-        # 3. Combine and sort
         combined_queue = sorted(
             serialized_reports + serialized_profile_updates,
             key=lambda x: x['created_at'],
@@ -254,34 +248,67 @@ class ReviewReportView(views.APIView):
         except ModerationReport.DoesNotExist:
             return Response({"error": "Report not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
 
+        moderator = request.user
+        private_key = request.session.get('unencrypted_priv_key')
+
         if action == 'approve':
             report.status = 'approved'
-            report.reviewed_by = request.user
+            report.reviewed_by = moderator
             report.reviewed_at = timezone.now()
             
             reporter = report.reporting_user
             reporter.karma = reporter.karma + 5
             reporter.save()
             
-            message_to_delete = report.reported_message
-            
             report.save()
 
-            if message_to_delete and message_to_delete.metadata_manifest:
-                FederatedAction.objects.create(
-                    action_type='DELETE_CONTENT',
-                    content_hash_target=message_to_delete.metadata_manifest.get('content_hash'),
-                    action_details={'reason': f'Content removed by {request.user.username} based on user report: {report.comment}'}
+            # MODIFIED: Handle general inquiries differently from message reports
+            if report.report_type == 'general_inquiry':
+                # Action: Send an acknowledgment PM to the user
+                if not private_key:
+                    return Response({"status": "Inquiry approved, but could not send PM acknowledgment: Moderator Identity is locked."}, status=status.HTTP_200_OK)
+
+                recipient = report.reporting_user
+                subject = "Regarding Your Recent Inquiry"
+                body = f"Hello {recipient.nickname},\n\nThis is an automated message to confirm that a moderator has reviewed and closed your recent inquiry.\n\nOriginal inquiry:\n---\n{report.comment}\n---\n\nThank you for helping to keep the community running smoothly."
+                
+                # Use the same logic as SendPrivateMessageView to construct and save the PM
+                e2e_payload = json.dumps({"subject": subject, "body": body, "sender_pubkey": moderator.pubkey, "recipient_pubkey": recipient.pubkey})
+                e2e_encrypted_content, e2e_manifest = encrypt_for_recipients_only(e2e_payload, [moderator.pubkey, recipient.pubkey])
+                metadata = {
+                    "type": "pm",
+                    "e2e_encrypted_content_b64": base64.b64encode(e2e_encrypted_content).decode('utf-8'),
+                    "e2e_manifest": e2e_manifest,
+                    "sender_pubkey": moderator.pubkey, "recipient_pubkey": recipient.pubkey,
+                    "sender_pubkey_checksum": generate_checksum(moderator.pubkey),
+                    "recipient_pubkey_checksum": generate_checksum(recipient.pubkey),
+                }
+                bbs_pubkeys = [inst.pubkey for inst in TrustedInstance.objects.all() if inst.pubkey]
+                _content_hash, metadata_manifest = service_manager.bitsync_service.create_encrypted_content(metadata, b_b_s_instance_pubkeys=bbs_pubkeys)
+                
+                PrivateMessage.objects.create(
+                    author=moderator, recipient=recipient, sender_pubkey=moderator.pubkey,
+                    e2e_encrypted_content=base64.b64encode(e2e_encrypted_content).decode('utf-8'),
+                    metadata_manifest=metadata_manifest
                 )
-            
-            if message_to_delete:
-                message_to_delete.delete()
-            
-            return Response({"status": "Report approved and message deleted."})
+                return Response({"status": "Inquiry marked as handled and acknowledgment PM sent."})
+
+            else: # This is a standard message report
+                message_to_delete = report.reported_message
+                if message_to_delete and message_to_delete.metadata_manifest:
+                    FederatedAction.objects.create(
+                        action_type='DELETE_CONTENT',
+                        content_hash_target=message_to_delete.metadata_manifest.get('content_hash'),
+                        action_details={'reason': f'Content removed by {moderator.username} based on user report: {report.comment}'}
+                    )
+                if message_to_delete:
+                    message_to_delete.delete()
+                
+                return Response({"status": "Report approved and message deleted."})
 
         elif action == 'reject':
             report.status = 'rejected'
-            report.reviewed_by = request.user
+            report.reviewed_by = moderator
             report.reviewed_at = timezone.now()
             report.save()
             return Response({"status": "Report rejected."})
@@ -298,6 +325,9 @@ class ReviewProfileUpdateView(views.APIView):
         except FederatedAction.DoesNotExist:
             return Response({"error": "Profile update request not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
 
+        # BUG FIX: The use of get_or_create here prevents a crash if a moderator
+        # tries to approve a profile update for a federated user who does not
+        # yet have a placeholder account on this BBS instance.
         short_id = generate_short_id(profile_action.pubkey_target, length=8)
         defaults = {
             'username': f"federated_{short_id}_{uuid.uuid4().hex[:4]}",
