@@ -44,6 +44,7 @@ class UATClient:
         self.session.proxies = TOR_PROXIES
         self.access_token = None
         self.log = []
+        self.log_path = 'uat_results/uat_run_log.json'
 
     def _request(self, method, endpoint, **kwargs):
         """Wrapper for making authenticated requests."""
@@ -73,10 +74,9 @@ class UATClient:
     def save_log(self):
         """Saves the test log to a file."""
         os.makedirs('uat_results', exist_ok=True)
-        log_path = 'uat_results/uat_run_log.json'
-        with open(log_path, 'w') as f:
+        with open(self.log_path, 'w') as f:
             json.dump(self.log, f, indent=2)
-        print(f"\n[!] Test log saved to {log_path}")
+        print(f"\n[!] Test log saved to {self.log_path}")
 
 # --- Test Functions ---
 
@@ -175,15 +175,29 @@ def test_logout(client):
     return "Logged out successfully."
 
 def test_post_log_to_uat_channel(client, payload_data):
-    # This function is run against the peer, but needs to trigger the verifier on the host.
-    # We will need to re-evaluate this logic later. For now, it is disabled on the peer.
-    # This step is intended to be run from the host against the host to trigger the peer.
-    # When the peer runs this suite, this step should be skipped.
     return "Skipping log post on peer-side verification."
 
-# The entire function for test 14 has been commented out.
-# def test_verify_peer_attachment(client):
-#     ...
+# NEW: Test function to post the final log for cleanup purposes.
+def test_post_final_log(client, run_id):
+    """Reads the local log file and posts its contents to the UAT-Channel."""
+    try:
+        with open(client.log_path, 'r') as f:
+            log_content = f.read()
+        
+        payload = {
+            "board_name": "UAT-Channel",
+            "subject": f"UAT_CLEANUP_LOG_{run_id}",
+            "body": log_content
+        }
+        response = client._request('POST', '/api/messages/post/', json=payload)
+        if response.status_code != 201:
+            raise Exception(f"Failed to post log. Status: {response.status_code}, Body: {response.text}")
+        return "Cleanup log posted successfully."
+    except FileNotFoundError:
+        raise Exception("uat_run_log.json not found. Cannot post for cleanup.")
+    except Exception as e:
+        # Re-raise to be caught by run_test
+        raise e
 
 def run_uat_suite(peer_onion_url):
     """Runs the full UAT test suite."""
@@ -197,6 +211,7 @@ def run_uat_suite(peer_onion_url):
     PASSWORD_V2 = f"password_{run_id}_v2"
     
     try:
+        # --- Execute Test Plan ---
         client.run_test("0) Register New User", test_register, client, USERNAME, PASSWORD_V1, NICKNAME)
         client.run_test("1) Login", test_login, client, USERNAME, PASSWORD_V1)
         client.run_test("2) Unlock Identity", test_unlock_identity, client, PASSWORD_V1)
@@ -233,11 +248,9 @@ def run_uat_suite(peer_onion_url):
         client.run_test("12) Log in with New Password", test_login, client, USERNAME, PASSWORD_V2)
         client.run_test("12a) Unlock Identity with New Password", test_unlock_identity, client, PASSWORD_V2)
         
-        trigger_payload = {
-            "run_log": client.log,
-            "uat_user_pubkey": profile['pubkey']
-        }
-        client.run_test("13) Trigger Verifier Agent", test_post_log_to_uat_channel, client, trigger_payload)
+        # MODIFIED: Added a final step to post the log for cleanup
+        # This needs to happen before the final log save.
+        client.run_test("14) Post Final Log for Cleanup", test_post_final_log, client, run_id)
 
         print("\n[+] UAT RUNNER COMPLETED SUCCESSFULLY.")
         
