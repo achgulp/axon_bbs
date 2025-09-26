@@ -31,18 +31,17 @@ def generate_cow_avatar(pubkey: str):
     Generates a unique, deterministic cartoon cow avatar based on a user's public key.
     This version uses direct hash slicing to be cross-platform/version consistent.
     """
-    # Create a 32-byte (256-bit) seed. This is our only source of entropy.
     seed = hashlib.sha256(pubkey.encode()).digest()
     
     # --- Color Palette Generation from Hash Bytes ---
-    head_hue = get_int_from_bytes(seed[0:2]) % 360          # Bytes 0-1 for hue
-    head_saturation = 30 + (seed[2] % 31)                   # Byte 2 for saturation (30-60)
-    head_lightness = 75 + (seed[3] % 16)                    # Byte 3 for lightness (75-90)
+    head_hue = get_int_from_bytes(seed[0:2]) % 360
+    head_saturation = 30 + (seed[2] % 31)
+    head_lightness = 75 + (seed[3] % 16)
     head_color = f"hsl({head_hue}, {head_saturation}%, {head_lightness}%)"
 
-    spot_hue = (head_hue + 180 + (get_int_from_bytes(seed[4:6]) % 61) - 30) % 360 # Bytes 4-5 for offset
-    spot_saturation = 60 + (seed[6] % 31)                   # Byte 6 for saturation (60-90)
-    spot_lightness = 30 + (seed[7] % 21)                    # Byte 7 for lightness (30-50)
+    spot_hue = (head_hue + 180 + (get_int_from_bytes(seed[4:6]) % 61) - 30) % 360
+    spot_saturation = 60 + (seed[6] % 31)
+    spot_lightness = 30 + (seed[7] % 21)
     spot_color = f"hsl({spot_hue}, {spot_saturation}%, {spot_lightness}%)"
     
     muzzle_color = f"hsl({head_hue}, {head_saturation // 2}%, {head_lightness + 5}%)"
@@ -75,15 +74,14 @@ def generate_cow_avatar(pubkey: str):
     draw.ellipse([head_center_x - muzzle_width // 2, head_center_y + 12, head_center_x + muzzle_width // 2, head_center_y + 12 + muzzle_height], fill=muzzle_color, outline='black', width=2)
 
     # --- Spot Generation from Hash Bytes ---
-    num_spots = 1 if seed[8] % 5 < 3 else 2                  # Byte 8 for 1 vs 2 spots (60% chance of 1)
-    spot_sizes = [15 + (seed[9] % 8), 8 + (seed[10] % 7)]    # Bytes 9-10 for sizes
-    if seed[11] % 2 == 0:                                   # Byte 11 to shuffle
+    num_spots = 1 if seed[8] % 5 < 3 else 2
+    spot_sizes = [15 + (seed[9] % 8), 8 + (seed[10] % 7)]
+    if seed[11] % 2 == 0:
         spot_sizes.reverse()
 
     for i in range(num_spots):
         spot_radius = spot_sizes[i]
         
-        # Use different bytes for each spot's placement
         angle_byte = seed[12 + (i*2)]
         dist_byte = seed[13 + (i*2)]
 
@@ -92,31 +90,18 @@ def generate_cow_avatar(pubkey: str):
         spot_x = head_center_x + distance_from_center * math.cos(angle)
         spot_y = head_center_y + distance_from_center * math.sin(angle)
         
-        # Ensure spot doesn't overlap the muzzle area
         if (head_center_y + 12 < spot_y + spot_radius):
-            spot_y = head_center_y - (spot_y - head_center_y) # Flip vertically
+            spot_y = head_center_y - (spot_y - head_center_y)
 
-        shape_byte = seed[16 + i]
-        if shape_byte % 2 == 0: # Draw an ellipse
-            w_offset_byte = seed[17 + i]
-            h_offset_byte = seed[18 + i]
-            spot_w = spot_radius * 2 * (0.8 + (w_offset_byte / 255.0) * 0.4)
-            spot_h = spot_radius * 2 * (0.8 + (h_offset_byte / 255.0) * 0.4)
-            draw.ellipse([(spot_x - spot_w / 2, spot_y - spot_h / 2), (spot_x + spot_w / 2, spot_y + spot_h / 2)], fill=spot_color, outline='black', width=1)
-        else: # Draw a polygon
-            points = []
-            num_vertices = 3 + (shape_byte % 4)
-            for j in range(num_vertices):
-                vert_angle_byte = seed[19 + j]
-                vert_rad_byte = seed[23 + j]
-                angle_vert = (vert_angle_byte / 255.0) * 2 * math.pi
-                radius_vert = spot_radius * (0.7 + (vert_rad_byte / 255.0) * 0.6)
-                px = spot_x + radius_vert * math.cos(angle_vert)
-                py = spot_y + radius_vert * math.sin(angle_vert)
-                points.append((px, py))
-            draw.polygon(points, fill=spot_color, outline='black', width=1)
+        # MODIFIED: Removed the polygon-drawing logic. All spots are now guaranteed to be
+        # single, simple ellipses with varying dimensions.
+        w_offset_byte = seed[17 + i]
+        h_offset_byte = seed[18 + i]
+        spot_w = spot_radius * 2 * (0.8 + (w_offset_byte / 255.0) * 0.4)
+        spot_h = spot_radius * 2 * (0.8 + (h_offset_byte / 255.0) * 0.4)
+        draw.ellipse([(spot_x - spot_w / 2, spot_y - spot_h / 2), (spot_x + spot_w / 2, spot_y + spot_h / 2)], fill=spot_color, outline='black', width=1)
     
-    # Eyes, Nostrils, and Smile are drawn LAST (these are not randomized)
+    # Eyes, Nostrils, and Smile are drawn LAST
     eye_radius = 5
     draw.ellipse([head_center_x - 20 - eye_radius, head_center_y - 10 - eye_radius, head_center_x - 20 + eye_radius, head_center_y - 10 + eye_radius], fill='black')
     draw.ellipse([head_center_x + 20 - eye_radius, head_center_y - 10 - eye_radius, head_center_x + 20 + eye_radius, head_center_y - 10 + eye_radius], fill='black')
@@ -127,7 +112,6 @@ def generate_cow_avatar(pubkey: str):
 
     draw.arc([head_center_x - 18, head_center_y + 38, head_center_x + 18, head_center_y + 58], start=20, end=160, fill='black', width=2)
     
-    # --- Save Image to Buffer ---
     buffer = BytesIO()
     img.save(buffer, format='PNG')
     
