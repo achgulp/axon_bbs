@@ -24,7 +24,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import logging
 import os
-import json # MODIFIED: Added this import
+import json
 from datetime import timedelta
 from django.apps import apps
 import base64
@@ -45,6 +45,7 @@ from core.services.encryption_utils import generate_short_id, encrypt_for_recipi
 
 logger = logging.getLogger(__name__)
 
+# ... (all views before ReviewReportView are unchanged) ...
 
 @method_decorator(csrf_exempt, name='dispatch')
 class SyncView(views.APIView):
@@ -249,14 +250,17 @@ class ReviewReportView(views.APIView):
         private_key = request.session.get('unencrypted_priv_key')
 
         if action == 'approve':
+            # Set the new status first for all approve actions
             report.status = 'approved'
             report.reviewed_by = moderator
             report.reviewed_at = timezone.now()
             
+            # Award karma to the reporter
             reporter = report.reporting_user
             reporter.karma = reporter.karma + 5
             reporter.save()
             
+            # MODIFIED: Save the report status change immediately
             report.save()
 
             if report.report_type == 'general_inquiry':
@@ -287,7 +291,7 @@ class ReviewReportView(views.APIView):
                 )
                 return Response({"status": "Inquiry marked as handled and acknowledgment PM sent."})
 
-            else: 
+            else: # This is a standard message report
                 message_to_delete = report.reported_message
                 if message_to_delete and message_to_delete.metadata_manifest:
                     FederatedAction.objects.create(
@@ -309,6 +313,7 @@ class ReviewReportView(views.APIView):
 
         return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
 
+# ... (rest of the file remains the same) ...
 class ReviewProfileUpdateView(views.APIView):
     permission_classes = [IsModeratorOrAdmin]
 

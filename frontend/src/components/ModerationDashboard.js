@@ -22,7 +22,6 @@ import AuthenticatedImage from './AuthenticatedImage';
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
 
-// MODIFIED: Accept the onStartPrivateMessage prop
 const ModerationDashboard = ({ displayTimezone, onStartPrivateMessage }) => {
   const [queue, setQueue] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -165,15 +164,15 @@ const ModerationDashboard = ({ displayTimezone, onStartPrivateMessage }) => {
             </p>
         </div>
         <div className="flex justify-end gap-4 mt-4">
-            {/* NEW: Reply button */}
             <button onClick={() => onStartPrivateMessage(inquiry.reporting_user_pubkey, inquiry.reporting_user)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                 Reply to User
             </button>
             <button onClick={() => handleReviewReport(inquiry.id, 'reject')} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
                 Dismiss
             </button>
+            {/* MODIFIED: Changed button text */}
             <button onClick={() => handleReviewReport(inquiry.id, 'approve')} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
-                Mark as Handled
+                Complete
             </button>
         </div>
     </div>
