@@ -24,7 +24,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import logging
 import os
-import json
 from datetime import timedelta
 from django.apps import apps
 import base64
@@ -76,9 +75,6 @@ class SyncView(views.APIView):
                     item_manifest['content_type'] = 'message'
                 elif isinstance(item, FileAttachment):
                     item_manifest['content_type'] = 'file'
-                    item_manifest['filename'] = item.filename
-                    item_manifest['content_type_val'] = item.content_type
-                    item_manifest['size'] = item.size
                 elif isinstance(item, PrivateMessage):
                     item_manifest['content_type'] = 'pm'
                 
@@ -262,9 +258,7 @@ class ReviewReportView(views.APIView):
             
             report.save()
 
-            # MODIFIED: Handle general inquiries differently from message reports
             if report.report_type == 'general_inquiry':
-                # Action: Send an acknowledgment PM to the user
                 if not private_key:
                     return Response({"status": "Inquiry approved, but could not send PM acknowledgment: Moderator Identity is locked."}, status=status.HTTP_200_OK)
 
@@ -272,7 +266,6 @@ class ReviewReportView(views.APIView):
                 subject = "Regarding Your Recent Inquiry"
                 body = f"Hello {recipient.nickname},\n\nThis is an automated message to confirm that a moderator has reviewed and closed your recent inquiry.\n\nOriginal inquiry:\n---\n{report.comment}\n---\n\nThank you for helping to keep the community running smoothly."
                 
-                # Use the same logic as SendPrivateMessageView to construct and save the PM
                 e2e_payload = json.dumps({"subject": subject, "body": body, "sender_pubkey": moderator.pubkey, "recipient_pubkey": recipient.pubkey})
                 e2e_encrypted_content, e2e_manifest = encrypt_for_recipients_only(e2e_payload, [moderator.pubkey, recipient.pubkey])
                 metadata = {
@@ -293,7 +286,7 @@ class ReviewReportView(views.APIView):
                 )
                 return Response({"status": "Inquiry marked as handled and acknowledgment PM sent."})
 
-            else: # This is a standard message report
+            else: 
                 message_to_delete = report.reported_message
                 if message_to_delete and message_to_delete.metadata_manifest:
                     FederatedAction.objects.create(
@@ -325,9 +318,6 @@ class ReviewProfileUpdateView(views.APIView):
         except FederatedAction.DoesNotExist:
             return Response({"error": "Profile update request not found or already reviewed."}, status=status.HTTP_404_NOT_FOUND)
 
-        # BUG FIX: The use of get_or_create here prevents a crash if a moderator
-        # tries to approve a profile update for a federated user who does not
-        # yet have a placeholder account on this BBS instance.
         short_id = generate_short_id(profile_action.pubkey_target, length=8)
         defaults = {
             'username': f"federated_{short_id}_{uuid.uuid4().hex[:4]}",
