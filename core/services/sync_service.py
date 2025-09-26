@@ -177,7 +177,7 @@ class SyncService:
 
     def _schedule_download(self, manifest):
         content_hash = manifest.get('content_hash')
-        if content_hash in self.currently_downloading: return
+        if not content_hash or content_hash in self.currently_downloading: return
         
         item_name = manifest.get('filename', content_hash[:16])
         logger.info(f"Scheduling download for: '{item_name}' ({content_hash[:10]}...)")
@@ -255,6 +255,13 @@ class SyncService:
                         
                         avatar_hash = details.get('avatar_hash')
                         if avatar_hash:
+                            # MODIFIED: Trigger the download for the avatar manifest
+                            manifest_to_download = self.get_manifest_by_content_hash(avatar_hash)
+                            if manifest_to_download:
+                                self._schedule_download(manifest_to_download)
+                            else:
+                                # This else block is new and important
+                                logger.warning(f"Avatar hash {avatar_hash} was specified, but no corresponding manifest was received in this sync. A full sync may be required.")
                             self._apply_avatar_from_hash(user_to_update, avatar_hash)
 
             except Exception as e:
@@ -332,7 +339,6 @@ class SyncService:
                 )
                 logger.info(f"Successfully saved new file: '{content.get('filename')}'")
                 
-                # MODIFIED: Immediately check if this new attachment fulfills a pending action
                 pending_actions = FederatedAction.objects.filter(
                     action_type='update_profile',
                     action_details__avatar_hash=content_hash
