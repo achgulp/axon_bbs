@@ -27,12 +27,11 @@ from django.conf.urls.static import static
 from django.views.generic import TemplateView
 from django.views.static import serve
 
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
+# MODIFIED: Import our new custom view and the standard refresh view
+from rest_framework_simplejwt.views import TokenRefreshView
 from accounts.views import (
-    RegisterView, LogoutView, UnlockIdentityView, ImportIdentityView,
+    CustomTokenObtainPairView, # <-- Our new view
+    RegisterView, LogoutView, ImportIdentityView,
     ExportIdentityView, UpdateNicknameView, UserProfileView, UploadAvatarView,
     GetPublicKeyView, GetSecurityQuestionsView, SubmitRecoveryView, ClaimAccountView,
     ChangePasswordView, ResetSecurityQuestionsView, GetDisplayTimezoneView, UpdateTimezoneView
@@ -46,7 +45,7 @@ from federation.views import (
     SyncView, BitSyncHasContentView, BitSyncChunkView, IgnorePubkeyView, BanPubkeyView,
     ReportMessageView, ReviewReportView, RequestContentExtensionView,
     ReviewContentExtensionView, UnpinContentView, ReviewProfileUpdateView,
-    UnifiedQueueView, ContactModeratorsView # MODIFIED: Imported new views
+    UnifiedQueueView, ContactModeratorsView
 )
 from applets.views import (
     AppletListView, GetSaveAppletDataView, HighScoreListView, PostAppletEventView,
@@ -65,13 +64,14 @@ class NoCacheTemplateView(TemplateView):
 api_urlpatterns = [
     # Auth & Config
     path('register/', RegisterView.as_view(), name='register'),
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    # MODIFIED: Use our new custom view for the token endpoint
+    path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path('config/timezone/', GetDisplayTimezoneView.as_view(), name='get-timezone'),
     
     # Identity & User Profile
-    path('identity/unlock/', UnlockIdentityView.as_view(), name='unlock-identity'),
+    # DELETED: The old unlock-identity path is removed
     path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
     path('identity/export/', ExportIdentityView.as_view(), name='export-identity'),
     path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
@@ -100,8 +100,6 @@ api_urlpatterns = [
     path('files/upload/', FileUploadView.as_view(), name='file-upload'),
     path('user/ignore/', IgnorePubkeyView.as_view(), name='ignore-pubkey'),
     path('messages/report/', ReportMessageView.as_view(), name='report-message'),
-
-    # --- MODIFIED: Replaced old mod queues with new unified system ---
     path('moderation/contact/', ContactModeratorsView.as_view(), name='moderation-contact'),
     path('moderation/unified_queue/', UnifiedQueueView.as_view(), name='moderation-unified-queue'),
     path('moderation/review/<int:report_id>/', ReviewReportView.as_view(), name='mod-review'),

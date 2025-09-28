@@ -15,16 +15,53 @@ import os
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import UnsupportedAlgorithm
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
 from django.conf import settings
 
 from .serializers import UserSerializer
 from core.models import TrustedInstance, FileAttachment, User
 from federation.models import FederatedAction
-from accounts.identity_service import IdentityService, DecryptionError
+from .identity_service import IdentityService, DecryptionError
 from core.services.service_manager import service_manager
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+# NEW: Custom Token View to combine login and identity unlock
+class CustomTokenObtainPairView(TokenObtainPairView):
+    def post(self, request, *args, **kwargs):
+        # First, perform the standard login validation by calling the parent method.
+        # If credentials are bad, this will raise an exception and stop here.
+        response = super().post(request, *args, **kwargs)
+
+        # If the above call succeeds, the user is authenticated.
+        # Now, we perform the identity unlock logic.
+        username = request.data.get('username')
+        password = request.data.get('password')
+        
+        try:
+            user = User.objects.get(username=username)
+            identity_service = IdentityService(user=user)
+            private_key = identity_service.get_unlocked_private_key(password)
+            
+            if private_key:
+                request.session['unencrypted_priv_key'] = private_key
+                logger.info(f"Identity automatically unlocked for user {user.username} upon login.")
+            else:
+                # This case is unlikely if login succeeded, but we handle it just in case.
+                logger.warning(f"Login for {user.username} was successful, but identity could not be unlocked (no key found).")
+
+        except User.DoesNotExist:
+            # This should not happen if the parent post() method succeeded.
+            pass 
+        except DecryptionError as e:
+            # This can happen if the user's identity file is corrupt or was created with a different password.
+            logger.warning(f"Login for {user.username} was successful, but identity unlock failed: {e}")
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during auto-unlock for {user.username}: {e}", exc_info=True)
+
+        return response
 
 
 class RegisterView(generics.CreateAPIView):
@@ -134,28 +171,7 @@ class LogoutView(views.APIView):
             del request.session['unencrypted_priv_key']
         return Response({"status": "session cleared"}, status=status.HTTP_200_OK)
 
-class UnlockIdentityView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def post(self, request, *args, **kwargs):
-        user, password = request.user, request.data.get('password')
-        if not password: return Response({"error": "Password is required."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            identity_service = IdentityService(user=user)
-            private_key = identity_service.get_unlocked_private_key(password)
-            if not private_key:
-                raise DecryptionError("Failed to unlock with provided password.")
-            
-            request.session['unencrypted_priv_key'] = private_key
-            logger.info(f"Identity unlocked for user {user.username}")
-            return Response({"status": "identity unlocked"}, status=status.HTTP_200_OK)
-        except DecryptionError as e:
-            logger.warning(f"Failed unlock attempt for {user.username}: {e}")
-            return Response({"error": "Unlock failed. Please check your password."}, status=status.HTTP_401_UNAUTHORIZED)
-        except Exception as e:
-            logger.error(f"Failed to unlock identity for {user.username}: {e}", exc_info=True)
-            return Response({"error": "An unexpected error occurred during unlock."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+# DELETED: The old UnlockIdentityView is no longer needed.
 
 class ImportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
