@@ -95,14 +95,12 @@ def generate_checksum(data_string: str) -> str:
     if not data_string:
         return "None"
     try:
-        # Attempt to normalize if it's a public key
         pubkey_obj = load_pem_public_key(data_string.encode())
         normalized_data = pubkey_obj.public_bytes(
             encoding=Encoding.PEM,
             format=PublicFormat.SubjectPublicKeyInfo
         ).decode('utf-8').strip().encode('utf-8')
     except Exception:
-        # For non-keys, just strip whitespace
         normalized_data = data_string.strip().encode('utf-8')
     
     return hashlib.md5(normalized_data).hexdigest()
@@ -129,7 +127,12 @@ def encrypt_for_recipients_only(message: str, pubkeys: list):
                 aes_key,
                 rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
             )
-            checksum = generate_checksum(pubkey_pem)
+            # MODIFIED: Normalize the public key before generating the checksum
+            normalized_pubkey = pubkey_obj.public_bytes(
+                encoding=Encoding.PEM,
+                format=PublicFormat.SubjectPublicKeyInfo
+            ).decode('utf-8')
+            checksum = generate_checksum(normalized_pubkey)
             encrypted_keys[checksum] = base64.b64encode(encrypted_key).decode('utf-8')
         except Exception as e:
             logger.error(f"Failed to encrypt session key for pubkey with checksum {generate_checksum(pubkey_pem)}: {e}")
@@ -142,14 +145,6 @@ def encrypt_for_recipients_only(message: str, pubkeys: list):
 def decrypt_for_recipients_only(e2e_content: bytes, e2e_manifest: dict, private_key_pem: str) -> str | None:
     """
     Decrypts the E2E content using a key from the metadata manifest.
-    
-    Args:
-        e2e_content (bytes): The raw, E2E encrypted message content.
-        e2e_manifest (dict): The manifest containing the encrypted session keys.
-        private_key_pem (str): The user's private key to decrypt the session key.
-    
-    Returns:
-        str: The decrypted message content as a string, or None on failure.
     """
     try:
         private_key = load_pem_private_key(private_key_pem.encode(), password=None)
