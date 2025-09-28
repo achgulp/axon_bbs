@@ -13,8 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-
+#
+#
 # Full path: axon_bbs/federation/views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
