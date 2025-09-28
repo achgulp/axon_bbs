@@ -1,0 +1,72 @@
+Axon BBS - Architectural Blueprint (Version 10.21.1)
+Version: 10.21.1
+
+Last Updated: 2025-09-27
+
+This document outlines the high-level architectural plans and guiding principles for the Axon BBS project. It is intended for developers to understand the "why" behind the code structure. 
+
+
+1. Core Principles
+
+Modularity: The system is composed of decoupled, single-responsibility modules. This applies to backend Django apps and frontend React components. 
+
+
+
+Service-Oriented Backend: Complex business logic is encapsulated in service classes, keeping API views "thin" and focused on handling HTTP requests/responses. 
+
+Secure by Default: All user content is encrypted. The frontend is treated as an untrusted client, and all security and permission checks are enforced on the backend. 
+
+2. Backend Architecture: Feature Domains
+The backend is refactored from two large apps (core, api) into a collection of smaller, self-contained apps, each representing a feature domain. 
+
+
+core: Contains truly cross-cutting models (User, TrustedInstance, FileAttachment) and core services (BitSyncService, SyncService). 
+
+
+accounts: Contains user-related models and logic (IgnoredPubkey, BannedPubkey). 
+
+
+messaging: Contains all public and private messaging models and logic (Message, PrivateMessage, MessageBoard). 
+
+
+applets: Contains the applet framework models and logic (Applet, AppletData, HighScore). 
+
+
+federation: Contains models and services related to inter-server communication (FederatedAction). 
+
+3. Key System Blueprints
+Federated Chat (AxonChat)
+This system provides a near-real-time chat experience across federated BBS instances by using a central data store (AppletSharedState) managed by a server-side agent.
+
+Chat Room Directory: The MessageBoard system serves as the directory for discovering and joining chat rooms. A SysOp turns a board into a chat room by linking the AxonChat applet to it.
+
+Data Model: The AppletSharedState for a chat room will store the message history and a list of present users in its JSON field.
+
+Backend Agent: A new ChatAgentService will be responsible for processing incoming messages, updating the shared state, managing the user list, and synchronizing the state with peer BBS instances.
+
+Symmetrical Communication: To achieve near-real-time performance, applets will send messages to a new, direct API endpoint (/api/applets/<applet_id>/update_state/) for immediate processing by the agent. Applets will receive updates by efficiently polling a lightweight versioning endpoint.
+
+Unified Moderation Hub
+This system consolidates all moderation tasks into a single ticketing queue. 
+
+
+Backend Unification: A new API endpoint, /api/moderation/unified_queue/, gathers all pending ModerationReport and FederatedAction (for profile approvals) objects, sorts them by date, and returns them as a single list. 
+
+
+Flexible Reports: The ModerationReport model is adapted to support "general inquiries" from users that are not tied to a specific message. This is achieved by making its 
+
+reported_message field optional and adding a report_type field. 
+
+
+Frontend Dispatcher: The ModerationDashboard component fetches from the unified queue and uses conditional logic to render a different sub-component for each ticket type. 
+
+Universal Embed Framework
+This framework allows any file type to be displayed within a message thread using a dedicated, sandboxed applet. 
+
+
+Mechanism: The Applet model has a handles_mime_types field (e.g., "video/mp4,video/webm"). 
+
+
+Frontend Flow: The MessageList component finds a handler by matching an attachment's content_type with an applet's handles_mime_types and launches it in the AppletRunner, passing the file's content_hash as context. The applet then uses the 
+
+getAttachmentBlob API to securely fetch and render the file. 

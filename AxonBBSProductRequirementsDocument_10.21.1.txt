@@ -1,0 +1,257 @@
+Axon BBS - Product Requirements Document (Version 10.21.1)
+Version: 10.21.1
+
+Last Updated: 2025-09-27
+
+Overview
+Axon BBS is an anonymous, modern bulletin board system that operates on a private, federated network of trusted nodes. The platform is built with a focus on user privacy and resilience, utilizing a custom peer-to-peer data synchronization protocol called BitSync and a sandboxed Applet Framework for extensible, rich content.
+
+
+Key features and architectural pillars in this versionAxon BBS - Product Requirements Document (Version 10.21.1)
+Version: 10.21.1
+
+Last Updated: 2025-09-27
+
+Overview
+Axon BBS is an anonymous, modern bulletin board system that operates on a private, federated network of trusted nodes. The platform is built with a focus on user privacy and resilience, utilizing a custom peer-to-peer data synchronization protocol called BitSync and a sandboxed Applet Framework for extensible, rich content.
+
+
+Key features and architectural pillars in this version include:
+
+Unified Moderation Hub: A single, streamlined interface for all moderator duties.
+
+Universal Embed Framework: A system to allow any file type to be viewed directly within messages using dedicated, secure applets.
+
+User-Managed Applets: Functionality for users to upload and manage their own applets.
+
+Federated Chat: A near-real-time chat system allowing users from different BBS instances to communicate in shared rooms.
+
+Browser History Integration: A plan to prevent the browser's back button from exiting the application unexpectedly.
+
+User Roles & Stories
+As a User...
+I want to generate or import my cryptographic identity to securely and anonymously interact with the system.
+
+I want to upload a profile avatar to personalize my identity.
+
+I want to send and receive E2E encrypted private messages.
+
+I want to post on public message boards and attach files, including videos and images.
+
+I want to view content like videos and images directly within a message thread instead of having to download them.
+
+I want to run sandboxed games and applications (applets) securely.
+
+I want to upload and manage my own applets to share with the community.
+
+I want to report a message that violates the rules to help keep the community clean.
+
+I want to contact the moderators with a general question or concern that isn't about a specific message.
+
+I want the browser's back button to navigate within the BBS instead of exiting the site completely.
+
+I want to claim my federated, inactive account on a new BBS by proving ownership with my private key.
+
+New: I want to see available chat rooms listed alongside regular message boards.
+
+New: I want to join a chat room by launching an applet from a designated message board.
+
+New: I want to send messages to the room in near-real-time.
+
+New: I want to see a list of other users currently in the chat room.
+
+As a Moderator...
+I want to have all the powers of a standard User.
+
+I want a single "Unified Moderation Hub" where I can see all pending tasks in one place.
+
+In my queue, I want to see different types of tickets: message reports, profile approvals, and general user inquiries.
+
+I want to approve valid reports, which purges the message from the network and awards karma to the reporter.
+
+I want to review and approve or deny user-submitted profile updates.
+
+When I close a general inquiry, I want the system to automatically send a PM acknowledgment to the user.
+
+As a SysOp (System Operator/Admin)...
+I want all the powers of a standard User and Moderator.
+
+I want to manage a whitelist of trusted federated peers to control synchronization.
+
+I want to associate a viewer applet with the MIME types it is designed to handle.
+
+New: I want to create a new chat room by creating a MessageBoard and assigning the AxonChat Applet to its "Event Bus" field.
+
+Axon BBS - Architectural Blueprint (Version 10.21.1)
+Version: 10.21.1
+
+Last Updated: 2025-09-27
+
+This document outlines the high-level architectural plans and guiding principles for the Axon BBS project.
+
+1. Core Principles
+
+Modularity: The system is composed of decoupled, single-responsibility modules.
+
+
+Service-Oriented Backend: Complex business logic is encapsulated in service classes, keeping API views "thin".
+
+Secure by Default: All user content is encrypted. The frontend is treated as an untrusted client, and all security is enforced on the backend.
+
+2. Key System Blueprints
+Federated Chat (AxonChat)
+This system provides a near-real-time chat experience across federated BBS instances by using a central data store (AppletSharedState) managed by a server-side agent.
+
+Chat Room Directory: The MessageBoard system serves as the directory for discovering and joining chat rooms. A SysOp turns a board into a chat room by linking the AxonChat applet to it.
+
+Data Model: The AppletSharedState for a chat room will store the message history and a list of present users in its JSON field.
+
+Backend Agent: A new ChatAgentService will be responsible for processing incoming messages, updating the shared state, managing the user list, and synchronizing the state with peer BBS instances.
+
+Symmetrical Communication: To achieve near-real-time performance, applets will send messages to a new, direct API endpoint (/api/applets/<applet_id>/update_state/) for immediate processing by the agent. Applets will receive updates by efficiently polling a lightweight versioning endpoint.
+
+Unified Moderation Hub
+This system consolidates all moderation tasks into a single ticketing queue.
+
+
+Unified Queue: A single API endpoint, /api/moderation/unified_queue/, gathers all items needing moderator attention into a single, time-sorted list.
+
+
+Flexible Reports: The ModerationReport model is adapted to handle general inquiries by making the reported_message field optional and adding a report_type.
+
+
+Smart Dashboard: The frontend ModerationDashboard renders a different UI for each type of "ticket".
+
+Universal Embed Framework
+This framework allows any file type to be displayed within a message thread using a dedicated, sandboxed applet.
+
+
+Mechanism: The Applet model has a handles_mime_types field (e.g., "video/mp4,video/webm").
+
+
+Frontend Flow: The MessageList component finds a handler by matching an attachment's content_type with an applet's handles_mime_types and launches it in the 
+
+AppletRunner , passing the file's 
+
+content_hash as context. The applet then uses the 
+
+getAttachmentBlob API to securely fetch and render the file. include:
+
+Unified Moderation Hub: A single, streamlined interface for all moderator duties.
+
+Universal Embed Framework: A system to allow any file type to be viewed directly within messages using dedicated, secure applets.
+
+User-Managed Applets: Functionality for users to upload and manage their own applets.
+
+Federated Chat: A near-real-time chat system allowing users from different BBS instances to communicate in shared rooms.
+
+Browser History Integration: A plan to prevent the browser's back button from exiting the application unexpectedly.
+
+User Roles & Stories
+As a User...
+I want to generate or import my cryptographic identity to securely and anonymously interact with the system.
+
+I want to upload a profile avatar to personalize my identity.
+
+I want to send and receive E2E encrypted private messages.
+
+I want to post on public message boards and attach files, including videos and images.
+
+I want to view content like videos and images directly within a message thread instead of having to download them.
+
+I want to run sandboxed games and applications (applets) securely.
+
+I want to upload and manage my own applets to share with the community.
+
+I want to report a message that violates the rules to help keep the community clean.
+
+I want to contact the moderators with a general question or concern that isn't about a specific message.
+
+I want the browser's back button to navigate within the BBS instead of exiting the site completely.
+
+I want to claim my federated, inactive account on a new BBS by proving ownership with my private key.
+
+New: I want to see available chat rooms listed alongside regular message boards.
+
+New: I want to join a chat room by launching an applet from a designated message board.
+
+New: I want to send messages to the room in near-real-time.
+
+New: I want to see a list of other users currently in the chat room.
+
+As a Moderator...
+I want to have all the powers of a standard User.
+
+I want a single "Unified Moderation Hub" where I can see all pending tasks in one place.
+
+In my queue, I want to see different types of tickets: message reports, profile approvals, and general user inquiries.
+
+I want to approve valid reports, which purges the message from the network and awards karma to the reporter.
+
+I want to review and approve or deny user-submitted profile updates.
+
+When I close a general inquiry, I want the system to automatically send a PM acknowledgment to the user.
+
+As a SysOp (System Operator/Admin)...
+I want all the powers of a standard User and Moderator.
+
+I want to manage a whitelist of trusted federated peers to control synchronization.
+
+I want to associate a viewer applet with the MIME types it is designed to handle.
+
+New: I want to create a new chat room by creating a MessageBoard and assigning the AxonChat Applet to its "Event Bus" field.
+
+Axon BBS - Architectural Blueprint (Version 10.21.1)
+Version: 10.21.1
+
+Last Updated: 2025-09-27
+
+This document outlines the high-level architectural plans and guiding principles for the Axon BBS project.
+
+1. Core Principles
+
+Modularity: The system is composed of decoupled, single-responsibility modules.
+
+
+Service-Oriented Backend: Complex business logic is encapsulated in service classes, keeping API views "thin".
+
+Secure by Default: All user content is encrypted. The frontend is treated as an untrusted client, and all security is enforced on the backend.
+
+2. Key System Blueprints
+Federated Chat (AxonChat)
+This system provides a near-real-time chat experience across federated BBS instances by using a central data store (AppletSharedState) managed by a server-side agent.
+
+Chat Room Directory: The MessageBoard system serves as the directory for discovering and joining chat rooms. A SysOp turns a board into a chat room by linking the AxonChat applet to it.
+
+Data Model: The AppletSharedState for a chat room will store the message history and a list of present users in its JSON field.
+
+Backend Agent: A new ChatAgentService will be responsible for processing incoming messages, updating the shared state, managing the user list, and synchronizing the state with peer BBS instances.
+
+Symmetrical Communication: To achieve near-real-time performance, applets will send messages to a new, direct API endpoint (/api/applets/<applet_id>/update_state/) for immediate processing by the agent. Applets will receive updates by efficiently polling a lightweight versioning endpoint.
+
+Unified Moderation Hub
+This system consolidates all moderation tasks into a single ticketing queue.
+
+
+Unified Queue: A single API endpoint, /api/moderation/unified_queue/, gathers all items needing moderator attention into a single, time-sorted list.
+
+
+Flexible Reports: The ModerationReport model is adapted to handle general inquiries by making the reported_message field optional and adding a report_type.
+
+
+Smart Dashboard: The frontend ModerationDashboard renders a different UI for each type of "ticket".
+
+Universal Embed Framework
+This framework allows any file type to be displayed within a message thread using a dedicated, sandboxed applet.
+
+
+Mechanism: The Applet model has a handles_mime_types field (e.g., "video/mp4,video/webm").
+
+
+Frontend Flow: The MessageList component finds a handler by matching an attachment's content_type with an applet's handles_mime_types and launches it in the 
+
+AppletRunner , passing the file's 
+
+content_hash as context. The applet then uses the 
+
+getAttachmentBlob API to securely fetch and render the file.

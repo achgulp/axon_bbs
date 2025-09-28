@@ -242,6 +242,12 @@ class SyncService:
                     FileAttachment.objects.filter(metadata_manifest__content_hash=content_hash).update(is_pinned=False, pinned_by=None)
                     logger.info(f"Federated unpin applied for content hash: {content_hash[:12]}...")
 
+                elif action_type == 'DELETE_CONTENT':
+                    content_hash = action_data.get('content_hash_target')
+                    if content_hash:
+                        Message.objects.filter(metadata_manifest__content_hash=content_hash).delete()
+                        logger.info(f"Applied federated delete for content hash: {content_hash[:12]}...")
+
                 elif action_type == 'update_profile':
                     pubkey = action_data.get('pubkey_target')
                     details = action_data.get('action_details', {})
@@ -255,13 +261,11 @@ class SyncService:
                         
                         avatar_hash = details.get('avatar_hash')
                         if avatar_hash:
-                            # MODIFIED: Trigger the download for the avatar manifest
                             manifest_to_download = self.get_manifest_by_content_hash(avatar_hash)
                             if manifest_to_download:
                                 self._schedule_download(manifest_to_download)
                             else:
-                                # This else block is new and important
-                                logger.warning(f"Avatar hash {avatar_hash} was specified, but no corresponding manifest was received in this sync. A full sync may be required.")
+                                logger.warning(f"Avatar hash {avatar_hash} was specified, but no corresponding manifest was received. A full sync may be required.")
                             self._apply_avatar_from_hash(user_to_update, avatar_hash)
 
             except Exception as e:
@@ -574,3 +578,5 @@ class SyncService:
             logger.info(f"Successfully applied new federated avatar for user {user.username}.")
         except Exception as e:
             logger.error(f"Failed to apply avatar {attachment.filename} to user {user.username}: {e}")
+
+# Subtle change for git sync

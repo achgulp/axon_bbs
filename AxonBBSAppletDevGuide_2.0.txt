@@ -1,0 +1,136 @@
+Axon BBS Applet Development Guide (Updated)
+Version: 2.0
+
+This document outlines the technical requirements, available APIs, and best practices for developing secure, sandboxed applications (applets) for the Axon BBS platform.
+
+1. Core Concepts
+
+Single-File Architecture: Every applet must be a single, self-contained JavaScript file. All HTML structure and CSS styles must be created and injected into the DOM by the script at runtime. This is a strict requirement for deployment.
+
+
+
+
+Sandboxed Execution: Applets are executed within a sandboxed <iframe> for security. This prevents applets from accessing the main BBS application's data, such as session tokens, user credentials, or the parent DOM.
+
+
+Asynchronous API: All communication with the BBS host is asynchronous through the provided window.bbs API. Developers must use 
+
+async/await when calling any API function.
+
+
+DOM Root: The applet must render all of its UI inside the provided <div id="applet-root"></div>.
+
+2. The Applet API (window.bbs)
+A global 
+
+window.bbs object is the sole method for communicating with the Axon BBS host.
+
+Standard API
+await bbs.getUserInfo()
+
+
+Purpose: Fetches profile information for the current user.
+
+
+Returns: A Promise that resolves to a JSON object with user data (e.g., username, nickname, avatar_url).
+
+await bbs.getData()
+
+
+Purpose: Retrieves the last saved data object for this specific applet and user.
+
+
+Returns: A Promise that resolves to the saved JSON object, or null if no data exists.
+
+await bbs.saveData(newData)
+
+
+Purpose: Saves a new data object for the applet and user, which is then encrypted and synced via BitSync.
+
+
+Arguments: newData (Object) - A JSON-serializable object to save.
+
+
+Returns: A Promise that resolves with a success status object.
+
+Advanced & Viewer Applet API
+await bbs.getAppletInfo()
+
+
+Purpose: Fetches metadata about the applet itself, such as its name and configuration.
+
+Returns: A Promise resolving to the applet's database record.
+
+await bbs.postEvent(eventData)
+
+
+Purpose: Posts an event to the applet's assigned "Event Bus" message board for interaction with backend agents like Fortress Overlord's agent.
+
+Arguments: eventData (Object) - A JSON object with subject and body keys.
+
+await bbs.readEvents()
+
+
+Purpose: Reads recent messages from the applet's Event Bus.
+
+await bbs.getAttachmentContext()
+
+
+Purpose: For viewer applets only. Gets the metadata (like content_hash and content_type) of the file the applet is supposed to render.
+
+await bbs.getAttachmentBlob()
+
+
+Purpose: For viewer applets only. Fetches the decrypted, binary content of the associated attachment as a Blob, which can then be used to create an object URL.
+
+3. High Score Integration (for Games)
+If your applet is in the "Game" category, you can participate in the federated high score board by saving a data object with specific keys. The backend 
+
+HighScoreService automatically processes this data.
+
+score (number): The player's total score. (Required)
+
+wins (number): Total number of wins. (Optional)
+
+losses (number): Total number of losses. (Optional)
+
+deaths (number): Total deaths. (Optional)
+
+Example:
+
+JavaScript
+
+const myGameStats = {
+  score: 13900,
+  wins: 1,
+  losses: 1,
+  // Custom fields are saved but not displayed on the main board
+  lines: 52 
+};
+await bbs.saveData(myGameStats);
+4. Handling Different Project Architectures
+The difficulty of converting an existing game depends on its structure.
+
+Vanilla JS Projects (Easy)
+This is the most direct path. The process involves copying the core logic, creating the HTML and CSS programmatically, and integrating the window.bbs API for data persistence.
+
+Framework-Based Projects (Moderate)
+Games built with frameworks like React can be converted. The key is to configure the project's build tool (e.g., Vite) to output a single, self-contained JavaScript file (an IIFE bundle). The applet script must then be adapted to:
+
+Mount the application into the #applet-root div.
+
+Replace any state persistence logic (like Redux dispatches for saving data) with calls to bbs.saveData().
+
+5. Best Practices & Common Pitfalls
+Use a Template: Start with the official Template.js applet. It includes the API helper, a debug console, and the standard file structure, saving significant time.
+
+DOM Readiness: Always wrap your applet's main execution logic in a way that ensures the DOM is ready, preventing "element not found" errors. A self-executing async function at the end of the script is the standard pattern.
+
+Media Autoplay Restrictions: Modern browsers block audio and video from playing automatically. Your applet 
+
+must require a user interaction (like clicking a "Play" button) before attempting to play any media .
+
+Error Handling: Wrap your entire applet in a try...catch block. If an error occurs during initialization, use the catch block to display a user-friendly error message inside the #applet-root div.
+
+Asset Embedding: Because of the single-file requirement, all assets (images, sounds, etc.) must be embedded in the JavaScript file as Base64 data URLs. This can significantly increase the final file size.
+Example: const myImage = new Image(); myImage.src = 'data:image/png;base64,iVBORw0KGgo...';
