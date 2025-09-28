@@ -1,3 +1,20 @@
+# Axon BBS - A modern, anonymous, federated bulletin board system.
+# Copyright (C) 2025 Achduke7
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
 # Full path: axon_bbs/accounts/views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
@@ -28,15 +45,10 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
-# NEW: Custom Token View to combine login and identity unlock
 class CustomTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
-        # First, perform the standard login validation by calling the parent method.
-        # If credentials are bad, this will raise an exception and stop here.
         response = super().post(request, *args, **kwargs)
 
-        # If the above call succeeds, the user is authenticated.
-        # Now, we perform the identity unlock logic.
         username = request.data.get('username')
         password = request.data.get('password')
         
@@ -49,14 +61,11 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 request.session['unencrypted_priv_key'] = private_key
                 logger.info(f"Identity automatically unlocked for user {user.username} upon login.")
             else:
-                # This case is unlikely if login succeeded, but we handle it just in case.
                 logger.warning(f"Login for {user.username} was successful, but identity could not be unlocked (no key found).")
 
         except User.DoesNotExist:
-            # This should not happen if the parent post() method succeeded.
             pass 
         except DecryptionError as e:
-            # This can happen if the user's identity file is corrupt or was created with a different password.
             logger.warning(f"Login for {user.username} was successful, but identity unlock failed: {e}")
         except Exception as e:
             logger.error(f"An unexpected error occurred during auto-unlock for {user.username}: {e}", exc_info=True)
@@ -123,12 +132,10 @@ class ClaimAccountView(views.APIView):
             return Response({"error": f"The username '{new_username}' is already in use by another account."}, status=status.HTTP_409_CONFLICT)
 
         try:
-            private_key_pem = key_file.read()
+            private_key_pem_bytes = key_file.read()
             key_password_bytes = key_file_password.encode() if key_file_password else None
-            try:
-                private_key = serialization.load_pem_private_key(private_key_pem, password=key_password_bytes)
-            except TypeError:
-                return Response({"error": "Password mismatch for private key. Provide a password if the key is encrypted, or leave it blank if not."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            private_key = serialization.load_pem_private_key(private_key_pem_bytes, password=key_password_bytes)
             
             derived_public_key = private_key.public_key()
             
@@ -140,6 +147,12 @@ class ClaimAccountView(views.APIView):
             if derived_public_key_pem != user_to_claim.pubkey.strip():
                 return Response({"error": "Private key does not match the public key on record for this user."}, status=status.HTTP_403_FORBIDDEN)
 
+            unencrypted_private_key_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption()
+            ).decode('utf-8')
+
             user_to_claim.username = new_username
             user_to_claim.nickname = nickname_to_claim 
             user_to_claim.is_active = True
@@ -147,9 +160,11 @@ class ClaimAccountView(views.APIView):
             user_to_claim.save()
 
             identity_service = IdentityService(user=user_to_claim)
-            identity_service.create_storage_from_key(new_password, private_key_pem.decode('utf-8'))
+            identity_service.create_storage_from_key(new_password, unencrypted_private_key_pem)
 
             refresh = RefreshToken.for_user(user_to_claim)
+            
+            request.session['unencrypted_priv_key'] = unencrypted_private_key_pem
             
             return Response({
                 'status': 'Account claimed successfully.',
@@ -170,8 +185,6 @@ class LogoutView(views.APIView):
         if 'unencrypted_priv_key' in request.session:
             del request.session['unencrypted_priv_key']
         return Response({"status": "session cleared"}, status=status.HTTP_200_OK)
-
-# DELETED: The old UnlockIdentityView is no longer needed.
 
 class ImportIdentityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]

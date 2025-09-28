@@ -41,11 +41,10 @@ from core.models import FileAttachment, User, TrustedInstance
 from .serializers import ModerationReportSerializer, FederatedActionProfileUpdateSerializer, ContentExtensionRequestSerializer, ModerationInquirySerializer
 from core.services.service_manager import service_manager
 from accounts.avatar_generator import generate_cow_avatar
-from core.services.encryption_utils import generate_short_id, encrypt_for_recipients_only
+from core.services.encryption_utils import generate_short_id, encrypt_for_recipients_only, generate_checksum
 
 logger = logging.getLogger(__name__)
 
-# ... (all views before ReviewReportView are unchanged) ...
 
 @method_decorator(csrf_exempt, name='dispatch')
 class SyncView(views.APIView):
@@ -250,17 +249,14 @@ class ReviewReportView(views.APIView):
         private_key = request.session.get('unencrypted_priv_key')
 
         if action == 'approve':
-            # Set the new status first for all approve actions
             report.status = 'approved'
             report.reviewed_by = moderator
             report.reviewed_at = timezone.now()
             
-            # Award karma to the reporter
             reporter = report.reporting_user
             reporter.karma = reporter.karma + 5
             reporter.save()
             
-            # MODIFIED: Save the report status change immediately
             report.save()
 
             if report.report_type == 'general_inquiry':
@@ -291,7 +287,7 @@ class ReviewReportView(views.APIView):
                 )
                 return Response({"status": "Inquiry marked as handled and acknowledgment PM sent."})
 
-            else: # This is a standard message report
+            else: 
                 message_to_delete = report.reported_message
                 if message_to_delete and message_to_delete.metadata_manifest:
                     FederatedAction.objects.create(
@@ -313,7 +309,6 @@ class ReviewReportView(views.APIView):
 
         return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
 
-# ... (rest of the file remains the same) ...
 class ReviewProfileUpdateView(views.APIView):
     permission_classes = [IsModeratorOrAdmin]
 
