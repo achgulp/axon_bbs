@@ -7,23 +7,23 @@
 // (at your option) any later version.
 //
 // This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY;
-// without even the implied warranty of
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 // See the GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with this program.
-// If not, see <https://www.gnu.org/licenses/>.
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 
 // Full path: axon_bbs/frontend/src/components/PrivateMessageClient.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
-import UnlockForm from './UnlockForm';
+// DELETED: The UnlockForm import is removed.
 
 const Header = ({ text }) => <div className="text-2xl font-bold text-gray-200 mb-4 pb-2 border-b border-gray-600">{text}</div>;
-const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
+
+// MODIFIED: The component now accepts the onIdentityLocked prop.
+const PrivateMessageClient = ({ initialRecipient = null, displayTimezone, onIdentityLocked }) => {
   const [view, setView] = useState('inbox');
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
@@ -33,8 +33,8 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
 
-  const [needsUnlock, setNeedsUnlock] = useState(false);
-  const [postUnlockAction, setPostUnlockAction] = useState(null);
+  // DELETED: State for manual unlock is no longer needed.
+
   const fetchMessages = useCallback(async () => {
     setIsLoading(true);
     setError('');
@@ -44,8 +44,8 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
       setMessages(response.data);
     } catch (err) {
       if (err.response?.data?.error === 'identity_locked') {
-        setPostUnlockAction(() => () => fetchMessages());
-        setNeedsUnlock(true);
+        // MODIFIED: Call the logout handler from App.js
+        onIdentityLocked();
       } else {
         setError('Could not fetch messages.');
         console.error(`Error fetching ${view}:`, err);
@@ -53,7 +53,7 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [view]);
+  }, [view, onIdentityLocked]);
 
   useEffect(() => {
     if (view === 'inbox' || view === 'outbox') {
@@ -80,8 +80,7 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
         setView('outbox');
     } catch(err) {
         if (err.response?.data?.error === 'identity_locked') {
-            setPostUnlockAction(() => () => handleSendMessage(e));
-            setNeedsUnlock(true);
+            onIdentityLocked();
           } else {
             setError(err.response?.data?.error || 'Could not send message.');
         }
@@ -92,7 +91,7 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
 
   const handleReply = () => {
     const original = selectedMessage;
-    setSelectedMessage(null); // <-- FIX: Reset selected message to change view
+    setSelectedMessage(null);
     setView('compose');
     setRecipientIdentifier(original.author_display);
     setSubject(`Re: ${original.decrypted_subject}`);
@@ -103,7 +102,7 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
 
   const handleForward = () => {
     const original = selectedMessage;
-    setSelectedMessage(null); // <-- FIX: Reset selected message to change view
+    setSelectedMessage(null);
     setView('compose');
     setRecipientIdentifier('');
     setSubject(`Fwd: ${original.decrypted_subject}`);
@@ -167,7 +166,7 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
     const msg = selectedMessage;
     const isInboxMessage = !!msg.author_display;
     return (
-        <div>
+     <div>
             <div className="flex justify-between items-center mb-4">
                 <button onClick={() => setSelectedMessage(null)} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
                 ← Back to {view}
@@ -219,7 +218,7 @@ const PrivateMessageClient = ({ initialRecipient = null, displayTimezone }) => {
   
   return (
     <div>
-        {needsUnlock && <UnlockForm onUnlock={() => { setNeedsUnlock(false); if (postUnlockAction) { postUnlockAction(); setPostUnlockAction(null); } }} onCancel={() => setNeedsUnlock(false)} />}
+        {/* DELETED: The UnlockForm has been removed */}
         {!selectedMessage && view !== 'compose' && (
             <div className="flex justify-between items-center mb-4">
                 <Header text={view === 'inbox' ? 'Private Mail - Inbox' : 'Private Mail - Outbox'} />
