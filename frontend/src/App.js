@@ -22,7 +22,6 @@ import LoginScreen from './components/LoginScreen';
 import RegisterScreen from './components/RegisterScreen';
 import RecoveryScreen from './components/RecoveryScreen';
 import MessageList from './components/MessageList';
-import UnlockForm from './components/UnlockForm';
 import ProfileScreen from './components/ProfileScreen';
 import AppletView from './components/AppletView';
 import HighScoreBoard from './components/HighScoreBoard';
@@ -68,8 +67,7 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [authView, setAuthView] = useState('login');
   const [selectedBoard, setSelectedBoard] = useState(null);
-  const [isIdentityUnlocked, setIdentityUnlocked] = useState(false);
-  const [needsUnlock, setNeedsUnlock] = useState(false);
+  // DELETED: State for manual unlock is no longer needed.
   const [currentView, setCurrentView] = useState('boards');
   const [pmRecipient, setPmRecipient] = useState(null);
   const [lastPlayedGame, setLastPlayedGame] = useState(null);
@@ -81,7 +79,7 @@ function App() {
       localStorage.setItem('token', newToken);
     } else {
       localStorage.removeItem('token');
-      setIdentityUnlocked(false);
+      // DELETED: No longer need to manage unlock state on logout
       setProfile(null);
     }
     setToken(newToken);
@@ -134,10 +132,7 @@ function App() {
     setCurrentView('pm');
   };
 
-  const handleUnlockSuccess = () => {
-    setIdentityUnlocked(true);
-    setNeedsUnlock(false);
-  };
+  // DELETED: handleUnlockSuccess is no longer needed.
 
   if (!token) {
     return (
@@ -150,11 +145,17 @@ function App() {
   }
 
   const renderMainContent = () => {
+    // MODIFIED: If an identity_locked error ever occurs, log the user out.
+    const onIdentityLocked = () => {
+        alert("Your session's identity key has expired or is invalid. Please log in again to create a new session.");
+        handleLogout();
+    };
+
     if (currentView === 'profile') {
       return <ProfileScreen />;
     }
     if (currentView === 'pm') {
-      return <PrivateMessageClient key={pmRecipient ? pmRecipient.pubkey : 'new'} initialRecipient={pmRecipient} displayTimezone={displayTimezone} />;
+      return <PrivateMessageClient key={pmRecipient ? pmRecipient.pubkey : 'new'} initialRecipient={pmRecipient} displayTimezone={displayTimezone} onIdentityLocked={onIdentityLocked} />;
     }
     if (currentView === 'applets') {
       return <AppletView onLaunchGame={setLastPlayedGame} />;
@@ -163,18 +164,17 @@ function App() {
       return <HighScoreBoard applet={lastPlayedGame} onBack={() => handleViewChange('applets')} displayTimezone={displayTimezone} />;
     }
     if (currentView === 'moderation') {
-      // MODIFIED: Pass the onStartPrivateMessage function to the dashboard
-      return <ModerationDashboard displayTimezone={displayTimezone} onStartPrivateMessage={handleStartPrivateMessage} />;
+      return <ModerationDashboard displayTimezone={displayTimezone} onStartPrivateMessage={handleStartPrivateMessage} onIdentityLocked={onIdentityLocked} />;
     }
     if (selectedBoard) {
-      return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} onStartPrivateMessage={handleStartPrivateMessage} displayTimezone={displayTimezone} />;
+      return <MessageList board={selectedBoard} onBack={() => setSelectedBoard(null)} onStartPrivateMessage={handleStartPrivateMessage} displayTimezone={displayTimezone} onIdentityLocked={onIdentityLocked} />;
     }
     return <MessageBoardList onSelectBoard={handleSelectBoard} />;
   };
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300 font-sans">
-      {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => setNeedsUnlock(false)} />}
+      {/* DELETED: The UnlockForm modal has been removed */}
 
       <div className="flex flex-col md:flex-row">
         <div className="w-full md:w-60 bg-gray-800 p-4 border-r border-gray-700 flex-shrink-0">
@@ -201,12 +201,7 @@ function App() {
             </div>
             <div className="p-2">
               <h3 className="font-semibold text-gray-400 mb-2">User</h3>
-              <SideBarButton
-                onClick={() => setNeedsUnlock(true)}
-                className={isIdentityUnlocked ? 'text-green-400' : 'text-yellow-400'}
-              >
-                {isIdentityUnlocked ? '✓ Identity Unlocked' : '✗ Unlock Identity'}
-              </SideBarButton>
+              {/* DELETED: The "Unlock Identity" button has been removed. */}
               <SideBarButton onClick={() => handleViewChange('profile')}>Profile</SideBarButton>
               <SideBarButton onClick={handleLogout}>Logout</SideBarButton>
             </div>

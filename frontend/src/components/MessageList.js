@@ -18,7 +18,6 @@
 // Full path: axon_bbs/frontend/src/components/MessageList.js
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../apiClient';
-import UnlockForm from './UnlockForm';
 import ReportModal from './ReportModal';
 import AppletRunner from './AppletRunner';
 
@@ -42,18 +41,17 @@ const AttachmentItem = ({ attachment, handlerApplet, onLaunch }) => {
       <span className="text-gray-200">{attachment.filename}</span>
       <span className="text-gray-400 text-sm">({Math.round(attachment.size / 1024)} KB)</span>
        <div className="flex-grow"></div>
-      <span className="text-gray-500 text-sm italic">No viewer available</span>
+       <span className="text-gray-500 text-sm italic">No viewer available</span>
     </li>
   );
 };
 
 
-const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) => {
+const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone, onIdentityLocked }) => {
   const [messages, setMessages] = useState([]);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [showPostForm, setShowPostForm] = useState(false);
-  const [needsUnlock, setNeedsUnlock] = useState(false);
-  const [postUnlockAction, setPostUnlockAction] = useState(null);
+  // DELETED: State for manual unlock is no longer needed
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
@@ -81,11 +79,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
   const findHandlerAppletFor = (mimeType) => {
       if (!mimeType) return null;
       return applets.find(applet => 
-          // --- FIX START ---
-          // Trim whitespace from each MIME type to prevent errors
-          // from user input like "video/mp4, video/webm".
           applet.handles_mime_types && applet.handles_mime_types.split(',').map(m => m.trim()).includes(mimeType)
-          // --- FIX END ---
       );
   };
   
@@ -99,13 +93,13 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
       fetchMessages();
     } catch (err) {
       if (err.response && err.response.data.error === 'identity_locked') {
-        setPostUnlockAction(() => () => handlePostMessage());
-        setNeedsUnlock(true);
+        // MODIFIED: Call the logout handler from App.js
+        onIdentityLocked();
       } else {
         setError(err.response?.data?.error || 'Could not post message.');
       }
     }
-  }, [subject, body, board.name, attachments, fetchMessages]);
+  }, [subject, body, board.name, attachments, fetchMessages, onIdentityLocked]);
 
   const handleFileUpload = async () => {
     if (!selectedFile) { setUploadError('Please select a file first.'); return; }
@@ -117,7 +111,11 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
       setAttachments(prev => [...prev, response.data]);
       setSelectedFile(null);
     } catch (err) {
-      setUploadError(err.response?.data?.error || 'File upload failed.');
+      if (err.response?.data?.error === 'identity_locked') {
+          onIdentityLocked();
+      } else {
+          setUploadError(err.response?.data?.error || 'File upload failed.');
+      }
     } finally {
       setIsUploading(false);
     }
@@ -132,13 +130,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
     setShowPostForm(true);
   };
   
-  const handleUnlockSuccess = () => {
-    setNeedsUnlock(false);
-    if (postUnlockAction) {
-      postUnlockAction();
-      setPostUnlockAction(null);
-    }
-  };
+  // DELETED: handleUnlockSuccess is no longer needed
 
   const handleReportSubmit = async (message_id, comment) => {
     try {
@@ -178,7 +170,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
         <div className="flex justify-between items-center mb-4">
              <button onClick={() => setSelectedMessage(null)} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
               ← Back to {board.name}
-            </button>
+             </button>
              <div className="flex gap-2">
                 <button onClick={handleReply} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                    Reply
@@ -221,7 +213,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
 
   return (
     <div>
-      {needsUnlock && <UnlockForm onUnlock={handleUnlockSuccess} onCancel={() => { setNeedsUnlock(false); setPostUnlockAction(null); }} />}
+      {/* DELETED: The UnlockForm has been removed */}
       <div className="flex justify-between items-center mb-4">
         <Header text={board.name} />
         <div>
@@ -247,7 +239,7 @@ const MessageList = ({ board, onBack, onStartPrivateMessage, displayTimezone }) 
               {uploadError && <p className="text-red-500 text-xs italic mt-2">{uploadError}</p>}
               {attachments.length > 0 && (
                 <div className="mt-4">
-                   <h4 className="text-sm font-bold text-gray-300">Attached:</h4>
+                  <h4 className="text-sm font-bold text-gray-300">Attached:</h4>
                   <ul className="list-disc list-inside text-gray-400">
                     {attachments.map((att) => (
                       <li key={att.id}>
