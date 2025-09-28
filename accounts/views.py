@@ -55,11 +55,40 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         try:
             user = User.objects.get(username=username)
             identity_service = IdentityService(user=user)
-            private_key = identity_service.get_unlocked_private_key(password)
+            private_key_pem = identity_service.get_unlocked_private_key(password)
             
-            if private_key:
-                request.session['unencrypted_priv_key'] = private_key
-                logger.info(f"Identity automatically unlocked for user {user.username} upon login.")
+            # --- MODIFICATION START ---
+            if private_key_pem:
+                try:
+                    # Test if the key can be loaded without a password.
+                    serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+                    # If this succeeds, the key is unencrypted and fine to store.
+                    request.session['unencrypted_priv_key'] = private_key_pem
+                    logger.info(f"Identity automatically unlocked for user {user.username} upon login.")
+                except TypeError:
+                    # This TypeError indicates the key is encrypted.
+                    logger.warning(f"User {user.username}'s stored private key is encrypted. Attempting to decrypt with login password...")
+                    try:
+                        # Try to load it WITH the password.
+                        private_key_obj = serialization.load_pem_private_key(
+                            private_key_pem.encode(),
+                            password=password.encode()
+                        )
+                        # If successful, get the UNENCRYPTED PEM bytes to store in the session.
+                        unencrypted_pem = private_key_obj.private_bytes(
+                            encoding=serialization.Encoding.PEM,
+                            format=serialization.PrivateFormat.TraditionalOpenSSL,
+                            encryption_algorithm=serialization.NoEncryption()
+                        ).decode('utf-8')
+                        
+                        # Store the now-unencrypted key in the session.
+                        request.session['unencrypted_priv_key'] = unencrypted_pem
+                        logger.info(f"Successfully decrypted and unlocked on-disk identity for user {user.username}.")
+                    except (ValueError, TypeError, UnsupportedAlgorithm):
+                        logger.error(f"FATAL: Could not decrypt stored private key for {user.username} even with login password. PMs will fail to decrypt.")
+                        # Do not store the bad key in the session.
+                        pass
+            # --- MODIFICATION END ---
             else:
                 logger.warning(f"Login for {user.username} was successful, but identity could not be unlocked (no key found).")
 
@@ -95,7 +124,7 @@ class RegisterView(generics.CreateAPIView):
         conflicting_user_by_username = User.objects.filter(username__iexact=username).first()
         if conflicting_user_by_username:
              if not conflicting_user_by_username.is_active:
-                 return Response(
+                return Response(
                     {"error": "username_exists_as_federated", "detail": f"The username '{username}' is reserved. Try claiming by nickname."},
                     status=status.HTTP_409_CONFLICT
                 )
