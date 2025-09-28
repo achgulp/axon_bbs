@@ -29,7 +29,6 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write("--- Starting Frontend Rebuild Process ---")
         
-        # Define the path to the frontend directory
         frontend_dir = os.path.join(settings.BASE_DIR, 'frontend')
 
         if not os.path.isdir(frontend_dir):
@@ -39,8 +38,6 @@ class Command(BaseCommand):
         # --- Step 1: Install npm dependencies ---
         self.stdout.write(self.style.NOTICE(f"Running 'npm install' in {frontend_dir}..."))
         try:
-            # Using shell=True on Windows might be necessary if npm is not in the system path.
-            # On Linux/macOS, it's generally safer to use shell=False if possible.
             install_process = subprocess.run(
                 ['npm', 'install'],
                 cwd=frontend_dir,
@@ -71,5 +68,9 @@ class Command(BaseCommand):
             self.stdout.write("Static files have been generated in the 'frontend/build' directory.")
         except subprocess.CalledProcessError as e:
             self.stderr.write(self.style.ERROR(f"'npm run build' failed with return code {e.returncode}."))
+            # MODIFIED: Print the full stdout and stderr from the failed process
+            self.stderr.write("\n--- NPM BUILD OUTPUT (stdout) ---\n")
+            self.stderr.write(e.stdout)
+            self.stderr.write("\n--- NPM BUILD OUTPUT (stderr) ---\n")
             self.stderr.write(e.stderr)
             return
