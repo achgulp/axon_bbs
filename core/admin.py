@@ -31,7 +31,7 @@ import base64
 import json
 import requests
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa, padding as rsa_padding
 from cryptography.hazmat.primitives import hashes, serialization
@@ -40,6 +40,7 @@ from django.utils.html import format_html
 from django.core.management import call_command
 from django.core import serializers
 from django.db import transaction, IntegrityError
+from django.utils import timezone # <-- MODIFICATION: Import Django's timezone utility
 from accounts.avatar_generator import generate_cow_avatar
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
@@ -250,22 +251,20 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             return None, None
 
     def _get_auth_headers(self, local_instance, private_key):
-        timestamp = datetime.now(timezone.utc).isoformat()
-        hasher = hashlib.sha256(timestamp.encode('utf-8'))
+        timestamp = datetime.now(timezone.utc)
+        hasher = hashlib.sha256(timestamp.isoformat().encode('utf-8'))
         digest = hasher.digest()
         signature = private_key.sign(
             digest, rsa_padding.PSS(mgf=rsa_padding.MGF1(hashes.SHA256()), salt_length=rsa_padding.PSS.MAX_LENGTH), hashes.SHA256()
         )
         return {
             'X-Pubkey': base64.b64encode(local_instance.pubkey.encode('utf-8')).decode('utf-8'),
-            'X-Timestamp': timestamp,
+            'X-Timestamp': timestamp.isoformat(),
             'X-Signature': base64.b64encode(signature).decode('utf-8')
         }
 
-    # --- MODIFICATION START ---
-    # The clone logic is completely rewritten for efficiency and safety.
     @admin.action(description='Clone configuration from selected peer')
-    @transaction.atomic # This is now safe because the operation is fast.
+    @transaction.atomic
     def clone_config_from_peer(self, request, queryset):
         if queryset.count() != 1:
             self.message_user(request, "Please select exactly one peer to clone from.", level='ERROR')
@@ -286,16 +285,13 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
 
         self.message_user(request, f"Attempting to clone configuration from {peer.web_ui_onion_url}...")
         try:
-            # 1. Fetch data from peer
             auth_headers = self._get_auth_headers(local_instance, private_key)
             response = requests.get(target_url, headers=auth_headers, proxies=proxies, timeout=120)
             response.raise_for_status()
             data = response.text
 
-            # 2. Group all received objects by their model type
             objects_by_model = {}
             for obj in serializers.deserialize("json", data):
-                # Skip importing any superusers or TrustedInstances
                 if obj.object._meta.model_name == 'trustedinstance' or (hasattr(obj.object, 'is_superuser') and obj.object.is_superuser):
                     continue
                 
@@ -304,9 +300,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                     objects_by_model[model_class] = []
                 objects_by_model[model_class].append(obj.object)
 
-            # 3. Process each model type in bulk for efficiency
             total_imported = 0
-            # Define the order to prevent foreign key constraint errors
             model_order = [User, MessageBoard, AppletCategory, Applet, ValidFileType]
 
             for model_class in model_order:
@@ -314,7 +308,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                     continue
 
                 incoming_objects = objects_by_model[model_class]
-                # Use a unique field for matching. 'name' is common for config models, 'username' for User.
                 unique_field = 'username' if model_class == User else 'name'
                 
                 existing_pks = {getattr(o, unique_field) for o in model_class.objects.all()}
@@ -322,7 +315,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                 to_create = []
                 for obj in incoming_objects:
                     if getattr(obj, unique_field) not in existing_pks:
-                        # Clear avatar for imported users so a new one can be generated
                         if model_class == User:
                             obj.avatar = None
                         to_create.append(obj)
@@ -341,7 +333,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             self.message_user(request, f"Network error cloning from peer: {e}", level='ERROR')
         except Exception as e:
             self.message_user(request, f"An error occurred during cloning: {e}", level='ERROR')
-    # --- MODIFICATION END ---
 
 
     @admin.action(description='Run Full UAT Suite against selected peer(s)')
@@ -438,7 +429,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
 
         self.message_user(request, f"Step 1/3: Forcing a public key refresh from {peer.web_ui_onion_url}...")
         
-        # Step 1: Fetch the public key (logic from fetch_peer_key)
         target_url = f"{peer.web_ui_onion_url.strip('/')}/api/identity/public_key/"
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
         try:
@@ -457,7 +447,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             self.message_user(request, f"Step 1/3 FAILED: Could not fetch key. Aborting. Error: {e}", level='ERROR')
             return
 
-        # Step 2: Re-key all content (logic adapted from rekey_content_action)
         self.message_user(request, "Step 2/3: Re-keying all local content manifests for the updated peer list...")
         all_content_models = [FileAttachment, Message, PrivateMessage, Applet, AppletData]
         rekeyed_count = 0
@@ -474,16 +463,18 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                     
                     new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
                     setattr(item, metadata_manifest_field, new_manifest)
-                    # Touch the modified_at field if it exists
+                    
                     if hasattr(item, 'modified_at'):
+                        # --- MODIFICATION START ---
+                        # Use Django's timezone.now() utility to get the correct current time
                         item.modified_at = timezone.now()
+                        # --- MODIFICATION END ---
                     items_to_update.append(item)
                     rekeyed_count += 1
                 except Exception as e:
                     item_name = getattr(item, 'subject', getattr(item, 'filename', str(item.id)))
                     self.message_user(request, f"Warning: Could not re-key '{item_name}': {e}", level='WARNING')
             
-            # Bulk update the changes for the current model
             if items_to_update:
                 update_fields = [metadata_manifest_field]
                 if hasattr(model(), 'modified_at'):
@@ -492,7 +483,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
 
         self.message_user(request, f"Step 2/3: Successfully re-keyed {rekeyed_count} content item(s).", level='SUCCESS')
 
-        # Step 3: Reset sync timestamp
         self.message_user(request, "Step 3/3: Resetting sync timestamp to trigger a full sync.")
         peer.last_synced_at = None
         peer.save()
