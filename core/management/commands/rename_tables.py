@@ -1,7 +1,7 @@
 # Full path: axon_bbs/core/management/commands/rename_tables.py
 from django.core.management.base import BaseCommand
 from django.db import connection
-import sqlite3
+from django.db.utils import OperationalError
 
 class Command(BaseCommand):
     help = "Safely renames database tables after the model refactoring, skipping any that are missing."
@@ -30,7 +30,7 @@ class Command(BaseCommand):
                 try:
                     cursor.execute(f"ALTER TABLE {old_name} RENAME TO {new_name};")
                     self.stdout.write(self.style.SUCCESS(f"Successfully renamed '{old_name}' to '{new_name}'."))
-                except sqlite3.OperationalError as e:
+                except OperationalError as e:
                     if "no such table" in str(e):
                         self.stdout.write(self.style.WARNING(f"Skipping '{old_name}': Table does not exist (may already be renamed)."))
                     else:
