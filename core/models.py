@@ -75,7 +75,7 @@ class Content(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='authored_%(class)ss', null=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    modified_at = models.DateTimeField(auto_now=True) # <-- ADD THIS LINE
+    modified_at = models.DateTimeField(auto_now=True)
     expires_at = models.DateTimeField(default=get_default_expires_at, null=True)
     is_pinned = models.BooleanField(default=False)
     pinned_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='pinned_%(class)ss')
