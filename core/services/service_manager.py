@@ -58,28 +58,35 @@ class ServiceManager:
         logger.info("All services initialized.")
 
     def _load_and_start_agent(self, agent_user):
-        """Helper function to load and start a single agent service."""
+        """
+        Dynamically loads and starts an agent service based on the path
+        defined in the user's agent_service_path field.
+        """
         try:
             username = agent_user.username
-            
-            if username == 'overlord_agent':
-                module_name = 'applets.overlord_agent_service'
-            elif username == 'moderator_agent':
-                module_name = 'federation.moderator_agent_service'
-            elif username == 'uat_verifier_agent':
-                module_name = 'federation.uat_verifier_agent_service'
-            else:
-                logger.error(f"Unknown agent type for user '{username}'. No service path defined.")
+            service_path = agent_user.agent_service_path
+
+            if not service_path:
+                logger.error(f"Cannot start agent for user '{username}': 'Agent Service Path' is not set in admin.")
                 return False
 
-            class_name = ''.join(word.capitalize() for word in username.split('_')) + 'Service'
-            
-            logger.info(f"Attempting to start agent: {class_name} from {module_name}")
+            try:
+                # Split the full path into module and class name
+                # e.g., 'applets.chat_agent_service.ChatAgentService' ->
+                # ('applets.chat_agent_service', 'ChatAgentService')
+                module_name, class_name = service_path.rsplit('.', 1)
+            except ValueError:
+                logger.error(f"Invalid service path for agent '{username}': '{service_path}'. Path must be in the format 'app.module.ClassName'.")
+                return False
+
+            logger.info(f"Attempting to start agent: {class_name} from {module_name} for user '{username}'")
             
             agent_module = importlib.import_module(module_name)
             AgentClass = getattr(agent_module, class_name)
             
-            agent_instance = AgentClass()
+            # Pass the agent's parameters to its constructor
+            agent_instance = AgentClass(**agent_user.agent_parameters)
+            
             agent_instance.start()
             self.game_agents[username] = agent_instance
             
@@ -87,7 +94,7 @@ class ServiceManager:
             return True
 
         except (ImportError, AttributeError):
-            logger.error(f"Failed to start agent for user '{agent_user.username}'. Could not find matching service module or class.")
+            logger.error(f"Failed to start agent for user '{agent_user.username}'. Could not find module '{module_name}' or class '{class_name}'.")
         except Exception as e:
             logger.error(f"An unexpected error occurred while starting agent for '{agent_user.username}': {e}", exc_info=True)
         return False

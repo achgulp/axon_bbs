@@ -19,6 +19,7 @@
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 from django.http import Http404, JsonResponse
+from django.shortcuts import get_object_or_404
 import json
 import logging
 
@@ -175,3 +176,30 @@ class AppletStateVersionView(views.APIView):
             return JsonResponse({"version": shared_state.version})
         except AppletSharedState.DoesNotExist:
             raise Http404
+
+class UpdateStateView(views.APIView):
+    """
+    Handles high-speed state update requests from applets, passing them
+    directly to a corresponding backend agent for processing.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, applet_id, *args, **kwargs):
+        applet = get_object_or_404(Applet, id=applet_id)
+        user = request.user
+        action = request.data
+        
+        # This assumes the agent is named 'chat_agent'.
+        # This can be made more dynamic later if needed.
+        agent_instance = service_manager.game_agents.get('chat_agent')
+        
+        if not agent_instance:
+            logger.error(f"UpdateStateView called for applet '{applet.name}', but 'chat_agent' service is not running.")
+            return Response({"error": "The backend service for this applet is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            
+        try:
+            response_data = agent_instance.handle_action(applet, user, action)
+            return Response(response_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error in ChatAgentService while handling action for applet '{applet.name}': {e}", exc_info=True)
+            return Response({"error": "An internal error occurred while processing the action."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -1,3 +1,20 @@
+# Axon BBS - A modern, anonymous, federated bulletin board system.
+# Copyright (C) 2025 Achduke7
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
 # Full path: axon_bbs/core/models.py
 from django.db import models
 from django.contrib.auth.models import AbstractUser
@@ -21,6 +38,8 @@ class User(AbstractUser):
     nickname = models.CharField(max_length=50, unique=True, blank=True, null=True, help_text="User's chosen nickname.")
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     is_agent = models.BooleanField(default=False, help_text="Designates this user as an automated agent.")
+    agent_service_path = models.CharField(max_length=255, blank=True, null=True, help_text="Full Python path to the agent service class (e.g., applets.chat_agent_service.ChatAgentService)")
+    agent_parameters = models.JSONField(default=dict, blank=True, help_text="JSON object for agent-specific parameters (e.g., poll intervals).")
     is_moderator = models.BooleanField(default=False, help_text="Grants moderator permissions.")
     karma = models.IntegerField(default=10, help_text="User's reputation score.")
     last_moderated_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp of the last moderation action on this user.")

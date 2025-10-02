@@ -27,10 +27,9 @@ from django.conf.urls.static import static
 from django.views.generic import TemplateView
 from django.views.static import serve
 
-# MODIFIED: Import our new custom view and the standard refresh view
 from rest_framework_simplejwt.views import TokenRefreshView
 from accounts.views import (
-    CustomTokenObtainPairView, # <-- Our new view
+    CustomTokenObtainPairView, 
     RegisterView, LogoutView, ImportIdentityView,
     ExportIdentityView, UpdateNicknameView, UserProfileView, UploadAvatarView,
     GetPublicKeyView, GetSecurityQuestionsView, SubmitRecoveryView, ClaimAccountView,
@@ -49,7 +48,7 @@ from federation.views import (
 )
 from applets.views import (
     AppletListView, GetSaveAppletDataView, HighScoreListView, PostAppletEventView,
-    ReadAppletEventsView, AppletSharedStateView, AppletStateVersionView
+    ReadAppletEventsView, AppletSharedStateView, AppletStateVersionView, UpdateStateView
 )
 
 
@@ -64,18 +63,17 @@ class NoCacheTemplateView(TemplateView):
 api_urlpatterns = [
     # Auth & Config
     path('register/', RegisterView.as_view(), name='register'),
-    # MODIFIED: Use our new custom view for the token endpoint
     path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path('config/timezone/', GetDisplayTimezoneView.as_view(), name='get-timezone'),
     
     # Identity & User Profile
-    # DELETED: The old unlock-identity path is removed
     path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
     path('identity/export/', ExportIdentityView.as_view(), name='export-identity'),
     path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
     path('identity/claim/', ClaimAccountView.as_view(), name='claim-identity'),
+    
     path('user/profile/', UserProfileView.as_view(), name='user-profile'),
     path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
     path('user/avatar/', UploadAvatarView.as_view(), name='user-avatar'),
@@ -121,6 +119,7 @@ api_urlpatterns = [
     path('applets/<uuid:applet_id>/read_events/', ReadAppletEventsView.as_view(), name='applet-read-events'),
     path('applets/<uuid:applet_id>/shared_state/', AppletSharedStateView.as_view(), name='applet-shared-state'),
     path('applets/<uuid:applet_id>/state_version/', AppletStateVersionView.as_view(), name='applet-state-version'),
+    path('applets/<uuid:applet_id>/update_state/', UpdateStateView.as_view(), name='applet-update-state'),
 
     # BitSync P2P Protocol
     path('sync/', SyncView.as_view(), name='sync'),

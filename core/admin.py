@@ -76,7 +76,7 @@ rekey_content_action.short_description = "Re-key content for all trusted peers"
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ('username', 'email', 'access_level', 'is_moderator', 'karma', 'is_staff', 'is_banned', 'is_agent', 'pubkey_checksum')
+    list_display = ('username', 'is_agent', 'agent_service_path', 'is_moderator', 'karma', 'is_staff', 'is_banned')
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'is_banned', 'is_agent', 'is_moderator')
     readonly_fields = BaseUserAdmin.readonly_fields + ('pubkey_checksum', 'last_moderated_at', 'avatar_preview', 'avatar_path')
     
@@ -87,7 +87,8 @@ class UserAdmin(BaseUserAdmin):
         fieldsets = [
             (None, {"fields": ("username", "password")}),
             ("Personal info", {"fields": ("nickname", "first_name", "last_name", "email")}),
-            ("Permissions & Roles", {"fields": ("is_active", "is_staff", "is_superuser", "is_moderator", "is_agent", "is_banned")}),
+            ("Permissions & Roles", {"fields": ("is_active", "is_staff", "is_superuser", "is_moderator", "is_banned")}),
+            ("Agent Configuration", {"fields": ("is_agent", "agent_service_path", "agent_parameters")}),
             ("BBS Stats", {"fields": ("access_level", "karma", "last_moderated_at")}),
             ("Important dates", {"fields": ("last_login", "date_joined")}),
         ]
@@ -301,7 +302,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             peer_url = instance.web_ui_onion_url.strip('/')
             target_url = f"{peer_url}/api/identity/public_key/"
             proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
-        
+            
             try:
                 self.message_user(request, f"Fetching key from {peer_url}...", level='INFO')
                 response = requests.get(target_url, proxies=proxies, timeout=120)
