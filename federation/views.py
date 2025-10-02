@@ -34,6 +34,7 @@ import uuid
 from io import StringIO
 from django.core import serializers
 from django.core.management import call_command
+from rest_framework.permissions import IsAdminUser
 
 from .permissions import TrustedPeerPermission, IsModeratorOrAdmin
 from .models import FederatedAction, ModerationReport, ContentExtensionRequest
@@ -464,7 +465,7 @@ class ExportConfigView(views.APIView):
             call_command(
                 'dumpdata',
                 'core.User', 'applets.Applet', 'applets.AppletCategory', 
-                'messaging.MessageBoard', 'core.TrustedInstance', 'core.ValidFileType',
+                'messaging.MessageBoard', 'core.ValidFileType',
                 stdout=output,
                 exclude=['contenttypes', 'auth.permission']
             )

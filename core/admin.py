@@ -246,7 +246,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             decrypted_pem = f.decrypt(local_instance.encrypted_private_key.encode())
             private_key = serialization.load_pem_private_key(decrypted_pem, password=None)
             return local_instance, private_key
-        except Exception as e:
+        except Exception:
             return None, None
 
     def _get_auth_headers(self, local_instance, private_key):
@@ -289,23 +289,39 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             response.raise_for_status()
             data = response.text
 
-            current_superuser = request.user
+            current_admin = request.user
             imported_count = 0
             
             for obj in serializers.deserialize("json", data):
-                if obj.object._meta.model_name == 'user' and obj.object.is_superuser:
-                    continue
+                model_name = obj.object._meta.model_name
                 
+                # Skip importing the admin who is running the action
+                if model_name == 'user' and obj.object.username == current_admin.username:
+                    continue
+
+                # Skip all TrustedInstance objects
+                if model_name == 'trustedinstance':
+                    continue
+
                 try:
+                    # Clear the primary key to ensure a new object is created
                     if hasattr(obj.object, 'pk'):
                         obj.object.pk = None
                     
+                    # Clear the avatar field for users, it will be regenerated
+                    if model_name == 'user' and hasattr(obj.object, 'avatar'):
+                        obj.object.avatar = None
+
                     with transaction.atomic():
                         obj.save()
                     imported_count += 1
                 except IntegrityError:
                     self.message_user(request, f"Skipping duplicate object: {obj.object}", level='WARNING')
                     continue
+            
+            # After importing, run the backfill command to generate default avatars
+            self.message_user(request, "Cloning complete. Generating default avatars for new users...")
+            call_command('backfill_avatars')
 
             self.message_user(request, f"Successfully cloned configuration. Imported {imported_count} objects.", level='SUCCESS')
 
