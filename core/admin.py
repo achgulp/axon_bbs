@@ -176,8 +176,7 @@ class MessageBoardAdmin(admin.ModelAdmin):
 
 @admin.register(Message)
 class MessageAdmin(admin.ModelAdmin):
-    list_display = ('subject', 'author', 'board', 'agent_status', 
- 'created_at', 'expires_at', 'is_pinned')
+    list_display = ('subject', 'author', 'board', 'agent_status', 'created_at', 'expires_at', 'is_pinned')
     list_filter = ('board', 'author', 'is_pinned', 'agent_status')
     date_hierarchy = 'created_at'
     actions = [rekey_content_action]
@@ -210,8 +209,7 @@ class BannedPubkeyAdmin(admin.ModelAdmin):
 
 @admin.register(ContentExtensionRequest)
 class ContentExtensionRequestAdmin(admin.ModelAdmin):
-    list_display = ('content_id', 'content_type', 'user', 
- 'request_date', 'status', 'reviewed_by')
+    list_display = ('content_id', 'content_type', 'user', 'request_date', 'status', 'reviewed_by')
     list_filter = ('status', 'content_type')
 
 @admin.register(ValidFileType)
@@ -429,7 +427,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
     
     # --- NEW ACTION START ---
     @admin.action(description='Force Refresh and Re-key Peer')
-    @transaction.atomic
     def force_refresh_and_rekey(self, request, queryset):
         if queryset.count() != 1:
             self.message_user(request, "Please select exactly one peer for this action.", level='ERROR')
@@ -542,8 +539,7 @@ class AppletAdmin(admin.ModelAdmin):
     list_display = ('name', 'category', 'event_board', 'is_local', 'created_at', 'code_checksum')
     list_filter = ('category', 'is_local')
     search_fields = ('name', 'description')
-    readonly_fields = ('id', 'created_at', 
- 'code_manifest', 'code_checksum')
+    readonly_fields = ('id', 'created_at', 'code_manifest', 'code_checksum')
     fieldsets = (
         (None, {
             'fields': ('name', 'description', 'category', 'event_board', 'author', 'author_pubkey', ('is_local', 'is_debug_mode'), 'handles_mime_types')
