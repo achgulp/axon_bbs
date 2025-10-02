@@ -100,27 +100,31 @@ class BitSyncService:
         if not original_aes_key:
             raise ValueError("Failed to obtain original AES key from manifest.")
 
-        all_peers = TrustedInstance.objects.filter(is_trusted_peer=True)
-        existing_checksums = manifest['encrypted_aes_keys'].keys()
+        # Get all instances that should have access (all peers + local)
+        all_instances = TrustedInstance.objects.filter(Q(is_trusted_peer=True) | Q(encrypted_private_key__isnull=False))
         
-        updated = False
-        for peer in all_peers:
-            peer_checksum = generate_checksum(peer.pubkey)
-            if peer_checksum not in existing_checksums:
-                try:
-                    logger.info(f"Adding new envelope for peer: {peer.web_ui_onion_url}")
-                    peer_pubkey_obj = serialization.load_pem_public_key(peer.pubkey.encode())
-                    encrypted_key = peer_pubkey_obj.encrypt(
-                        original_aes_key,
-                        rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
-                    )
-                    manifest['encrypted_aes_keys'][peer_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
-                    updated = True
-                except Exception as e:
-                    logger.error(f"Failed to create new envelope for peer {peer.web_ui_onion_url}: {e}")
+        new_encrypted_aes_keys = {}
+        updated_count = 0
+
+        for instance in all_instances:
+            if not instance.pubkey:
+                continue
+
+            instance_checksum = generate_checksum(instance.pubkey)
+            try:
+                pubkey_obj = serialization.load_pem_public_key(instance.pubkey.encode())
+                encrypted_key = pubkey_obj.encrypt(
+                    original_aes_key,
+                    rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+                )
+                new_encrypted_aes_keys[instance_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
+                updated_count += 1
+            except Exception as e:
+                logger.error(f"Failed to create new envelope for instance {instance.web_ui_onion_url or 'Local'}: {e}")
         
-        if not updated:
-            logger.info("No new peers found to add to the manifest.")
+        # Replace the old dictionary with the newly generated one
+        manifest['encrypted_aes_keys'] = new_encrypted_aes_keys
+        logger.info(f"Manifest re-keyed for {updated_count} total instance(s).")
         
         return manifest
 
