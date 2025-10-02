@@ -44,7 +44,7 @@ from federation.views import (
     SyncView, BitSyncHasContentView, BitSyncChunkView, IgnorePubkeyView, BanPubkeyView,
     ReportMessageView, ReviewReportView, RequestContentExtensionView,
     ReviewContentExtensionView, UnpinContentView, ReviewProfileUpdateView,
-    UnifiedQueueView, ContactModeratorsView
+    UnifiedQueueView, ContactModeratorsView, ExportConfigView
 )
 from applets.views import (
     AppletListView, GetSaveAppletDataView, HighScoreListView, PostAppletEventView,
@@ -125,6 +125,9 @@ api_urlpatterns = [
     path('sync/', SyncView.as_view(), name='sync'),
     path('bitsync/has_content/<str:content_hash>/', BitSyncHasContentView.as_view(), name='bitsync-has-content'),
     path('bitsync/chunk/<str:content_hash>/<int:chunk_index>/', BitSyncChunkView.as_view(), name='bitsync-chunk'),
+
+    # Federation Admin
+    path('federation/export_config/', ExportConfigView.as_view(), name='federation-export-config'),
 ]
 
 

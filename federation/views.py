@@ -13,8 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-#
-#
+
+
 # Full path: axon_bbs/federation/views.py
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
@@ -31,6 +31,10 @@ import base64
 from django.conf import settings
 from django.db import IntegrityError
 import uuid
+from io import StringIO
+from django.core import serializers
+from django.core.management import call_command
+from rest_framework.permissions import IsAdminUser
 
 from .permissions import TrustedPeerPermission, IsModeratorOrAdmin
 from .models import FederatedAction, ModerationReport, ContentExtensionRequest
@@ -451,3 +455,21 @@ class UnpinContentView(views.APIView):
         content_obj.pinned_by = None
         content_obj.save()
         return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)
+
+class ExportConfigView(views.APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            output = StringIO()
+            call_command(
+                'dumpdata',
+                'core.User', 'applets.Applet', 'applets.AppletCategory', 
+                'messaging.MessageBoard', 'core.TrustedInstance', 'core.ValidFileType',
+                stdout=output,
+                exclude=['contenttypes', 'auth.permission']
+            )
+            return HttpResponse(output.getvalue(), content_type='application/json')
+        except Exception as e:
+            logger.error(f"Failed to export configuration: {e}")
+            return Response({"error": "Failed to generate configuration export."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
