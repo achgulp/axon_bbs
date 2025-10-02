@@ -36,6 +36,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from django.conf import settings
 from django.utils.html import format_html
 from django.core.management import call_command
+from django.core import serializers
+from django.db import transaction, IntegrityError
 from accounts.avatar_generator import generate_cow_avatar
 from .services.encryption_utils import generate_checksum
 from .services.service_manager import service_manager
@@ -192,20 +194,10 @@ class FileAttachmentAdmin(admin.ModelAdmin):
     readonly_fields = ('id', 'created_at', 'expires_at', 'pinned_by')
     actions = [rekey_content_action]
 
-    # NEW: Override the default delete behavior
     def delete_queryset(self, request, queryset):
-        """
-        Manually clears the ManyToMany relationship from Messages before
-        deleting the FileAttachments to prevent an IntegrityError.
-        """
         for attachment in queryset:
-            # The related_name on Message.attachments is 'messages', which gives us
-            # the reverse relationship from the attachment back to the message.
             for msg in attachment.messages.all():
                 msg.attachments.remove(attachment)
-        
-        # Now that the links are severed, call the original method
-        # to safely delete the FileAttachment objects.
         super().delete_queryset(request, queryset)
 
 @admin.register(BannedPubkey)
@@ -242,7 +234,58 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             'fields': ('added_at', 'last_synced_at')
         }),
     )
-    actions = ['generate_keys', 'fetch_peer_key', 'reset_sync_timestamp', 'run_full_uat_suite']
+    actions = ['generate_keys', 'fetch_peer_key', 'reset_sync_timestamp', 'run_full_uat_suite', 'clone_config_from_peer']
+
+    @admin.action(description='Clone configuration from selected peer')
+    @transaction.atomic
+    def clone_config_from_peer(self, request, queryset):
+        if queryset.count() != 1:
+            self.message_user(request, "Please select exactly one peer to clone from.", level='ERROR')
+            return
+        
+        peer = queryset.first()
+        if not peer.web_ui_onion_url or not peer.is_trusted_peer:
+            self.message_user(request, "Can only clone from a trusted peer with a valid onion URL.", level='ERROR')
+            return
+
+        target_url = f"{peer.web_ui_onion_url.strip('/')}/api/federation/export_config/"
+        proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+
+        self.message_user(request, f"Attempting to clone configuration from {peer.web_ui_onion_url}...")
+        try:
+            if not request.user.is_superuser:
+                self.message_user(request, "This action can only be performed by a superuser.", level='ERROR')
+                return
+
+            response = requests.get(target_url, proxies=proxies, timeout=120)
+            response.raise_for_status()
+            data = response.text
+
+            admin_username = request.user.username
+            imported_count = 0
+            
+            for obj in serializers.deserialize("json", data):
+                if obj.object._meta.model_name == 'user' and (obj.object.username == admin_username or obj.object.is_superuser):
+                    continue
+                
+                try:
+                    if hasattr(obj.object, 'pk'):
+                        obj.object.pk = None
+                    
+                    with transaction.atomic():
+                        obj.save()
+                    imported_count += 1
+                except IntegrityError:
+                    self.message_user(request, f"Skipping duplicate object: {obj.object}", level='WARNING')
+                    continue
+
+            self.message_user(request, f"Successfully cloned configuration. Imported {imported_count} objects.", level='SUCCESS')
+
+        except requests.exceptions.RequestException as e:
+            self.message_user(request, f"Network error cloning from peer: {e}", level='ERROR')
+        except Exception as e:
+            self.message_user(request, f"An error occurred during cloning: {e}", level='ERROR')
+
 
     @admin.action(description='Run Full UAT Suite against selected peer(s)')
     def run_full_uat_suite(self, request, queryset):
