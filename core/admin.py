@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-#
+
 
 # Full path: axon_bbs/core/admin.py
 from django.contrib import admin
@@ -312,8 +312,20 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                     if model_name == 'user' and hasattr(obj.object, 'avatar'):
                         obj.object.avatar = None
 
-                    with transaction.atomic():
-                        obj.save()
+                    # Use update_or_create for models with unique constraints like User
+                    if model_name == 'user':
+                        User.objects.update_or_create(username=obj.object.username, defaults={
+                            'password': obj.object.password,
+                            'is_superuser': obj.object.is_superuser,
+                            'is_staff': obj.object.is_staff,
+                            'is_moderator': obj.object.is_moderator,
+                            'nickname': obj.object.nickname,
+                            'pubkey': obj.object.pubkey,
+                            'timezone': obj.object.timezone,
+                        })
+                    else:
+                        with transaction.atomic():
+                            obj.save()
                     imported_count += 1
                 except IntegrityError:
                     self.message_user(request, f"Skipping duplicate object: {obj.object}", level='WARNING')
