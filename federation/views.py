@@ -34,7 +34,6 @@ import uuid
 from io import StringIO
 from django.core import serializers
 from django.core.management import call_command
-from rest_framework.permissions import IsAdminUser
 
 from .permissions import TrustedPeerPermission, IsModeratorOrAdmin
 from .models import FederatedAction, ModerationReport, ContentExtensionRequest
@@ -457,7 +456,7 @@ class UnpinContentView(views.APIView):
         return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)
 
 class ExportConfigView(views.APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [TrustedPeerPermission]
 
     def get(self, request, *args, **kwargs):
         try:

@@ -30,8 +30,10 @@ from django.urls import path, reverse
 import base64
 import json
 import requests
+import hashlib
+from datetime import datetime, timezone
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import rsa, padding as rsa_padding
 from cryptography.hazmat.primitives import hashes, serialization
 from django.conf import settings
 from django.utils.html import format_html
@@ -236,6 +238,30 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
     )
     actions = ['generate_keys', 'fetch_peer_key', 'reset_sync_timestamp', 'run_full_uat_suite', 'clone_config_from_peer']
 
+    def _get_local_identity(self):
+        try:
+            local_instance = TrustedInstance.objects.get(is_trusted_peer=False)
+            key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
+            f = Fernet(key)
+            decrypted_pem = f.decrypt(local_instance.encrypted_private_key.encode())
+            private_key = serialization.load_pem_private_key(decrypted_pem, password=None)
+            return local_instance, private_key
+        except Exception as e:
+            return None, None
+
+    def _get_auth_headers(self, local_instance, private_key):
+        timestamp = datetime.now(timezone.utc).isoformat()
+        hasher = hashlib.sha256(timestamp.encode('utf-8'))
+        digest = hasher.digest()
+        signature = private_key.sign(
+            digest, rsa_padding.PSS(mgf=rsa_padding.MGF1(hashes.SHA256()), salt_length=rsa_padding.PSS.MAX_LENGTH), hashes.SHA256()
+        )
+        return {
+            'X-Pubkey': base64.b64encode(local_instance.pubkey.encode('utf-8')).decode('utf-8'),
+            'X-Timestamp': timestamp,
+            'X-Signature': base64.b64encode(signature).decode('utf-8')
+        }
+
     @admin.action(description='Clone configuration from selected peer')
     @transaction.atomic
     def clone_config_from_peer(self, request, queryset):
@@ -248,24 +274,26 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             self.message_user(request, "Can only clone from a trusted peer with a valid onion URL.", level='ERROR')
             return
 
+        local_instance, private_key = self._get_local_identity()
+        if not local_instance or not private_key:
+            self.message_user(request, "Could not load local instance identity to authenticate request.", level='ERROR')
+            return
+
         target_url = f"{peer.web_ui_onion_url.strip('/')}/api/federation/export_config/"
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
 
         self.message_user(request, f"Attempting to clone configuration from {peer.web_ui_onion_url}...")
         try:
-            if not request.user.is_superuser:
-                self.message_user(request, "This action can only be performed by a superuser.", level='ERROR')
-                return
-
-            response = requests.get(target_url, proxies=proxies, timeout=120)
+            auth_headers = self._get_auth_headers(local_instance, private_key)
+            response = requests.get(target_url, headers=auth_headers, proxies=proxies, timeout=120)
             response.raise_for_status()
             data = response.text
 
-            admin_username = request.user.username
+            current_superuser = request.user
             imported_count = 0
             
             for obj in serializers.deserialize("json", data):
-                if obj.object._meta.model_name == 'user' and (obj.object.username == admin_username or obj.object.is_superuser):
+                if obj.object._meta.model_name == 'user' and obj.object.is_superuser:
                     continue
                 
                 try:
