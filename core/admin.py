@@ -295,43 +295,43 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             for obj in serializers.deserialize("json", data):
                 model_name = obj.object._meta.model_name
                 
-                # Skip importing the admin who is running the action
-                if model_name == 'user' and obj.object.username == current_admin.username:
-                    continue
-
                 # Skip all TrustedInstance objects
                 if model_name == 'trustedinstance':
                     continue
 
                 try:
-                    # Clear the primary key to ensure a new object is created
-                    if hasattr(obj.object, 'pk'):
-                        obj.object.pk = None
-                    
-                    # Clear the avatar field for users, it will be regenerated
-                    if model_name == 'user' and hasattr(obj.object, 'avatar'):
-                        obj.object.avatar = None
-
-                    # Use update_or_create for models with unique constraints like User
-                    if model_name == 'user':
-                        User.objects.update_or_create(username=obj.object.username, defaults={
-                            'password': obj.object.password,
-                            'is_superuser': obj.object.is_superuser,
-                            'is_staff': obj.object.is_staff,
-                            'is_moderator': obj.object.is_moderator,
-                            'nickname': obj.object.nickname,
-                            'pubkey': obj.object.pubkey,
-                            'timezone': obj.object.timezone,
-                        })
-                    else:
-                        with transaction.atomic():
+                    with transaction.atomic():
+                        if model_name == 'user':
+                            if obj.object.username == current_admin.username:
+                                continue # Skip the admin running the action
+                            User.objects.update_or_create(username=obj.object.username, defaults={
+                                'password': obj.object.password, 'is_superuser': obj.object.is_superuser,
+                                'is_staff': obj.object.is_staff, 'is_moderator': obj.object.is_moderator,
+                                'nickname': obj.object.nickname, 'pubkey': obj.object.pubkey,
+                                'timezone': obj.object.timezone, 'avatar': None,
+                            })
+                        elif model_name == 'messageboard':
+                            MessageBoard.objects.update_or_create(name=obj.object.name, defaults={
+                                'description': obj.object.description, 'required_access_level': obj.object.required_access_level
+                            })
+                        elif model_name == 'applet':
+                            Applet.objects.update_or_create(name=obj.object.name, defaults={
+                                'description': obj.object.description, 'author_pubkey': obj.object.author_pubkey,
+                                'code_manifest': obj.object.code_manifest, 'is_local': obj.object.is_local,
+                                'is_debug_mode': obj.object.is_debug_mode, 'handles_mime_types': obj.object.handles_mime_types,
+                            })
+                        elif model_name == 'appletcategory':
+                            AppletCategory.objects.update_or_create(name=obj.object.name, defaults={'description': obj.object.description})
+                        elif model_name == 'validfiletype':
+                            ValidFileType.objects.update_or_create(mime_type=obj.object.mime_type, defaults={'description': obj.object.description, 'is_enabled': obj.object.is_enabled})
+                        else:
+                            obj.object.pk = None
                             obj.save()
-                    imported_count += 1
-                except IntegrityError:
-                    self.message_user(request, f"Skipping duplicate object: {obj.object}", level='WARNING')
+                        imported_count += 1
+                except IntegrityError as e:
+                    self.message_user(request, f"Skipping duplicate object: {obj.object} ({e})", level='WARNING')
                     continue
             
-            # After importing, run the backfill command to generate default avatars
             self.message_user(request, "Cloning complete. Generating default avatars for new users...")
             call_command('backfill_avatars')
 
