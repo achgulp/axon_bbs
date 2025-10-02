@@ -1,24 +1,39 @@
 # Full path: axon_bbs/core/management/commands/rename_tables.py
 from django.core.management.base import BaseCommand
 from django.db import connection
+import sqlite3
 
 class Command(BaseCommand):
-    help = "Renames the database tables after the model refactoring."
+    help = "Safely renames database tables after the model refactoring, skipping any that are missing."
 
     def handle(self, *args, **options):
+        # A list of (old_name, new_name) tuples
+        tables_to_rename = [
+            ('core_alias', 'accounts_alias'),
+            ('core_bannedpubkey', 'accounts_bannedpubkey'),
+            ('core_ignoredpubkey', 'accounts_ignoredpubkey'),
+            ('core_messageboard', 'messaging_messageboard'),
+            ('core_message', 'messaging_message'),
+            ('core_privatemessage', 'messaging_privatemessage'),
+            ('core_appletcategory', 'applets_appletcategory'),
+            ('core_applet', 'applets_applet'),
+            ('core_appletdata', 'applets_appletdata'),
+            ('core_appletsharedstate', 'applets_appletsharedstate'),
+            ('core_highscore', 'applets_highscore'),
+            ('core_contentextensionrequest', 'federation_contentextensionrequest'),
+            ('core_federatedaction', 'federation_federatedaction'),
+            ('core_moderationreport', 'federation_moderationreport'),
+        ]
+
         with connection.cursor() as cursor:
-            cursor.execute("ALTER TABLE core_alias RENAME TO accounts_alias;")
-            cursor.execute("ALTER TABLE core_bannedpubkey RENAME TO accounts_bannedpubkey;")
-            cursor.execute("ALTER TABLE core_ignoredpubkey RENAME TO accounts_ignoredpubkey;")
-            cursor.execute("ALTER TABLE core_messageboard RENAME TO messaging_messageboard;")
-            cursor.execute("ALTER TABLE core_message RENAME TO messaging_message;")
-            cursor.execute("ALTER TABLE core_privatemessage RENAME TO messaging_privatemessage;")
-            cursor.execute("ALTER TABLE core_appletcategory RENAME TO applets_appletcategory;")
-            cursor.execute("ALTER TABLE core_applet RENAME TO applets_applet;")
-            cursor.execute("ALTER TABLE core_appletdata RENAME TO applets_appletdata;")
-            cursor.execute("ALTER TABLE core_appletsharedstate RENAME TO applets_appletsharedstate;")
-            cursor.execute("ALTER TABLE core_highscore RENAME TO applets_highscore;")
-            cursor.execute("ALTER TABLE core_contentextensionrequest RENAME TO federation_contentextensionrequest;")
-            cursor.execute("ALTER TABLE core_federatedaction RENAME TO federation_federatedaction;")
-            cursor.execute("ALTER TABLE core_moderationreport RENAME TO federation_moderationreport;")
-        self.stdout.write(self.style.SUCCESS("Successfully renamed database tables."))
+            for old_name, new_name in tables_to_rename:
+                try:
+                    cursor.execute(f"ALTER TABLE {old_name} RENAME TO {new_name};")
+                    self.stdout.write(self.style.SUCCESS(f"Successfully renamed '{old_name}' to '{new_name}'."))
+                except sqlite3.OperationalError as e:
+                    if "no such table" in str(e):
+                        self.stdout.write(self.style.WARNING(f"Skipping '{old_name}': Table does not exist (may already be renamed)."))
+                    else:
+                        self.stdout.write(self.style.ERROR(f"An unexpected database error occurred with '{old_name}': {e}"))
+        
+        self.stdout.write(self.style.SUCCESS("\nTable renaming process complete."))
