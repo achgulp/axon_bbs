@@ -60,11 +60,15 @@ class SyncView(views.APIView):
             server_now = timezone.now()
             since_dt = timezone.datetime.fromisoformat(since_str.replace(' ', '+'))
             
-            new_messages = Message.objects.filter(created_at__gt=since_dt, metadata_manifest__isnull=False)
-            new_files = FileAttachment.objects.filter(created_at__gt=since_dt, metadata_manifest__isnull=False)
-            new_pms = PrivateMessage.objects.filter(created_at__gt=since_dt, metadata_manifest__isnull=False)
+            # --- MODIFICATION START ---
+            # Changed all filters to use 'modified_at' instead of 'created_at'
+            new_messages = Message.objects.filter(modified_at__gt=since_dt, metadata_manifest__isnull=False)
+            new_files = FileAttachment.objects.filter(modified_at__gt=since_dt, metadata_manifest__isnull=False)
+            new_pms = PrivateMessage.objects.filter(modified_at__gt=since_dt, metadata_manifest__isnull=False)
+            # Applets do not have a modified_at field yet, so we still use created_at for them. This can be updated later if needed.
             new_applets = Applet.objects.filter(created_at__gt=since_dt, is_local=False, code_manifest__isnull=False)
             new_actions = FederatedAction.objects.filter(created_at__gt=since_dt, status='approved')
+            # --- MODIFICATION END ---
 
             manifests = []
             all_items = list(new_messages) + list(new_files) + list(new_pms) + list(new_applets)
@@ -218,7 +222,7 @@ class UnifiedQueueView(views.APIView):
         serialized_reports = []
         for report in pending_reports:
             data = ModerationReportSerializer(report, context={'request': request}).data
-            data['ticket_type'] = report.report_type 
+            data['ticket_type'] = report.report_type
             serialized_reports.append(data)
 
         pending_profile_updates = FederatedAction.objects.filter(
@@ -423,12 +427,14 @@ class ReviewContentExtensionView(views.APIView):
         ext_request.reviewed_at = timezone.now()
         if action == 'approve':
             try:
+                
                 model = apps.get_model('core', ext_request.content_type.capitalize())
                 content_obj = model.objects.get(pk=ext_request.content_id)
                 content_obj.expires_at += timedelta(days=30)
                 content_obj.save()
             except (LookupError, model.DoesNotExist):
                 ext_request.status = 'denied'
+ 
                 logger.error(f"Could not find content {ext_request.content_id} to approve extension.")
         ext_request.save()
         return Response(ContentExtensionRequestSerializer(ext_request).data, status=status.HTTP_200_OK)
@@ -438,12 +444,14 @@ class UnpinContentView(views.APIView):
     def post(self, request, *args, **kwargs):
         content_id, content_type = request.data.get('content_id'), request.data.get('content_type')
         if not all([content_id, content_type]): return Response({"error": "content_id and content_type are required."}, status=status.HTTP_400_BAD_REQUEST)
+  
         try:
             model = apps.get_model('core', content_type.capitalize())
             content_obj = model.objects.get(pk=content_id)
         except (LookupError, model.DoesNotExist):
             return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
         if content_obj.pinned_by and content_obj.pinned_by.is_staff and not request.user.is_staff: return Response({"error": "Moderators cannot unpin content pinned by an Admin."}, status=status.HTTP_403_FORBIDDEN)
+ 
         
         if content_obj.is_pinned and content_obj.metadata_manifest and content_obj.metadata_manifest.get('content_hash'):
              FederatedAction.objects.create(
@@ -452,6 +460,7 @@ class UnpinContentView(views.APIView):
             )
 
         content_obj.is_pinned = False
+ 
         content_obj.pinned_by = None
         content_obj.save()
         return Response({"status": "Content unpinned successfully."}, status=status.HTTP_200_OK)
@@ -463,12 +472,14 @@ class ExportConfigView(views.APIView):
         try:
             output = StringIO()
             call_command(
-                'dumpdata',
+         
+        'dumpdata',
                 'core.User', 'applets.Applet', 'applets.AppletCategory', 
                 'messaging.MessageBoard', 'core.ValidFileType',
                 stdout=output,
                 exclude=['contenttypes', 'auth.permission']
-            )
+            
+ )
             return HttpResponse(output.getvalue(), content_type='application/json')
         except Exception as e:
             logger.error(f"Failed to export configuration: {e}")
