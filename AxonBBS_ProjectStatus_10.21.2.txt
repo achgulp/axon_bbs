@@ -1,0 +1,63 @@
+Axon BBS - Project Status & Roadmap (Version 10.21.2)
+Date: 2025-10-02
+
+Version: 10.21.2 (In Progress)
+
+This document summarizes the development progress, outlining completed tasks and the remaining work required to fulfill the project brief and architectural blueprint.
+
+I. Completed Work
+
+Backend Refactoring (✅ Complete): The backend modularization is finished. All models, views, serializers, and services have been moved from the legacy core and api apps into their new feature-specific apps (accounts, messaging, applets, federation).
+
+Unified Moderation Hub (✅ Complete): The new moderation system is fully implemented, consolidating all moderation tasks into a single queue.
+
+Private Messaging Bug Fix (✅ Complete): Fixed a critical bug where private messages could not be decrypted in the outbox if the user's private key was password-protected on disk. The login process now fully decrypts the key and stores the ready-to-use key in the user's session.
+
+Federated Chat Backend (✅ In Progress - Phase 1 Complete): The foundational backend for the AxonChat system is complete. This includes:
+    - A new ChatAgentService responsible for processing chat messages and managing shared state.
+    - A new high-speed API endpoint (/api/applets/<applet_id>/update_state/) for applets to send messages to the agent with low latency.
+
+Dynamic Agent Loading (✅ Complete): The ServiceManager has been refactored to be more generic and scalable.
+    - The User model now includes agent_service_path and agent_parameters fields.
+    - The ServiceManager now dynamically loads and starts agent services based on the path defined in the agent's user account, removing the need to modify the code to add new agents.
+
+Automated Configuration Cloning (✅ Complete): A new feature has been added to streamline the setup of new BBS instances.
+    - A new admin action, "Clone configuration from peer," allows a SysOp to securely import users, applets, message boards, and other settings from a trusted peer.
+    - This is supported by a new secure API endpoint for exporting configuration data.
+
+Database Repair & Migration Workflow (✅ Complete): Addressed and resolved significant database schema and migration history inconsistencies on the secondary 'pibbs' instance.
+    - A robust, documented migration workflow has been established, treating migration files as source code to be version controlled.
+    - A reusable upgrade.sh script has been created to automate the upgrade process on secondary BBS instances.
+
+II. Remaining Work / Roadmap
+
+The remaining work consists of completing the AxonChat feature and then implementing the other major features from the project brief.
+
+1. Implement AxonChat Frontend (Phases 2 & 3):
+    - Goal: Build the user-facing chat applet UI and the client-side logic for sending and receiving messages.
+    - Work Required:
+        - Frontend: Create the new AxonChat.js applet file with the UI for message history, user list, and input.
+        - Frontend: Implement polling logic for the applet to efficiently check for and receive new messages from the shared state.
+
+2. Implement AxonChat Federation (Phase 4):
+    - Goal: Enable the ChatAgentService to synchronize chat room state across all federated BBS instances.
+    - Work Required:
+        - Backend: Add logic to the ChatAgentService to poll trusted peers for their chat state versions.
+        - Backend: Implement state synchronization and merging logic to combine local and remote chat histories chronologically.
+
+3. Implement User-Managed Applets:
+    - Goal: Allow users to upload and manage their own applets.
+    - Work Required:
+        - Backend: Add owner and is_active fields to the Applet model.
+        - Backend: Add a required_access_level field to the Applet model.
+        - Frontend: Create a new "My Applets" view for users to manage their applets.
+
+4. Implement Universal Embed Framework:
+    - Goal: Allow any file type to be viewed directly within messages using dedicated, sandboxed applets.
+    - Work Required:
+        - Frontend: Refactor the MessageList component to use a dynamic AttachmentRenderer that launches the correct applet based on MIME type.
+
+5. Integrate Browser History:
+    - Goal: Prevent the browser's back button from exiting the application by using a proper routing library.
+    - Work Required:
+        - Frontend: Integrate the React Router library to manage navigation and browser history.

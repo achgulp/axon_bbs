@@ -1,0 +1,56 @@
+Axon BBS - Architectural Blueprint (Version 10.21.2)
+Version: 10.21.2
+
+Last Updated: 2025-10-02
+
+This document outlines the high-level architectural plans and guiding principles for the Axon BBS project. It is intended for developers to understand the "why" behind the code structure.
+
+1. Core Principles
+
+Modularity: The system is composed of decoupled, single-responsibility modules. This applies to backend Django apps and frontend React components.
+
+Service-Oriented Backend: Complex business logic is encapsulated in service classes, keeping API views "thin" and focused on handling HTTP requests/responses.
+
+Secure by Default: All user content is encrypted. The frontend is treated as an untrusted client, and all security and permission checks are enforced on the backend.
+
+2. Backend Architecture: Feature Domains
+The backend is refactored from two large apps (core, api) into a collection of smaller, self-contained apps, each representing a feature domain.
+    - core: Contains truly cross-cutting models (User, TrustedInstance, FileAttachment) and core services (BitSyncService, SyncService).
+    - accounts: Contains user-related models and logic (IgnoredPubkey, BannedPubkey).
+    - messaging: Contains all public and private messaging models and logic (Message, PrivateMessage, MessageBoard).
+    - applets: Contains the applet framework models and logic (Applet, AppletData, HighScore).
+    - federation: Contains models and services related to inter-server communication (FederatedAction).
+
+3. Key System Blueprints
+
+Dynamic Agent Loading
+To improve scalability and ease of administration, the system for launching background services (agents) has been refactored.
+    -   **Model-Driven Configuration**: The hardcoded mapping of agent usernames to service classes in the ServiceManager has been removed. Instead, the `core.User` model now contains two new fields:
+        -   `agent_service_path` (CharField): Stores the full Python dot-path to the agent's service class (e.g., 'applets.chat_agent_service.ChatAgentService').
+        -   `agent_parameters` (JSONField): A flexible field for storing agent-specific configuration, such as poll intervals or feature flags.
+    -   **Dynamic Import**: On startup, the `ServiceManager` queries the database for all active users with the `is_agent` flag. For each user found, it reads the `agent_service_path`, dynamically imports the specified class, and instantiates it, passing in the `agent_parameters`. This allows a SysOp to enable, disable, or configure new agents entirely through the Django admin panel without requiring code changes.
+
+Federated Chat (AxonChat)
+This system provides a near-real-time chat experience across federated BBS instances by using a central data store (AppletSharedState) managed by a server-side agent.
+    -   **Chat Room Directory**: The MessageBoard system serves as the directory for discovering and joining chat rooms. A SysOp turns a board into a chat room by linking the AxonChat applet to it.
+    -   **Data Model**: The `AppletSharedState` for a chat room will store the message history and a list of present users in its JSON field.
+    -   **Backend Agent**: A new `ChatAgentService` is responsible for processing incoming messages, updating the shared state, managing the user list, and synchronizing the state with peer BBS instances.
+    -   **Symmetrical Communication**: To achieve near-real-time performance, a new, direct API endpoint has been created at `/api/applets/<applet_id>/update_state/`. Applets send messages to this endpoint for immediate processing by the `ChatAgentService`, which then updates the shared state. Applets receive updates by efficiently polling a lightweight versioning endpoint.
+
+Automated Configuration Cloning
+To facilitate the setup of new BBS instances, a system for cloning non-sensitive configuration from a trusted peer has been implemented.
+    -   **Export Endpoint**: A new, secure API endpoint, `/api/federation/export_config/`, has been created. It is protected by `TrustedPeerPermission`, meaning only a cryptographically verified peer can access it. When called, it uses Django's `dumpdata` command to serialize key configuration models (Users, Applets, MessageBoards, etc.) into a JSON format, excluding sensitive data like `TrustedInstance` records.
+    -   **Admin Action**: A new "Clone configuration from peer" action has been added to the `TrustedInstance` admin page. When a SysOp runs this action, the local BBS makes a signed API request to the peer's export endpoint.
+    -   **Data Import**: Upon receiving the configuration data, the new BBS iterates through the objects. It uses `update_or_create` to prevent duplicating existing records (like default message boards) and explicitly skips importing any superuser accounts to avoid conflicts with the new BBS's own administrator. It also automatically triggers the `backfill_avatars` command to generate default avatars for all imported users.
+
+Unified Moderation Hub
+This system consolidates all moderation tasks into a single ticketing queue.
+    -   **Backend Unification**: A new API endpoint, `/api/moderation/unified_queue/`, gathers all pending ModerationReport and FederatedAction (for profile approvals) objects, sorts them by date, and returns them as a single list.
+    -   **Flexible Reports**: The ModerationReport model is adapted to support "general inquiries" from users that are not tied to a specific message. This is achieved by making its `reported_message` field optional and adding a `report_type` field.
+    -   **Frontend Dispatcher**: The ModerationDashboard component fetches from the unified queue and uses conditional logic to render a different sub-component for each ticket type.
+
+Universal Embed Framework
+This framework allows any file type to be displayed within a message thread using a dedicated, sandboxed applet.
+    -   **Mechanism**: The Applet model has a `handles_mime_types` field (e.g., "video/mp4,video/webm").
+    -   **Frontend Flow**: The MessageList component finds a handler by matching an attachment's content_type with an applet's handles_mime_types and launches it in the `AppletRunner`, passing the file's `content_hash` as context.
+    -   **Secure Data Access**: The applet then uses the `getAttachmentBlob` API to securely fetch and render the file, without ever having direct access to the network or the user's session.

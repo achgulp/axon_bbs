@@ -176,7 +176,8 @@ class MessageBoardAdmin(admin.ModelAdmin):
 
 @admin.register(Message)
 class MessageAdmin(admin.ModelAdmin):
-    list_display = ('subject', 'author', 'board', 'agent_status', 'created_at', 'expires_at', 'is_pinned')
+    list_display = ('subject', 'author', 'board', 'agent_status', 
+ 'created_at', 'expires_at', 'is_pinned')
     list_filter = ('board', 'author', 'is_pinned', 'agent_status')
     date_hierarchy = 'created_at'
     actions = [rekey_content_action]
@@ -209,7 +210,8 @@ class BannedPubkeyAdmin(admin.ModelAdmin):
 
 @admin.register(ContentExtensionRequest)
 class ContentExtensionRequestAdmin(admin.ModelAdmin):
-    list_display = ('content_id', 'content_type', 'user', 'request_date', 'status', 'reviewed_by')
+    list_display = ('content_id', 'content_type', 'user', 
+ 'request_date', 'status', 'reviewed_by')
     list_filter = ('status', 'content_type')
 
 @admin.register(ValidFileType)
@@ -236,7 +238,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             'fields': ('added_at', 'last_synced_at')
         }),
     )
-    actions = ['generate_keys', 'fetch_peer_key', 'reset_sync_timestamp', 'run_full_uat_suite', 'clone_config_from_peer']
+    actions = ['generate_keys', 'fetch_peer_key', 'reset_sync_timestamp', 'run_full_uat_suite', 'clone_config_from_peer', 'force_refresh_and_rekey']
 
     def _get_local_identity(self):
         try:
@@ -307,7 +309,8 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                             User.objects.update_or_create(username=obj.object.username, defaults={
                                 'password': obj.object.password, 'is_superuser': obj.object.is_superuser,
                                 'is_staff': obj.object.is_staff, 'is_moderator': obj.object.is_moderator,
-                                'nickname': obj.object.nickname, 'pubkey': obj.object.pubkey,
+                                'nickname': obj.object.nickname, 
+                                'pubkey': obj.object.pubkey,
                                 'timezone': obj.object.timezone, 'avatar': None,
                             })
                         elif model_name == 'messageboard':
@@ -424,6 +427,72 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
         if updated_count > 0:
             self.message_user(request, f"Finished. Successfully updated {updated_count} peer(s).", level='SUCCESS')
     
+    # --- NEW ACTION START ---
+    @admin.action(description='Force Refresh and Re-key Peer')
+    @transaction.atomic
+    def force_refresh_and_rekey(self, request, queryset):
+        if queryset.count() != 1:
+            self.message_user(request, "Please select exactly one peer for this action.", level='ERROR')
+            return
+        
+        peer = queryset.first()
+        if not peer.is_trusted_peer or not peer.web_ui_onion_url:
+            self.message_user(request, "This action can only be run on a trusted peer with a valid onion URL.", level='ERROR')
+            return
+
+        self.message_user(request, f"Step 1/3: Forcing a public key refresh from {peer.web_ui_onion_url}...")
+        
+        # Step 1: Fetch the public key (logic from fetch_peer_key)
+        target_url = f"{peer.web_ui_onion_url.strip('/')}/api/identity/public_key/"
+        proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+        try:
+            response = requests.get(target_url, proxies=proxies, timeout=120)
+            if response.status_code == 200:
+                new_key = response.json().get('public_key')
+                if new_key:
+                    peer.pubkey = new_key
+                    peer.save()
+                    self.message_user(request, "Step 1/3: Successfully updated peer's public key.", level='SUCCESS')
+                else:
+                    raise Exception("Peer did not provide a public key in its response.")
+            else:
+                raise Exception(f"Peer returned status {response.status_code}: {response.text}")
+        except Exception as e:
+            self.message_user(request, f"Step 1/3 FAILED: Could not fetch key. Aborting. Error: {e}", level='ERROR')
+            return
+
+        # Step 2: Re-key all content (logic adapted from rekey_content_action)
+        self.message_user(request, "Step 2/3: Re-keying all local content manifests for the updated peer list...")
+        all_content_models = [FileAttachment, Message, PrivateMessage, Applet, AppletData]
+        rekeyed_count = 0
+        for model in all_content_models:
+            for item in model.objects.all():
+                try:
+                    if isinstance(item, Applet): metadata_manifest_field = 'code_manifest'
+                    elif isinstance(item, AppletData): metadata_manifest_field = 'data_manifest'
+                    else: metadata_manifest_field = 'metadata_manifest'
+                    
+                    manifest = getattr(item, metadata_manifest_field, None)
+                    if not manifest: continue
+                    
+                    new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
+                    setattr(item, metadata_manifest_field, new_manifest)
+                    item.save()
+                    rekeyed_count += 1
+                except Exception as e:
+                    item_name = getattr(item, 'subject', getattr(item, 'filename', str(item.id)))
+                    self.message_user(request, f"Warning: Could not re-key '{item_name}': {e}", level='WARNING')
+        
+        self.message_user(request, f"Step 2/3: Successfully re-keyed {rekeyed_count} content item(s).", level='SUCCESS')
+
+        # Step 3: Reset sync timestamp
+        self.message_user(request, "Step 3/3: Resetting sync timestamp to force a full re-sync.")
+        peer.last_synced_at = None
+        peer.save()
+
+        self.message_user(request, "Action complete. The peer will receive updated content on the next sync cycle.", level='SUCCESS')
+    # --- NEW ACTION END ---
+    
     @admin.action(description='Reset last synced time to force full sync')
     def reset_sync_timestamp(self, request, queryset):
         rows_updated = queryset.update(last_synced_at=None)
@@ -473,7 +542,8 @@ class AppletAdmin(admin.ModelAdmin):
     list_display = ('name', 'category', 'event_board', 'is_local', 'created_at', 'code_checksum')
     list_filter = ('category', 'is_local')
     search_fields = ('name', 'description')
-    readonly_fields = ('id', 'created_at', 'code_manifest', 'code_checksum')
+    readonly_fields = ('id', 'created_at', 
+ 'code_manifest', 'code_checksum')
     fieldsets = (
         (None, {
             'fields': ('name', 'description', 'category', 'event_board', 'author', 'author_pubkey', ('is_local', 'is_debug_mode'), 'handles_mime_types')

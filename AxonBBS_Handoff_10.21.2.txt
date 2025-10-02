@@ -1,0 +1,40 @@
+Handoff Memo: Axon BBS Project
+To: My Other Self
+From: Gemini
+Date: 2025-10-02
+Subject: Project Status and Critical Context for Axon BBS v10.21.2
+
+This memo summarizes the current state of the Axon BBS project, key architectural decisions, and critical context learned through recent development and debugging.
+
+1. Current Project Status
+The project is stable. We successfully resolved several critical bugs and implemented significant architectural improvements.
+
+Completed Since Last Handoff:
+-   [cite_start]**Federated Chat Backend (Phase 1):** The foundational backend for the AxonChat system is complete[cite: 4859]. [cite_start]This includes the new `ChatAgentService` for managing chat state and the high-speed `/api/applets/<applet_id>/update_state/` endpoint for low-latency message submission[cite: 4861, 4864].
+-   [cite_start]**Dynamic Agent Loading:** The `ServiceManager` has been refactored to be fully generic[cite: 5621]. It now dynamically loads agent services based on a path defined in the agent's user account (`agent_service_path`), removing the need for code changes when adding new agents.
+-   **Automated Configuration Cloning:** A new admin action and secure API endpoint have been created to allow a new BBS instance to clone the configuration (users, applets, etc.) from a trusted peer, greatly simplifying setup.
+-   **Private Messaging Bug Fix:** Resolved a critical bug preventing decryption of sent private messages. The login process now correctly handles password-protected private keys stored on disk and places a fully decrypted key into the user's session.
+
+Next Immediate Task:
+-   The backend foundation for AxonChat is complete. [cite_start]The next session can begin directly with **Phase 2: Frontend UI & Sending Messages** of the AxonChat implementation plan[cite: 4869].
+
+2. Key Architectural Reminders
+(Unchanged from previous version)
+-   [cite_start]**Agent-Mediated State:** For any shared applet data (like multiplayer games or chat), the `AppletSharedState` model is the central data store[cite: 4694]. Applets must not modify this state directly. [cite_start]All changes must be sent as events to a server-side agent[cite: 4695].
+-   [cite_start]**Applet Sandbox:** Applets run in a sandboxed iframe and have no direct access to the user's authentication tokens or the network[cite: 4697]. [cite_start]All communication with the backend must go through the `AppletRunner` bridge using `postMessage`[cite: 4698].
+-   [cite_start]**Message Board as a Directory:** For discoverability, new system-level features like chat rooms should be represented by a `MessageBoard`[cite: 4699]. [cite_start]A SysOp can then "activate" the feature on that board by linking the relevant applet to it[cite: 4700].
+
+3. Critical "Gotchas" & Lessons Learned
+These are non-obvious issues we have already solved. Be aware of them to avoid repeating mistakes.
+
+-   **Database Migration Inconsistency:** The PiBBS database had a severely corrupted migration history due to the major refactoring. This caused `NodeNotFoundError` and `InconsistentMigrationHistory` errors, preventing the `migrate` command from running.
+    -   **Solution:** The definitive fix was to manually clear the `django_migrations` table in the database and then run `python manage.py migrate --fake-initial` (or `--fake` for all apps) to rebuild a clean migration history from the current state of the models. This process is now documented in the `upgrade.sh` script for future BBS instances.
+
+-   **Federated Data Decryption Failure ("Invalid padding bytes"):** We encountered a persistent bug where a synced message or applet would fail to decrypt with an `Invalid padding bytes` error.
+    -   **Root Cause:** This error occurs when the sending BBS (`host`) has an outdated public key for the receiving BBS (`pibbs`). When the "Re-key" action is run, the sender uses its stored (incorrect) key, creating an encryption envelope that the receiver cannot open with its current private key.
+    -   **Solution:** The "Fetch public key from peer" action is not always sufficient. The most robust solution is the new **"Force Refresh and Re-key Peer"** admin action. This action deletes the old key, fetches a fresh one, and immediately re-keys all content, guaranteeing that the manifests are encrypted with the correct, current public key.
+
+-   **Content Re-keying Logic:** The original "Re-key" action was not idempotent. It was designed to only *add* keys for new peers, not update keys for existing peers.
+    -   **Solution:** The `rekey_manifest_for_new_peers` function in `bitsync_service.py` was rewritten to completely rebuild the encryption key dictionary from scratch on every run, ensuring manifests are always consistent with the current list of trusted peers.
+
+The project is in a great place. The next session can begin directly with Phase 2 of the AxonChat implementation plan.

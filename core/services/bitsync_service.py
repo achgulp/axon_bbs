@@ -12,8 +12,7 @@
 # See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.
-# If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
 # Full path: axon_bbs/core/services/bitsync_service.py
@@ -96,6 +95,7 @@ class BitSyncService:
         )
 
     def rekey_manifest_for_new_peers(self, manifest: dict):
+        
         original_aes_key = self.get_decrypted_aes_key(manifest)
         if not original_aes_key:
             raise ValueError("Failed to obtain original AES key from manifest.")
@@ -178,6 +178,7 @@ class BitSyncService:
                 )
                 instance_checksum = generate_checksum(pubkey_pem)
                 encrypted_aes_keys[instance_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
+            
             except Exception as e:
                 logger.error(f"Failed to encrypt AES key for pubkey with checksum {generate_checksum(pubkey_pem)}: {e}")
         
