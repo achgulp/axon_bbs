@@ -262,8 +262,10 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             'X-Signature': base64.b64encode(signature).decode('utf-8')
         }
 
+    # --- MODIFICATION START ---
+    # The clone logic is completely rewritten for efficiency and safety.
     @admin.action(description='Clone configuration from selected peer')
-    @transaction.atomic
+    @transaction.atomic # This is now safe because the operation is fast.
     def clone_config_from_peer(self, request, queryset):
         if queryset.count() != 1:
             self.message_user(request, "Please select exactly one peer to clone from.", level='ERROR')
@@ -284,64 +286,62 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
 
         self.message_user(request, f"Attempting to clone configuration from {peer.web_ui_onion_url}...")
         try:
+            # 1. Fetch data from peer
             auth_headers = self._get_auth_headers(local_instance, private_key)
             response = requests.get(target_url, headers=auth_headers, proxies=proxies, timeout=120)
             response.raise_for_status()
             data = response.text
 
-            current_admin = request.user
-            imported_count = 0
-            
+            # 2. Group all received objects by their model type
+            objects_by_model = {}
             for obj in serializers.deserialize("json", data):
-                model_name = obj.object._meta.model_name
+                # Skip importing any superusers or TrustedInstances
+                if obj.object._meta.model_name == 'trustedinstance' or (hasattr(obj.object, 'is_superuser') and obj.object.is_superuser):
+                    continue
                 
-                # Skip all TrustedInstance objects
-                if model_name == 'trustedinstance':
+                model_class = type(obj.object)
+                if model_class not in objects_by_model:
+                    objects_by_model[model_class] = []
+                objects_by_model[model_class].append(obj.object)
+
+            # 3. Process each model type in bulk for efficiency
+            total_imported = 0
+            # Define the order to prevent foreign key constraint errors
+            model_order = [User, MessageBoard, AppletCategory, Applet, ValidFileType]
+
+            for model_class in model_order:
+                if model_class not in objects_by_model:
                     continue
 
-                try:
-                    with transaction.atomic():
-                        if model_name == 'user':
-                            if obj.object.username == current_admin.username:
-                                continue # Skip the admin running the action
-                            User.objects.update_or_create(username=obj.object.username, defaults={
-                                'password': obj.object.password, 'is_superuser': obj.object.is_superuser,
-                                'is_staff': obj.object.is_staff, 'is_moderator': obj.object.is_moderator,
-                                'nickname': obj.object.nickname, 
-                                'pubkey': obj.object.pubkey,
-                                'timezone': obj.object.timezone, 'avatar': None,
-                            })
-                        elif model_name == 'messageboard':
-                            MessageBoard.objects.update_or_create(name=obj.object.name, defaults={
-                                'description': obj.object.description, 'required_access_level': obj.object.required_access_level
-                            })
-                        elif model_name == 'applet':
-                            Applet.objects.update_or_create(name=obj.object.name, defaults={
-                                'description': obj.object.description, 'author_pubkey': obj.object.author_pubkey,
-                                'code_manifest': obj.object.code_manifest, 'is_local': obj.object.is_local,
-                                'is_debug_mode': obj.object.is_debug_mode, 'handles_mime_types': obj.object.handles_mime_types,
-                            })
-                        elif model_name == 'appletcategory':
-                            AppletCategory.objects.update_or_create(name=obj.object.name, defaults={'description': obj.object.description})
-                        elif model_name == 'validfiletype':
-                            ValidFileType.objects.update_or_create(mime_type=obj.object.mime_type, defaults={'description': obj.object.description, 'is_enabled': obj.object.is_enabled})
-                        else:
-                            obj.object.pk = None
-                            obj.save()
-                        imported_count += 1
-                except IntegrityError as e:
-                    self.message_user(request, f"Skipping duplicate object: {obj.object} ({e})", level='WARNING')
-                    continue
-            
+                incoming_objects = objects_by_model[model_class]
+                # Use a unique field for matching. 'name' is common for config models, 'username' for User.
+                unique_field = 'username' if model_class == User else 'name'
+                
+                existing_pks = {getattr(o, unique_field) for o in model_class.objects.all()}
+                
+                to_create = []
+                for obj in incoming_objects:
+                    if getattr(obj, unique_field) not in existing_pks:
+                        # Clear avatar for imported users so a new one can be generated
+                        if model_class == User:
+                            obj.avatar = None
+                        to_create.append(obj)
+                
+                if to_create:
+                    model_class.objects.bulk_create(to_create, ignore_conflicts=True)
+                    self.message_user(request, f"Bulk created {len(to_create)} new {model_class._meta.verbose_name_plural}.")
+                    total_imported += len(to_create)
+
             self.message_user(request, "Cloning complete. Generating default avatars for new users...")
             call_command('backfill_avatars')
 
-            self.message_user(request, f"Successfully cloned configuration. Imported {imported_count} objects.", level='SUCCESS')
+            self.message_user(request, f"Successfully cloned configuration. Imported {total_imported} new objects.", level='SUCCESS')
 
         except requests.exceptions.RequestException as e:
             self.message_user(request, f"Network error cloning from peer: {e}", level='ERROR')
         except Exception as e:
             self.message_user(request, f"An error occurred during cloning: {e}", level='ERROR')
+    # --- MODIFICATION END ---
 
 
     @admin.action(description='Run Full UAT Suite against selected peer(s)')
@@ -425,7 +425,6 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
         if updated_count > 0:
             self.message_user(request, f"Finished. Successfully updated {updated_count} peer(s).", level='SUCCESS')
     
-    # --- NEW ACTION START ---
     @admin.action(description='Force Refresh and Re-key Peer')
     def force_refresh_and_rekey(self, request, queryset):
         if queryset.count() != 1:
@@ -463,6 +462,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
         all_content_models = [FileAttachment, Message, PrivateMessage, Applet, AppletData]
         rekeyed_count = 0
         for model in all_content_models:
+            items_to_update = []
             for item in model.objects.all():
                 try:
                     if isinstance(item, Applet): metadata_manifest_field = 'code_manifest'
@@ -474,21 +474,30 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                     
                     new_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
                     setattr(item, metadata_manifest_field, new_manifest)
-                    item.save()
+                    # Touch the modified_at field if it exists
+                    if hasattr(item, 'modified_at'):
+                        item.modified_at = timezone.now()
+                    items_to_update.append(item)
                     rekeyed_count += 1
                 except Exception as e:
                     item_name = getattr(item, 'subject', getattr(item, 'filename', str(item.id)))
                     self.message_user(request, f"Warning: Could not re-key '{item_name}': {e}", level='WARNING')
-        
+            
+            # Bulk update the changes for the current model
+            if items_to_update:
+                update_fields = [metadata_manifest_field]
+                if hasattr(model(), 'modified_at'):
+                    update_fields.append('modified_at')
+                model.objects.bulk_update(items_to_update, update_fields)
+
         self.message_user(request, f"Step 2/3: Successfully re-keyed {rekeyed_count} content item(s).", level='SUCCESS')
 
         # Step 3: Reset sync timestamp
-        self.message_user(request, "Step 3/3: Resetting sync timestamp to force a full re-sync.")
+        self.message_user(request, "Step 3/3: Resetting sync timestamp to trigger a full sync.")
         peer.last_synced_at = None
         peer.save()
 
         self.message_user(request, "Action complete. The peer will receive updated content on the next sync cycle.", level='SUCCESS')
-    # --- NEW ACTION END ---
     
     @admin.action(description='Reset last synced time to force full sync')
     def reset_sync_timestamp(self, request, queryset):
