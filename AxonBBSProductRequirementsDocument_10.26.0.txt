@@ -1,0 +1,92 @@
+Axon BBS - Product Requirements Document (Version 10.26.0)
+Version: 10.26.0
+
+Last Updated: 2025-10-05
+
+Overview
+Axon BBS is an anonymous, modern bulletin board system that operates on a private, federated network of trusted nodes. The platform is built with a focus on user privacy and resilience, utilizing a custom peer-to-peer data synchronization protocol called BitSync and a sandboxed Applet Framework for extensible, rich content.
+
+Key features and architectural pillars in this version include:
+- Unified Moderation Hub: A single, streamlined interface for all moderator duties.
+- Universal Embed Framework: A system to allow any file type to be viewed directly within messages using dedicated, secure applets.
+- User-Managed Applets: Functionality for users to upload and manage their own applets.
+- Federated Chat: A near-real-time chat system allowing users from different BBS instances to communicate in shared rooms.
+- Browser History Integration: A plan to prevent the browser's back button from exiting the application unexpectedly.
+- Dynamic Agent Loading: A flexible, database-driven system for configuring and launching backend services.
+- Automated Configuration Cloning: A one-click tool for SysOps to bootstrap a new BBS instance from a trusted peer.
+- New: Secure Applet Loading: A robust, client-side integrity check that verifies the checksum of all applet code before execution, preventing corrupted or tampered code from running.
+- New: Hybrid Applet Architecture: Support for complex applications by allowing applet code to be packaged separately from its heavy assets (models, textures, sounds), which are loaded on demand.
+
+User Roles & Stories
+
+As a User...
+
+I want to generate or import my cryptographic identity to securely and anonymously interact with the system.
+
+I want to upload a profile avatar to personalize my identity.
+
+I want to send and receive E2E encrypted private messages.
+
+I want to post on public message boards and attach files, including videos and images.
+
+I want to view content like videos and images directly within a message thread instead of having to download them.
+
+I want to run sandboxed games and applications (applets) securely.
+
+New: I want to be sure that the applets I run have not been corrupted or tampered with during download.
+
+I want to upload and manage my own applets to share with the community.
+
+I want to report a message that violates the rules to help keep the community clean.
+
+I want to contact the moderators with a general question or concern that isn't about a specific message.
+
+I want the browser's back button to navigate within the BBS instead of exiting the site completely.
+
+I want to claim my federated, inactive account on a new BBS by proving ownership with my private key.
+
+I want to see available chat rooms listed alongside regular message boards.
+
+I want to join a chat room by launching an applet from a designated message board.
+
+I want to send messages to the room in near-real-time.
+
+I want to see a list of other users currently in the chat room.
+
+As a Moderator...
+
+I want to have all the powers of a standard User.
+
+I want a single "Unified Moderation Hub" where I can see all pending tasks in one place.
+
+In my queue, I want to see different types of tickets: message reports, profile approvals, and general user inquiries.
+
+I want to approve valid reports, which purges the message from the network and awards karma to the reporter.
+
+I want to review and approve or deny user-submitted profile updates.
+
+When I close a general inquiry, I want the system to automatically send a PM acknowledgment to the user.
+
+As a SysOp (System Operator/Admin)...
+
+I want all the powers of a standard User and Moderator.
+
+I want to manage a whitelist of trusted federated peers to control synchronization.
+
+I want to associate a viewer applet with the MIME types it is designed to handle.
+
+New: I want to configure a complex applet (like a large game) by linking it to a separate asset package (.zip file) via its parameters, allowing for a hybrid loading architecture.
+
+New: I want the system to seamlessly support both simple (all-in-one) and complex (hybrid) applet formats without needing to re-package old applets.
+
+I want to create a new chat room by creating a MessageBoard and assigning the AxonChat Applet to its "Event Bus" field.
+
+I want to define the code path for an agent service directly on its user account in the admin panel.
+
+I want to configure agent-specific parameters (like poll intervals) directly on the agent's user account.
+
+I want to initialize a new, empty BBS instance by cloning the user and application configuration from a trusted peer.
+
+When cloning a configuration, I want the system to automatically skip importing any superuser accounts from the peer.
+
+When cloning a configuration, I want the system to automatically generate new, unique default avatars for all imported users.

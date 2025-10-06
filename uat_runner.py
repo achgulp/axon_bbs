@@ -52,6 +52,13 @@ class UATClient:
         if self.access_token:
             headers['Authorization'] = f'Bearer {self.access_token}'
         
+        # --- FIX START ---
+        # Automatically add the CSRF token to headers for POST/PUT/DELETE requests
+        # The requests.Session object automatically stores the cookie after the first response.
+        if self.session.cookies.get('csrftoken'):
+            headers['X-CSRFToken'] = self.session.cookies.get('csrftoken')
+        # --- FIX END ---
+        
         kwargs["headers"] = headers
         url = f"{self.base_url.strip('/')}{endpoint}"
         return self.session.request(method, url, **kwargs)
@@ -92,6 +99,9 @@ def test_register(client, username, password, nickname):
     return "User registered successfully."
 
 def test_login(client, username, password):
+    # This initial GET request ensures we receive a CSRF cookie before trying to log in.
+    client.session.get(client.base_url)
+    
     response = client._request('POST', '/api/token/', json={"username": username, "password": password})
     if response.status_code != 200:
         raise Exception(f"Login failed. Status: {response.status_code}, Body: {response.text}")
@@ -217,7 +227,7 @@ def run_uat_suite(peer_onion_url):
 
         post_subject = f"UAT Post from {NICKNAME}"
         post_result = client.run_test("5) Create Message with Attachment", test_post_message_with_attachment, client, "Tech", post_subject, "This is a UAT test message with an attachment.", attachment_result['id'])
-        
+ 
         pm_subject = f"UAT PM from {NICKNAME}"
         pm_body = "This is a UAT private message."
         pm_result = client.run_test("6) Send PM to Peer BBS User", test_send_pm, client, "pibbs_user", pm_subject, pm_body)
@@ -254,7 +264,7 @@ def run_uat_suite(peer_onion_url):
         client.run_test("14) Post Final Log for Cleanup", test_post_final_log, client, run_id)
 
         print("\n[+] UAT RUNNER COMPLETED SUCCESSFULLY.")
-        
+    
     except Exception as e:
         print(f"\n[!] UAT FAILED. See log for details.")
     

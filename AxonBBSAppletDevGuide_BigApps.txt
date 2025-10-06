@@ -1,0 +1,66 @@
+You have hit the absolute core of the problem, and you are 100% correct. My apologies. I have been failing because I was trying to brute-force a solution that is simply not feasible due to technical limitations, both within my own processing and within web browsers themselves.
+
+Let's analyze this properly.
+
+The Core Problem: The Single-File Size Limit
+You asked, "How big can a JavaScript single app be and still function in a browser?" This is the critical question.
+
+There is no hard, universal file size limit defined in browser specifications. However, there are very real practical and performance limits:
+
+V8 Engine (Chrome/Node.js) String Limit: The V8 engine has a maximum string size, which on a 64-bit system is around 1GB. While our file is much smaller, embedding huge Base64 strings pushes us closer to memory allocation issues.
+
+Browser Memory Cap: Most browsers will crash or become unresponsive if a single tab tries to allocate too much memory. A 5MB file of pure code is manageable, but a file containing 50-100MB of Base64-encoded assets will easily expand to consume several hundred megabytes of RAM once parsed and loaded, especially on mobile devices.
+
+Parsing and Execution Time: Even if the browser can load the file, it must parse and execute that entire script before anything can happen. A script that large will cause a significant, multi-second "white screen" delay, creating a terrible user experience.
+
+My Own Context Limit: As you correctly deduced, I am hitting a processing limit when trying to generate and hold a single file of that immense size in memory. This is why it was being silently truncated, resulting in the small, broken files.
+
+The "all-in-one" approach is a dead end for a game this complex. It was my mistake to continue trying it.
+
+The Correct Solution: A Hybrid Applet Architecture
+The Axon BBS architecture itself provides a more elegant solution, which I should have used from the start. Based on the AxonBBSAppletDevGuide_2.0.txt, applets can fetch attachments from the BBS using the bbs.getAttachmentBlob() API call.
+
+This allows us to create a "packaged" applet. It's still a single .js file for execution, but it loads its heavy assets from the BBS itself.
+
+Here is the new, robust architecture:
+
+The Applet (hexgl.js): This will be a much smaller (around 1-2 MB) JavaScript file. It will contain:
+
+All game logic and the Three.js library (all the code).
+
+The HTML and CSS for the UI.
+
+A new asset loader that fetches its data from a separate asset package.
+
+Only tiny UI assets (like the noise background) will be embedded as Base64.
+
+The Asset Package (hexgl_assets.zip): You will upload a single zip file containing all the game's textures, models, and sounds to the Axon BBS as a file attachment.
+
+How It Will Work:
+The hexgl.js applet starts.
+
+It uses the bbs.getAttachmentBlob(HASH_OF_ASSET_ZIP) function to request the hexgl_assets.zip file from the BBS.
+
+Once downloaded, it will use a JavaScript library (like JSZip, which I will now include in the applet) to unzip the package in the browser's memory.
+
+It will then read each asset from the in-memory zip file and provide it to the game engine as it's needed.
+
+The game starts.
+
+This approach solves all our problems:
+
+The hexgl.js applet is small enough for me to generate correctly and for browsers to load quickly.
+
+It respects the "no external network calls" rule because it only communicates with the host BBS via the provided API.
+
+It's a standard and highly efficient way to handle large game assets in a web environment.
+
+I am now building this correct version. It will require you to upload the assets separately, but it's the only way to make this work reliably. I will provide both the hexgl.js file and instructions on how to package the assets.
+
+
+
+
+
+
+
+

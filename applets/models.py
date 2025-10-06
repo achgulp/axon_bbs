@@ -1,3 +1,20 @@
+# Axon BBS - a modern, anonymous, federated bulletin board system.
+# Copyright (C) 2025 Achduke7
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
 # Full path: axon_bbs/applets/models.py
 from django.db import models
 from django.conf import settings
@@ -18,8 +35,13 @@ class Applet(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True, help_text="The unique name of the applet.")
     description = models.TextField(blank=True)
-    author_pubkey = models.TextField(blank=True, help_text="Public key of the applet's author.")
+    
+    # NEW: The owner of the applet, linked to a user account.
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, help_text="The user who owns and can manage this applet.")
+    
+    author_pubkey = models.TextField(blank=True, help_text="Public key of the applet's author. Automatically set if an owner is selected.")
     code_manifest = models.JSONField(help_text="BitSync manifest for the applet's code bundle.")
+    parameters = models.JSONField(default=dict, blank=True, help_text="JSON object for applet-specific parameters (e.g., asset hashes).")
     is_local = models.BooleanField(default=False, help_text="If checked, this applet's code will not be swarmed to peers.")
     created_at = models.DateTimeField(auto_now_add=True)
     category = models.ForeignKey(AppletCategory, on_delete=models.SET_NULL, null=True, blank=True)
@@ -29,6 +51,12 @@ class Applet(models.Model):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        # Automatically set the author_pubkey if an owner is assigned and has a pubkey
+        if self.owner and self.owner.pubkey:
+            self.author_pubkey = self.owner.pubkey
+        super().save(*args, **kwargs)
 
 class AppletData(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

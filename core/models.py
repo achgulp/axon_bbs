@@ -113,3 +113,24 @@ class TrustedInstance(models.Model):
         super().save(*args, **kwargs)
     def __str__(self):
         return self.web_ui_onion_url or "Local Instance"
+
+class SharedLibrary(models.Model):
+    """Represents a third-party library approved for use by applets."""
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="A unique name for the library, e.g., 'three.js-r128' or 'jszip-v3.10.1'"
+    )
+    description = models.TextField(blank=True)
+    library_file = models.ForeignKey(
+        FileAttachment,
+        on_delete=models.CASCADE,
+        help_text="The FileAttachment that contains the library code."
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Disable to prevent applets from loading this library."
+    )
+
+    def __str__(self):
+        return self.name

@@ -38,7 +38,7 @@ from accounts.views import (
 from messaging.views import (
     MessageBoardListView, MessageListView, PostMessageView, PrivateMessageListView,
     PrivateMessageOutboxView, SendPrivateMessageView, DeletePrivateMessageView,
-    DownloadContentView, StreamContentView, FileUploadView
+    DownloadContentView, StreamContentView, FileUploadView, StreamLibraryView
 )
 from federation.views import (
     SyncView, BitSyncHasContentView, BitSyncChunkView, IgnorePubkeyView, BanPubkeyView,
@@ -120,6 +120,7 @@ api_urlpatterns = [
     path('applets/<uuid:applet_id>/shared_state/', AppletSharedStateView.as_view(), name='applet-shared-state'),
     path('applets/<uuid:applet_id>/state_version/', AppletStateVersionView.as_view(), name='applet-state-version'),
     path('applets/<uuid:applet_id>/update_state/', UpdateStateView.as_view(), name='applet-update-state'),
+    path('libraries/<str:library_name>/', StreamLibraryView.as_view(), name='stream-library'),
 
     # BitSync P2P Protocol
     path('sync/', SyncView.as_view(), name='sync'),

@@ -19,9 +19,114 @@
 import React, { useState, useEffect, useRef } from 'react';
 import apiClient from '../apiClient';
 
+// --- Helper function for SHA-256 Hashing ---
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex;
+}
+
+const LoadingAnimation = ({ status }) => {
+    return (
+        <div style={{
+            width: '100%',
+            height: '100%',
+            backgroundColor: '#0a0a1a',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            position: 'relative',
+            fontFamily: 'monospace',
+            color: '#00ffcc',
+        }}>
+            <style>{`
+                @keyframes stars-twinkle {
+                    0% { opacity: 0.2; }
+                    50% { opacity: 0.8; }
+                    100% { opacity: 0.2; }
+                }
+                @keyframes ship-land {
+                    0% { transform: translateY(-150px); }
+                    100% { transform: translateY(0); }
+                }
+                @keyframes ramp-deploy {
+                    0% { transform: scaleY(0); transform-origin: top; }
+                    100% { transform: scaleY(1); transform-origin: top; }
+                }
+                @keyframes spaceman-walk {
+                    0% { transform: translateX(0); }
+                    100% { transform: translateX(50px); }
+                }
+                @keyframes flag-plant {
+                    0% { transform: translateY(20px); opacity: 0; }
+                    100% { transform: translateY(0); opacity: 1; }
+                }
+                .star {
+                    position: absolute;
+                    background: white;
+                    border-radius: 50%;
+                    animation: stars-twinkle 3s infinite;
+                }
+            `}</style>
+            {[...Array(50)].map((_, i) => {
+                const size = Math.random() * 2 + 1;
+                return (
+                    <div key={i} className="star" style={{
+                        width: `${size}px`,
+                        height: `${size}px`,
+                        top: `${Math.random() * 100}%`,
+                        left: `${Math.random() * 100}%`,
+                        animationDelay: `${Math.random() * 3}s`,
+                    }}></div>
+                );
+            })}
+            <svg width="300" height="300" viewBox="0 0 300 300">
+                {/* Planet Surface */}
+                <path d="M0 300 C 50 250, 250 250, 300 300 L 300 300 L 0 300 Z" fill="#4a2a0a" />
+                <circle cx="50" cy="280" r="15" fill="#3a1a00" />
+                <circle cx="220" cy="290" r="25" fill="#3a1a00" />
+
+                {/* Spaceship */}
+                <g style={{ animation: 'ship-land 2s ease-out forwards' }}>
+                    <path d="M150 100 L120 180 L180 180 Z" fill="#c0c0c0" />
+                    <rect x="110" y="180" width="80" height="10" fill="#a0a0a0" />
+                    <circle cx="150" cy="130" r="10" fill="#00ffff" />
+                    {/* Ramp */}
+                    <path d="M140 170 L130 260 L170 260 L160 170 Z" fill="#808080" style={{ animation: 'ramp-deploy 2s 2s ease-in forwards' }}/>
+                </g>
+                
+                {/* Spaceman */}
+                <g style={{ animation: 'spaceman-walk 2s 4s ease-in-out forwards' }}>
+                    <circle cx="145" cy="160" r="8" fill="white" /> {/* Helmet */}
+                    <rect x="142" y="168" width="6" height="15" fill="#e0e0e0" /> {/* Body */}
+                </g>
+
+                {/* Flag */}
+                 <g style={{ animation: 'flag-plant 1s 6s ease-out forwards', opacity: 0 }}>
+                    <rect x="200" y="240" width="3" height="30" fill="#a0a0a0" />
+                    <rect x="203" y="240" width="25" height="15" fill="#ff4136" />
+                </g>
+            </svg>
+            <div style={{
+                marginTop: '20px',
+                fontSize: '1.2em',
+                textShadow: '0 0 5px #00ffcc',
+            }}>
+                {status}
+            </div>
+        </div>
+    );
+};
+
 const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
   const [appletCode, setAppletCode] = useState(null);
+  const [libraryScripts, setLibraryScripts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingStatus, setLoadingStatus] = useState('Initializing...');
   const [error, setError] = useState('');
   const [profile, setProfile] = useState(null);
   const iframeRef = useRef(null);
@@ -31,23 +136,64 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
       setIsLoading(true);
       setError('');
       try {
+        setLoadingStatus('Fetching user profile...');
         const profilePromise = apiClient.get('/api/user/profile/');
+
         if (!applet?.code_manifest?.content_hash) {
           throw new Error("Applet has an invalid code manifest.");
         }
-        const codeUrl = `/api/content/download/${applet.code_manifest.content_hash}/`;
-        // Increase timeout to 30 seconds for potentially slow applet downloads
-        const codePromise = apiClient.get(codeUrl, { timeout: 30000 });
+        
+        // --- Load Shared Libraries ---
+        if (applet.parameters?.required_libraries) {
+            setLoadingStatus('Loading shared libraries...');
+            const libraryPromises = applet.parameters.required_libraries.map(libName =>
+                apiClient.get(`/api/libraries/${libName}/`, { responseType: 'text' })
+            );
+            const libraryResponses = await Promise.all(libraryPromises);
+            setLibraryScripts(libraryResponses.map(res => res.data));
+            setLoadingStatus('Libraries loaded.');
+        }
+
+        setLoadingStatus('Downloading applet package...');
+        const codeUrl = `/api/content/stream/${applet.code_manifest.content_hash}/?for_verification`;
+        const codePromise = apiClient.get(codeUrl, { 
+            timeout: 60000,
+            responseType: 'text' 
+        });
 
         const [profileResponse, codeResponse] = await Promise.all([profilePromise, codePromise]);
         
         setProfile(profileResponse.data);
-        setAppletCode(codeResponse.data);
+        const receivedPayloadString = codeResponse.data;
+
+        setLoadingStatus('Verifying package integrity...');
+        const calculatedHash = await sha256(receivedPayloadString);
+        
+        if (calculatedHash !== applet.code_manifest.content_hash) {
+            console.error(`CRITICAL: Checksum mismatch! Expected ${applet.code_manifest.content_hash}, but calculated ${calculatedHash}`);
+            throw new Error(`Code integrity check failed. The downloaded applet code may be corrupted or tampered with. Please try again.`);
+        }
+        setLoadingStatus('Verification successful. Unpacking applet...');
+
+        const payload = JSON.parse(receivedPayloadString);
+        let finalAppletCode;
+
+        if (payload.type === 'file' && payload.data) {
+            finalAppletCode = atob(payload.data);
+        } else if (payload.type === 'applet_code' && payload.code) {
+            finalAppletCode = payload.code;
+        } else {
+            throw new Error("Invalid or unrecognized applet package format.");
+        }
+
+        setTimeout(() => {
+            setAppletCode(finalAppletCode);
+            setIsLoading(false);
+        }, 1000);
 
       } catch (err) {
         console.error("Failed to load applet prerequisites:", err);
         setError(err.response?.data?.error || err.message || "Could not load applet.");
-      } finally {
         setIsLoading(false);
       }
     };
@@ -57,9 +203,7 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
 
   useEffect(() => {
     const handleMessage = async (event) => {
-      // Security checks
-      if (event.origin !== window.location.origin) return;
-      if (event.source !== iframeRef.current?.contentWindow) return;
+      if (event.origin !== window.location.origin || event.source !== iframeRef.current?.contentWindow) return;
 
       const { command, payload, requestId } = event.data;
       let response = { command: `response_${command}`, requestId, payload: null, error: null };
@@ -85,10 +229,11 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
             response.payload = attachmentContext;
             break;
           case 'getAttachmentBlob':
-            if (!attachmentContext || !attachmentContext.content_hash) {
-              throw new Error("No attachment context is available to fetch.");
+            const hash = payload?.hash || attachmentContext?.content_hash;
+            if (!hash) {
+                throw new Error("No attachment context or hash is available to fetch.");
             }
-            const blob = await apiClient.getBlob(`/api/content/stream/${attachmentContext.content_hash}/`);
+            const blob = await apiClient.getBlob(`/api/content/stream/${hash}/`);
             response.payload = blob;
             break;
           case 'postEvent':
@@ -100,7 +245,7 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
             response.payload = readResponse.data;
             break;
           default:
-            return; // Do not respond to unknown commands
+            return;
         }
       } catch (e) {
         console.error(`Error processing applet command '${command}':`, e);
@@ -121,11 +266,18 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
     const checksum = applet?.code_manifest?.content_hash || 'N/A';
     const debugMode = applet?.is_debug_mode || false;
 
-    // This wrapper is critical. It ensures the applet-root div exists before the applet's code runs.
+    // Generate script tags for all required libraries
+    const libraryScriptTags = libraryScripts.map(scriptContent => 
+        `<script>${scriptContent}<\/script>`
+    ).join('');
+
     return `
       <!DOCTYPE html>
       <html>
-        <head><title>${applet.name}</title></head>
+        <head>
+          <title>${applet.name}</title>
+          ${libraryScriptTags}
+        </head>
         <body>
           <div id="applet-root"></div>
           <script>
@@ -154,13 +306,13 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
         <h2 className="text-xl font-bold text-gray-200">{applet.name}</h2>
         {onBack && 
             <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded">
-              ← Back
+                ← Back
             </button>
         }
       </div>
       <div className="w-full h-[75vh] bg-gray-900 border border-gray-700 rounded overflow-hidden">
         {isLoading ? (
-          <div className="p-4">Loading applet and user profile...</div>
+          <LoadingAnimation status={loadingStatus} />
         ) : error ? (
           <div className="p-4 text-red-500">{error}</div>
         ) : (

@@ -20,7 +20,7 @@ from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
-from django.http import HttpResponse, StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse, Http404
 import logging
 import json
 import base64
@@ -30,11 +30,8 @@ from django.contrib.auth import get_user_model
 from .serializers import MessageBoardSerializer, MessageSerializer, PrivateMessageSerializer, PrivateMessageOutboxSerializer
 from core.serializers import FileAttachmentSerializer
 from .models import MessageBoard, Message, PrivateMessage
-# --- BUG FIX START ---
-# Corrected the model import locations
-from core.models import FileAttachment, TrustedInstance
+from core.models import FileAttachment, TrustedInstance, SharedLibrary
 from accounts.models import IgnoredPubkey, Alias
-# --- BUG FIX END ---
 from core.services.service_manager import service_manager
 from core.services.encryption_utils import encrypt_for_recipients_only, generate_checksum, decrypt_for_recipients_only
 
@@ -65,6 +62,7 @@ class MessageListView(generics.ListAPIView):
             return Message.objects.none()
         
         ignored_pubkeys = IgnoredPubkey.objects.filter(user=self.request.user).values_list('pubkey', flat=True)
+        
         return Message.objects.filter(board=board).exclude(pubkey__in=ignored_pubkeys).order_by('-created_at')
     
     def list(self, request, *args, **kwargs):
@@ -92,7 +90,7 @@ class PostMessageView(views.APIView):
                 return Response({"error": "You do not have permission to post on this board."}, status=status.HTTP_403_FORBIDDEN)
 
             attachments = FileAttachment.objects.filter(id__in=attachment_ids, author=user)
-            attachment_hashes = [att.metadata_manifest['content_hash'] for att in attachments]
+            attachment_hashes = [att.metadata_manifest['content_hash'] for att in attachments if att.metadata_manifest]
             
             message_content = {
                 "type": "message",
@@ -321,9 +319,9 @@ class DownloadContentView(views.APIView):
 
             content = json.loads(decrypted_bytes.decode('utf-8'))
             
-            if content.get('type') == 'applet_code':
-                applet_code = content.get('code', '')
-                return HttpResponse(applet_code, content_type='application/javascript')
+            if content.get('type') == 'file':
+                file_bytes = base64.b64decode(content.get('data', ''))
+                return HttpResponse(file_bytes, content_type=content.get('content_type', 'application/octet-stream'))
             
             return Response({"error": "Unsupported content type for direct download."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -373,7 +371,7 @@ class FileUploadView(views.APIView):
             logger.error(f"Could not process file upload for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "An unexpected error occurred during file upload."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-def stream_content_generator(content_hash):
+def stream_content_generator(content_hash, raw_json=False):
     sync_service = service_manager.sync_service
     logger.debug(f"Starting stream for content hash: {content_hash}")
 
@@ -386,6 +384,11 @@ def stream_content_generator(content_hash):
         decrypted_payload_bytes = sync_service.get_decrypted_content(manifest)
         if not decrypted_payload_bytes:
             logger.error(f"Failed to decrypt payload for stream: {content_hash}")
+            return
+        
+        if raw_json:
+            yield decrypted_payload_bytes
+            logger.info(f"Successfully streamed raw JSON payload for hash: {content_hash}")
             return
 
         payload = json.loads(decrypted_payload_bytes.decode('utf-8'))
@@ -415,10 +418,42 @@ class StreamContentView(views.APIView):
         if not manifest:
             return Response({"error": "Content not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        content_type = manifest.get('content_type_val', 'application/octet-stream')
-        
+        is_for_verification = 'for_verification' in request.query_params
+        if is_for_verification:
+            content_type = 'application/json'
+            generator = stream_content_generator(content_hash, raw_json=True)
+        else:
+            decrypted_payload_bytes = service_manager.sync_service.get_decrypted_content(manifest)
+            try:
+                payload = json.loads(decrypted_payload_bytes)
+                content_type = payload.get('content_type', 'application/octet-stream')
+            except:
+                content_type = 'application/octet-stream'
+            generator = stream_content_generator(content_hash)
+
         response = StreamingHttpResponse(
-            stream_content_generator(content_hash),
+            generator,
             content_type=content_type
         )
         return response
+
+class StreamLibraryView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, library_name, *args, **kwargs):
+        if not request.session.get('unencrypted_priv_key'):
+            return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        try:
+            library = SharedLibrary.objects.get(name=library_name, is_active=True)
+            content_hash = library.library_file.metadata_manifest.get('content_hash')
+            if not content_hash:
+                raise Http404
+
+            # We use raw_json=True because the library file payload is the script itself
+            generator = stream_content_generator(content_hash, raw_json=True)
+            response = StreamingHttpResponse(generator, content_type='application/javascript')
+            return response
+
+        except SharedLibrary.DoesNotExist:
+            raise Http404
