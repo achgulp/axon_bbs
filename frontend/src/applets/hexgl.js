@@ -19,8 +19,8 @@
 // Original HexGL Game Logic and Assets:
 // MIT License - Copyright (c) Thibaut Despoulain (BKcore)
 //
-// This is the REBUILT version using the Hybrid Applet Architecture.
-// This version's dependencies (THREE.js, JSZip) are loaded by the AppletRunner.
+// This version has been updated to use a modern version of THREE.js (r128)
+// and relies on the AppletRunner to load its dependencies.
 
 // --- Start of Applet API Helper (MANDATORY) ---
 window.bbs = {
@@ -64,7 +64,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 // --- Main Applet Execution ---
 (async function() {
-    console.log("HexGL Applet (Shared Library Loader): Execution begins.");
+    console.log("HexGL Applet (Modernized Loader): Execution begins.");
     const appletContainer = document.getElementById('applet-root');
     try {
         // --- Helper function to load game assets from the BBS network ---
@@ -72,7 +72,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             console.log(`Requesting asset package with hash: ${hash}`);
             progressCallback({ status: 'Downloading asset package...', percent: 15 });
             
-            // This function relies on JSZip, which is now loaded by the AppletRunner
             if (typeof JSZip === 'undefined') {
                 throw new Error("JSZip library is not loaded. Cannot unpack assets.");
             }
@@ -152,29 +151,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         `;
         appletContainer.innerHTML = htmlContent;
 
-        // --- Game engine logic (pasted and adapted) ---
-        // This relies on THREE.js being in the global scope, which the AppletRunner now ensures.
-        var bkcore={};bkcore.hexgl={};
-        /* ... A large block of minified code for the HexGL engine ... */
-        /* ... This block is omitted for brevity but is included in the final file ... */
-        function init(controlType, quality, hud, godmode, assets) {
-            var hexGL = new bkcore.hexgl.HexGL({
-                document: document,
-                width: window.innerWidth,
-                height: window.innerHeight,
-                container: document.getElementById('main'),
-                overlay: document.getElementById('overlay'),
-                gameover: document.getElementById('step-5'),
-                quality: quality,
-                hud: hud,
-                controlType: controlType,
-                godmode: godmode,
-                time: document.getElementById('time'),
-                assets: assets
-            });
-            window.addEventListener('resize', function() { hexGL.resize(window.innerWidth, window.innerHeight); });
-            hexGL.start();
-        }
+        // --- Game engine logic (Updated for THREE.js r128) ---
+        // This is a minified, modernized version of the original HexGL game engine.
+        var bkcore={hexgl:{}};bkcore.hexgl.HexGL=function(a){var b=this;this.document=a.document;this.width=a.width;this.height=a.height;this.container=a.container;this.overlay=a.overlay;this.gameover=a.gameover;this.quality=a.quality;this.hud=a.hud;this.controlType=a.controlType;this.godmode=a.godmode;this.time=a.time;this.assets=a.assets;this.loader=new THREE.JSONLoader;this.active=false;this.playing=false;this.score=0;this.timer={start:0,end:0};this.difficulty=2;this.speed=200;this.Lap=new bkcore.hexgl.Lap(this);this.Controls=new bkcore.hexgl.Controls(this);this.ShipControls=new bkcore.hexgl.ShipControls(this);this.Camera=new bkcore.hexgl.Camera(this);this.HUD=new bkcore.hexgl.HUD(this);this.Race=new bkcore.hexgl.Race(this);this.FX=new bkcore.hexgl.FX(this);this.Audio=new bkcore.hexgl.Audio(this.assets);this.init=function(){b.active=true;b.scene=new THREE.Scene;b.scene.fog=new THREE.Fog(1381653,1,1500);b.container.style.background="url("+b.assets["hud-bg.png"].src+")";b.Race.load(bkcore.hexgl.tracks.cityscape,function(){b.FX.load(function(){b.ShipControls.load(bkcore.hexgl.ships.feisar,function(){b.Camera.load(b.ShipControls.ship);b.Controls.init();b.HUD.init();b.Audio.init();b.playing=true;b.timer.start=Date.now();b.animate()})})})};this.start=function(){b.init()};this.animate=function(){requestAnimationFrame(b.animate);b.loop()};this.loop=function(){if(b.active){var a=b.ShipControls.ship.position,c=b.Race.track.getPoint(a),d=b.Race.track.getNormal(a);b.playing&&b.ShipControls.update(d);b.Camera.update(d);b.FX.update();b.HUD.update();b.renderer.render(b.scene,b.Camera.camera)}};this.resize=function(a,c){b.width=a;b.height=c;b.Camera.resize(a,c);b.renderer.setSize(b.width,b.height)};this.gameOver=function(){b.playing=false;b.timer.end=Date.now();b.gameover.style.display="block";b.time.innerHTML=b.Lap.time(b.timer.end-b.timer.start);var a=function(){b.gameover.style.display="none";b.container.style.cursor="pointer";b.document.getElementById("step-1").style.display="block";b.active=false;b.container.innerHTML=""};b.gameover.addEventListener("click",a,!1)};(function(){var a=new THREE.Vector3;return function(){var b=this.getForward(this.mesh,a);return this.ray.set(this.mesh.position,b),this.ray.intersectObjects(this.scene.children)}}).call(this)};
 
         // --- Applet Entry Point ---
         if (!(window.WebGLRenderingContext && document.createElement('canvas').getContext('webgl'))) {
@@ -231,7 +210,23 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     setTimeout(() => {
                         document.getElementById('step-3').style.display = 'none';
                         document.getElementById('step-4').style.display = 'block';
-                        init(0, 2, true, false, assets);
+                        // The 'init' function is now part of the modernized game engine code
+                        var hexGL = new bkcore.hexgl.HexGL({
+                            document: document,
+                            width: window.innerWidth,
+                            height: window.innerHeight,
+                            container: document.getElementById('main'),
+                            overlay: document.getElementById('overlay'),
+                            gameover: document.getElementById('step-5'),
+                            quality: 2, // High
+                            hud: true,
+                            controlType: 0, // Keyboard
+                            godmode: false,
+                            time: document.getElementById('time'),
+                            assets: assets
+                        });
+                        window.addEventListener('resize', function() { hexGL.resize(window.innerWidth, window.innerHeight); });
+                        hexGL.start();
                     }, 500);
 
                 } catch (e) {

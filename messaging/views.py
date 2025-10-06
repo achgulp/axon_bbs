@@ -450,8 +450,8 @@ class StreamLibraryView(views.APIView):
             if not content_hash:
                 raise Http404
 
-            # We use raw_json=True because the library file payload is the script itself
-            generator = stream_content_generator(content_hash, raw_json=True)
+            # CHANGE: The generator should decode the file, not send the raw manifest JSON
+            generator = stream_content_generator(content_hash, raw_json=False)
             response = StreamingHttpResponse(generator, content_type='application/javascript')
             return response
 
