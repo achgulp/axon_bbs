@@ -18,10 +18,27 @@
 # Full path: axon_bbs/messaging/admin.py
 from django.contrib import admin
 from .models import MessageBoard, Message, PrivateMessage
+from federation.models import FederatedAction
+
+@admin.action(description='Federate Delete (broadcasts delete to peers)')
+def federate_delete_action(modeladmin, request, queryset):
+    for item in queryset:
+        if hasattr(item, 'metadata_manifest') and item.metadata_manifest:
+            content_hash = item.metadata_manifest.get('content_hash')
+            if content_hash:
+                FederatedAction.objects.create(
+                    action_type='DELETE_CONTENT',
+                    content_hash_target=content_hash,
+                    action_details={'reason': f'Content deleted by admin {request.user.username}'}
+                )
+    queryset.delete()
+
+class MessageAdmin(admin.ModelAdmin):
+    list_display = ('subject', 'author', 'board', 'created_at')
+    list_filter = ('board', 'author')
+    actions = [federate_delete_action]
 
 # Register your models here.
 admin.site.register(MessageBoard)
-admin.site.register(Message)
+admin.site.register(Message, MessageAdmin)
 admin.site.register(PrivateMessage)
-
-

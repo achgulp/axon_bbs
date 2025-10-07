@@ -19,6 +19,7 @@
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from .models import User, TrustedInstance, FileAttachment, ValidFileType, SharedLibrary
+from federation.models import FederatedAction
 from core.services.service_manager import service_manager
 import requests
 from django.core.management import call_command
@@ -32,6 +33,19 @@ class CustomUserAdmin(UserAdmin):
         }),
     )
     list_display = ('username', 'nickname', 'is_staff', 'is_moderator', 'is_agent')
+
+@admin.action(description='Federate Delete (broadcasts delete to peers)')
+def federate_delete_action(modeladmin, request, queryset):
+    for item in queryset:
+        if hasattr(item, 'metadata_manifest') and item.metadata_manifest:
+            content_hash = item.metadata_manifest.get('content_hash')
+            if content_hash:
+                FederatedAction.objects.create(
+                    action_type='DELETE_CONTENT',
+                    content_hash_target=content_hash,
+                    action_details={'reason': f'Content deleted by admin {request.user.username}'}
+                )
+    queryset.delete()
 
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
@@ -115,6 +129,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
 class FileAttachmentAdmin(admin.ModelAdmin):
     list_display = ('filename', 'content_type', 'size', 'author')
     search_fields = ['filename']
+    actions = [federate_delete_action]
 
 @admin.register(SharedLibrary)
 class SharedLibraryAdmin(admin.ModelAdmin):
