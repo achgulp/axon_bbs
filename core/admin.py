@@ -25,6 +25,7 @@ import requests
 from django.core.management import call_command
 from io import StringIO
 import json
+import sys
 
 class CustomUserAdmin(UserAdmin):
     fieldsets = UserAdmin.fieldsets + (
@@ -108,16 +109,17 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             
             data = response.json()
             
-            # Filter out superusers before loading data
             filtered_objects = [obj for obj in data if not (obj['model'] == 'core.user' and obj['fields']['is_superuser'])]
 
-            out = StringIO()
-            json.dump(filtered_objects, out)
-            out.seek(0)
+            # Temporarily redirect stdin to feed the data to the loaddata command
+            old_stdin = sys.stdin
+            sys.stdin = StringIO(json.dumps(filtered_objects))
+            try:
+                call_command('loaddata', '-', ignorenonexistent=True)
+            finally:
+                # Always restore the original stdin
+                sys.stdin = old_stdin
 
-            # Use loaddata with stdin
-            call_command('loaddata', '-', stdin=out, ignorenonexistent=True)
-            # Backfill avatars for newly created users
             call_command('backfill_avatars')
 
             self.message_user(request, f"Successfully cloned configuration from {peer.web_ui_onion_url}.", messages.SUCCESS)
