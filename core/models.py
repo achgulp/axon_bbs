@@ -32,6 +32,7 @@ def get_default_expires_at():
     return timezone.now() + timedelta(days=days)
 
 class User(AbstractUser):
+    # ... (no changes to this model) ...
     access_level = models.PositiveIntegerField(default=10, help_text="User's security access level.")
     is_banned = models.BooleanField(default=False, help_text="Designates if the user is banned from the local instance.")
     pubkey = models.TextField(blank=True, null=True, help_text="User's public key (PEM).")
@@ -63,7 +64,9 @@ class User(AbstractUser):
 
         super(User, self).save(*args, **kwargs)
 
+
 class ValidFileType(models.Model):
+    # ... (no changes to this model) ...
     mime_type = models.CharField(max_length=100, unique=True, help_text="e.g., 'image/jpeg'")
     description = models.CharField(max_length=255, blank=True)
     is_enabled = models.BooleanField(default=True, help_text="Disable to temporarily disallow this file type.")
@@ -71,7 +74,9 @@ class ValidFileType(models.Model):
     def __str__(self):
         return f"{self.mime_type} ({self.description})"
 
+
 class Content(models.Model):
+    # ... (no changes to this model) ...
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='authored_%(class)ss', null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -82,6 +87,7 @@ class Content(models.Model):
     class Meta:
         abstract = True
 
+
 class FileAttachment(Content):
     filename = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)
@@ -89,9 +95,13 @@ class FileAttachment(Content):
     metadata_manifest = models.JSONField(help_text="BitSync manifest for P2P file distribution.")
 
     def __str__(self):
-        return f"{self.filename} ({self.id})"
+        # Format the timestamp for display in the admin dropdown.
+        timestamp = self.created_at.strftime("%Y-%m-%d %H:%M")
+        return f"{self.filename} ({timestamp})"
+
 
 class TrustedInstance(models.Model):
+    # ... (no changes to this model) ...
     web_ui_onion_url = models.URLField(max_length=255, blank=True, null=True)
     pubkey = models.TextField(blank=True, null=True)
     encrypted_private_key = models.TextField(blank=True, null=True)
@@ -115,6 +125,7 @@ class TrustedInstance(models.Model):
         return self.web_ui_onion_url or "Local Instance"
 
 class SharedLibrary(models.Model):
+    # ... (no changes to this model) ...
     """Represents a third-party library approved for use by applets."""
     name = models.CharField(
         max_length=100,
