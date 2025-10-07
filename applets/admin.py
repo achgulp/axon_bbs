@@ -53,7 +53,7 @@ class AppletAdmin(admin.ModelAdmin):
     )
     
     readonly_fields = ('id', 'created_at', 'author_pubkey', 'code_manifest')
-    autocomplete_fields = ['owner', 'code_source_file']
+    autocomplete_fields = ['owner']
 
     def save_model(self, request, obj, form, change):
         # Auto-populate the code_manifest from the selected source file.
