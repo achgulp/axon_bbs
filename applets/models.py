@@ -36,13 +36,13 @@ class Applet(models.Model):
     name = models.CharField(max_length=100, unique=True, help_text="The unique name of the applet.")
     description = models.TextField(blank=True)
     
-    # NEW: The owner of the applet, linked to a user account.
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, help_text="The user who owns and can manage this applet.")
     
     author_pubkey = models.TextField(blank=True, help_text="Public key of the applet's author. Automatically set if an owner is selected.")
     code_manifest = models.JSONField(help_text="BitSync manifest for the applet's code bundle.")
-    parameters = models.JSONField(default=dict, blank=True, help_text="JSON object for applet-specific parameters (e.g., asset hashes).")
+    parameters = models.JSONField(default=dict, blank=True, help_text="JSON object for applet-specific parameters (e.g., asset hashes or required libraries).")
     is_local = models.BooleanField(default=False, help_text="If checked, this applet's code will not be swarmed to peers.")
+    
     created_at = models.DateTimeField(auto_now_add=True)
     category = models.ForeignKey(AppletCategory, on_delete=models.SET_NULL, null=True, blank=True)
     is_debug_mode = models.BooleanField(default=False, help_text="Enable to show the debug console when this applet is run.")
