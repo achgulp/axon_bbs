@@ -109,7 +109,31 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             
             data = response.json()
             
-            filtered_objects = [obj for obj in data if not (obj['model'] == 'core.user' and obj['fields']['is_superuser'])]
+            # Step 1: Find all superuser primary keys from the peer data
+            superuser_pks = {
+                obj['pk'] for obj in data
+                if obj['model'] == 'core.user' and obj['fields'].get('is_superuser')
+            }
+
+            # Step 2: Filter out superusers AND any objects that link to them
+            filtered_objects = []
+            for obj in data:
+                # Condition A: Skip if the object itself is a superuser
+                if obj['model'] == 'core.user' and obj['pk'] in superuser_pks:
+                    continue
+
+                # Condition B: Skip if the object has a foreign key to a superuser
+                fields = obj.get('fields', {})
+                owner_pk = fields.get('owner')      # Used in Applet
+                user_pk = fields.get('user')        # Used in IgnoredPubkey
+                author_pk = fields.get('author')    # Used in Message, FileAttachment
+                
+                if (owner_pk in superuser_pks or
+                    user_pk in superuser_pks or
+                    author_pk in superuser_pks):
+                    continue
+
+                filtered_objects.append(obj)
 
             # Temporarily redirect stdin to feed the data to the loaddata command
             old_stdin = sys.stdin
