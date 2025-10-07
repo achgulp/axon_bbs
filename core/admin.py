@@ -115,7 +115,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             old_stdin = sys.stdin
             sys.stdin = StringIO(json.dumps(filtered_objects))
             try:
-                call_command('loaddata', '-', ignorenonexistent=True)
+                call_command('loaddata', '-', format='json', ignorenonexistent=True)
             finally:
                 # Always restore the original stdin
                 sys.stdin = old_stdin
