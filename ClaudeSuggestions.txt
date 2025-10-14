@@ -1,0 +1,2046 @@
+================================================================================
+AXON BBS - COMPREHENSIVE SECURITY ANALYSIS AND RECOMMENDATIONS
+================================================================================
+Date: 2025-10-09
+Analyst: Claude (Anthropic)
+Project Version: 10.26.0
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. EXECUTIVE SUMMARY
+2. PROJECT OVERVIEW AND ASSESSMENT
+3. CRITICAL SECURITY ISSUES (Options 1, 3, 4, 5)
+   3.1 Key Management Architecture (Option 1)
+   3.2 Cryptographic Implementation (Option 3)
+   3.3 Authentication and Session Security (Option 4)
+   3.4 Tor/Network Security (Option 5)
+4. IMPLEMENTATION ROADMAP
+5. TESTING RECOMMENDATIONS
+6. DOCUMENTATION REQUIREMENTS
+
+================================================================================
+1. EXECUTIVE SUMMARY
+================================================================================
+
+Axon BBS is an ambitious and well-architected federated bulletin board system
+with strong privacy foundations. The project demonstrates:
+
+STRENGTHS:
+- Exceptional documentation (PRD, Architecture Blueprint, Status docs)
+- Security-first design philosophy
+- Innovative federated applet framework
+- Well-structured Django application with proper separation of concerns
+- Strong cryptographic primitives (AES-256, RSA-2048+, PBKDF2)
+
+CRITICAL ISSUES REQUIRING IMMEDIATE ATTENTION:
+1. Key Management: Single SECRET_KEY used for multiple purposes
+2. Cryptographic Implementation: No authentication on AES-CBC (padding oracle)
+3. JWT Token Lifetime: 24-hour tokens too long for security
+4. Tor Circuit Isolation: All traffic uses same circuit (correlation risk)
+5. No Automated Testing: Critical for security-critical applications
+
+OVERALL ASSESSMENT: 7.5/10
+- Strong architectural foundation
+- Production-ready with recommended security hardening
+- Requires testing infrastructure before deployment
+- Estimated timeline: 2-3 months to production-ready status
+
+================================================================================
+2. PROJECT OVERVIEW AND ASSESSMENT
+================================================================================
+
+ARCHITECTURE:
+- Backend: Django 5.0.6 + Django REST Framework
+- Frontend: React 18.3.1 (SPA)
+- Database: SQLite (development) - recommend PostgreSQL for production
+- Authentication: JWT (SimpleJWT)
+- Federation: Custom BitSync P2P protocol over Tor
+- Encryption: Multi-layer (AES-256 + RSA key wrapping)
+
+KEY FEATURES:
+- End-to-end encrypted private messaging
+- Federated content synchronization
+- Sandboxed JavaScript applet framework
+- Dynamic agent loading (model-driven services)
+- Unified moderation system
+- Anonymous communication over Tor
+
+IDENTIFIED ISSUES:
+
+CRITICAL (Must Fix Before Production):
+- Key management lacks separation
+- AES-CBC without authentication (padding oracle vulnerability)
+- JWT tokens too long-lived
+- No Tor circuit isolation
+- DEBUG=True hardcoded
+- SQLite for production use
+- No test suite
+
+STRUCTURAL:
+- SyncService too large (582 lines, multiple responsibilities)
+- No API versioning
+- Frontend lacks routing (noted in roadmap)
+- Circular import patterns in service_manager
+- No rate limiting
+
+DESIGN CONSIDERATIONS:
+- Chunk storage (many files on disk)
+- Fixed polling intervals (timing correlation)
+- No key rotation procedures
+- Public key normalization in multiple places
+
+================================================================================
+3. CRITICAL SECURITY ISSUES
+================================================================================
+
+================================================================================
+3.1 KEY MANAGEMENT ARCHITECTURE (OPTION 1)
+================================================================================
+
+CURRENT PROBLEM:
+----------------
+Single SECRET_KEY used for:
+1. Django session signing
+2. JWT token signing
+3. Instance private key encryption (Fernet)
+4. CSRF token generation
+
+SECURITY RISK:
+- Key compromise = total system compromise
+- Cannot rotate keys independently
+- Violates NIST SP 800-57 Part 1: "Keys shall not be used for multiple purposes"
+- Rotating SECRET_KEY = all encrypted private keys permanently lost
+
+ATTACK SCENARIO:
+If Django session is compromised via session fixation or XSS:
+→ Attacker extracts SECRET_KEY via timing attacks on HMAC
+→ Can decrypt ALL instance private keys from database
+→ Can sign valid JWT tokens for any user
+→ Can forge CSRF tokens
+→ Complete system compromise
+
+DETAILED SOLUTION:
+------------------
+
+PHASE 1: Immediate Separation (Week 1-2)
+
+Environment Variables Schema:
+```
+DJANGO_SECRET_KEY=<random-64-chars>     # Django framework
+CSRF_SECRET_KEY=<random-64-chars>       # CSRF tokens
+JWT_SIGNING_KEY=<random-64-chars>       # JWT authentication
+INSTANCE_KEK=<random-64-chars>          # Key Encryption Key
+INSTANCE_KEK_SALT=<random-32-chars>     # Salt for KDF
+```
+
+Key Generation:
+```python
+# tools/generate_keys.py
+import secrets
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+import base64
+
+def generate_keys():
+    keys = {
+        'DJANGO_SECRET_KEY': secrets.token_urlsafe(64),
+        'JWT_SIGNING_KEY': secrets.token_urlsafe(64),
+        'INSTANCE_KEK': secrets.token_urlsafe(64),
+        'INSTANCE_KEK_SALT': secrets.token_hex(32),
+    }
+
+    # Derive KEK with PBKDF2 (600k iterations)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=bytes.fromhex(keys['INSTANCE_KEK_SALT']),
+        iterations=600000,
+    )
+    derived_kek = base64.urlsafe_b64encode(
+        kdf.derive(keys['INSTANCE_KEK'].encode())
+    )
+
+    return keys, derived_kek
+```
+
+Key Management Service:
+```python
+# core/services/key_management.py
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.fernet import Fernet
+from django.conf import settings
+
+class KeyManagementService:
+    _derived_kek = None
+
+    @classmethod
+    def get_instance_kek(cls) -> bytes:
+        if cls._derived_kek is None:
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=bytes.fromhex(settings.INSTANCE_KEK_SALT),
+                iterations=600000,
+            )
+            cls._derived_kek = base64.urlsafe_b64encode(
+                kdf.derive(settings.INSTANCE_KEK.encode())
+            )
+        return cls._derived_kek
+
+    @classmethod
+    def encrypt_private_key(cls, private_key_pem: str) -> str:
+        kek = cls.get_instance_kek()
+        f = Fernet(kek)
+        return f.encrypt(private_key_pem.encode()).decode()
+
+    @classmethod
+    def decrypt_private_key(cls, encrypted_key: str) -> bytes:
+        kek = cls.get_instance_kek()
+        f = Fernet(kek)
+        return f.decrypt(encrypted_key.encode())
+```
+
+Migration Script:
+```python
+# management/commands/migrate_keys.py
+from django.core.management.base import BaseCommand
+from core.services.key_management import KeyManagementService
+from core.models import TrustedInstance
+from cryptography.fernet import Fernet
+import base64
+
+class Command(BaseCommand):
+    def handle(self, *args, **options):
+        # Old key (from environment)
+        old_secret = settings.SECRET_KEY
+        old_key = base64.urlsafe_b64encode(old_secret.encode()[:32])
+        old_fernet = Fernet(old_key)
+
+        # New KEK
+        new_kek = KeyManagementService.get_instance_kek()
+        new_fernet = Fernet(new_kek)
+
+        # Re-encrypt all private keys
+        instances = TrustedInstance.objects.filter(
+            encrypted_private_key__isnull=False
+        )
+
+        for instance in instances:
+            try:
+                # Decrypt with old key
+                private_key_pem = old_fernet.decrypt(
+                    instance.encrypted_private_key.encode()
+                )
+
+                # Encrypt with new key
+                instance.encrypted_private_key = new_fernet.encrypt(
+                    private_key_pem
+                ).decode()
+
+                instance.save()
+                self.stdout.write(f'✓ Migrated: {instance}')
+
+            except Exception as e:
+                self.stdout.write(f'✗ Failed: {instance} - {e}')
+                raise
+```
+
+PHASE 2: Hardware Security Module (Production)
+
+For production deployments, integrate with HSM:
+
+HSM Backend Options:
+- PKCS#11 (YubiHSM, Nitrokey HSM)
+- AWS KMS
+- Google Cloud KMS
+- Azure Key Vault
+- HashiCorp Vault
+
+Example AWS KMS Integration:
+```python
+# core/services/hsm_key_management.py
+import boto3
+
+class AWSKMSBackend:
+    def __init__(self, key_id: str, region: str):
+        self.kms = boto3.client('kms', region_name=region)
+        self.key_id = key_id
+
+    def encrypt(self, plaintext: bytes) -> bytes:
+        response = self.kms.encrypt(
+            KeyId=self.key_id,
+            Plaintext=plaintext
+        )
+        return response['CiphertextBlob']
+
+    def decrypt(self, ciphertext: bytes) -> bytes:
+        response = self.kms.decrypt(
+            KeyId=self.key_id,
+            CiphertextBlob=ciphertext
+        )
+        return response['Plaintext']
+```
+
+PHASE 3: Key Rotation Procedures
+
+Key Rotation Schedule:
+- JWT_SIGNING_KEY: Every 90 days (automatic)
+- INSTANCE_KEK: Every 365 days (manual, with backup)
+- DJANGO_SECRET_KEY: Every 90 days (forces session logout)
+
+Rotation Command:
+```python
+# management/commands/rotate_keys.py
+from django.core.management.base import BaseCommand
+
+class Command(BaseCommand):
+    def handle(self, *args, **options):
+        key_type = options['key_type']
+
+        if key_type == 'jwt':
+            self.rotate_jwt_key()
+        elif key_type == 'kek':
+            self.rotate_kek()  # Re-encrypts all private keys!
+```
+
+KEY TAKEAWAYS:
+- Separate keys for separate purposes (NIST requirement)
+- Use PBKDF2 with 600k iterations for key derivation
+- Store KEK separately from database
+- Implement key rotation procedures
+- Consider HSM for production
+- Migration is transparent (no user impact)
+
+================================================================================
+3.2 CRYPTOGRAPHIC IMPLEMENTATION (OPTION 3)
+================================================================================
+
+CURRENT PROBLEM:
+----------------
+AES-CBC encryption WITHOUT authentication:
+
+Current Code (bitsync_service.py):
+```python
+aes_key = os.urandom(32)
+iv = os.urandom(16)
+cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
+padder = padding.PKCS7(algorithms.AES.block_size).padder()
+padded_data = padder.update(raw_data) + padder.finalize()
+encryptor = cipher.encryptor()
+encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
+# No HMAC, no authentication tag!
+```
+
+SECURITY VULNERABILITIES:
+
+1. Padding Oracle Attack:
+   - CBC mode with PKCS7 padding
+   - Decryption errors reveal padding validity
+   - Timing differences leak information
+   - Attacker can decrypt entire message byte-by-byte
+
+2. No Authentication (MAC):
+   - No HMAC or authentication tag
+   - Attacker can modify ciphertext undetected
+   - Bit-flipping attacks possible
+   - Cannot verify message integrity
+
+3. Attack Scenario - Bit Flipping:
+```
+Attacker intercepts encrypted message:
+encrypted_message = b'\x8a\x4f...'
+
+Flip bit in ciphertext block N:
+encrypted_message[16] ^= 0x01
+
+Decryption succeeds! (no auth check)
+Corrupted plaintext processed as valid
+Attacker modified sender pubkey, timestamp, etc.
+```
+
+4. Padding Oracle Exploit:
+```
+1. Attacker sends modified ciphertext
+2. Observes response time or error type
+3. If padding valid: 50ms response
+4. If padding invalid: 45ms response
+5. Repeat to decrypt entire message
+```
+
+DETAILED SOLUTION:
+------------------
+
+OPTION A: AES-GCM (Recommended)
+
+Why AES-GCM:
+- Authenticated Encryption with Associated Data (AEAD)
+- Single operation for encryption + authentication
+- Faster than separate MAC (single pass)
+- No padding oracle (no padding needed!)
+- 128-bit authentication tag
+- NIST SP 800-38D standard
+
+Implementation:
+```python
+# core/services/crypto_utils.py
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import os
+import json
+import hashlib
+
+class AuthenticatedEncryption:
+    @staticmethod
+    def encrypt_content(data: dict, associated_data: bytes = b''):
+        """
+        Encrypt with AES-GCM (authenticated encryption).
+
+        Args:
+            data: Dictionary to encrypt
+            associated_data: Additional authenticated data (AAD)
+                           Not encrypted but authenticated
+
+        Returns:
+            (encrypted_data, nonce, aes_key)
+        """
+        raw_data = json.dumps(data, sort_keys=True).encode('utf-8')
+
+        # Generate cryptographic material
+        aes_key = os.urandom(32)  # 256-bit
+        nonce = os.urandom(12)    # 96-bit (GCM standard)
+
+        # Encrypt + authenticate in one operation
+        aesgcm = AESGCM(aes_key)
+        encrypted_data = aesgcm.encrypt(
+            nonce=nonce,
+            data=raw_data,
+            associated_data=associated_data  # Authenticated but not encrypted
+        )
+        # encrypted_data = ciphertext || authentication_tag (last 16 bytes)
+
+        return encrypted_data, nonce, aes_key
+
+    @staticmethod
+    def decrypt_content(encrypted_data: bytes, nonce: bytes,
+                       aes_key: bytes, associated_data: bytes = b''):
+        """
+        Decrypt and verify authenticated content.
+
+        Raises:
+            InvalidTag: If authentication fails (tampered data)
+        """
+        aesgcm = AESGCM(aes_key)
+
+        try:
+            # Authentication verified BEFORE decryption
+            plaintext = aesgcm.decrypt(
+                nonce=nonce,
+                data=encrypted_data,
+                associated_data=associated_data
+            )
+            return plaintext
+        except Exception:
+            # Do NOT leak whether auth or decryption failed
+            raise ValueError("Authentication failed") from None
+```
+
+Manifest Format (Version 2):
+```python
+manifest = {
+    'version': 2,  # New version for GCM
+    'content_hash': content_hash,
+    'chunk_size': CHUNK_SIZE,
+    'chunk_hashes': chunk_hashes,
+    'nonce': nonce.hex(),  # Store nonce (not secret)
+    'associated_data': {    # AAD in manifest
+        'content_type': 'message',
+        'timestamp': '2025-10-09T...',
+    },
+    'encrypted_aes_keys': {...},  # RSA-wrapped keys
+}
+```
+
+Backward Compatibility:
+```python
+class BackwardCompatibleDecryption:
+    @staticmethod
+    def decrypt_from_manifest(encrypted_data: bytes, manifest: dict,
+                             aes_key: bytes):
+        version = manifest.get('version', 1)
+
+        if version == 1:
+            # Legacy CBC decryption
+            return decrypt_cbc(encrypted_data, manifest, aes_key)
+        elif version == 2:
+            # New GCM decryption
+            return decrypt_gcm(encrypted_data, manifest, aes_key)
+```
+
+Migration Strategy:
+- Phase 1 (Week 1-2): Deploy with dual support
+  - New messages use GCM (version 2)
+  - Old messages still decrypt with CBC (version 1)
+- Phase 2 (Month 2-3): Monitoring
+- Phase 3 (Month 6): Deprecate CBC
+- Phase 4 (Month 12): Remove CBC code
+
+OPTION B: AES-CBC + HMAC (Alternative)
+
+If keeping CBC mode:
+```python
+def encrypt_with_mac(data: bytes, aes_key: bytes, mac_key: bytes):
+    """Encrypt-then-MAC construction."""
+    # 1. Encrypt with AES-CBC
+    iv = os.urandom(16)
+    cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
+    padder = padding.PKCS7(128).padder()
+    padded = padder.update(data) + padder.finalize()
+    encryptor = cipher.encryptor()
+    ciphertext = encryptor.update(padded) + encryptor.finalize()
+
+    # 2. Compute HMAC over (IV || ciphertext)
+    h = hmac.HMAC(mac_key, hashes.SHA256())
+    h.update(iv + ciphertext)
+    auth_tag = h.finalize()
+
+    return ciphertext, iv, auth_tag
+
+def decrypt_with_mac(ciphertext: bytes, iv: bytes, auth_tag: bytes,
+                    aes_key: bytes, mac_key: bytes):
+    """Verify MAC BEFORE decryption (prevent padding oracle)."""
+    # 1. Verify HMAC first
+    h = hmac.HMAC(mac_key, hashes.SHA256())
+    h.update(iv + ciphertext)
+    h.verify(auth_tag)  # Constant-time comparison
+
+    # 2. Only decrypt if MAC valid
+    cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
+    decryptor = cipher.decryptor()
+    padded = decryptor.update(ciphertext) + decryptor.finalize()
+
+    unpadder = padding.PKCS7(128).unpadder()
+    return unpadder.update(padded) + unpadder.finalize()
+```
+
+Key Derivation for CBC+HMAC:
+```python
+# Need two keys: AES + HMAC
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+master_key = os.urandom(32)
+hkdf = HKDF(algorithm=hashes.SHA256(), length=64, salt=None, info=b'axon-bbs')
+key_material = hkdf.derive(master_key)
+
+aes_key = key_material[:32]  # First 32 bytes
+mac_key = key_material[32:64]  # Last 32 bytes
+```
+
+COMPARISON: GCM vs CBC+HMAC
+----------------------------
+| Feature              | AES-GCM          | AES-CBC + HMAC      |
+|---------------------|------------------|---------------------|
+| Performance         | Faster (1 pass)  | Slower (2 passes)   |
+| Security            | AEAD standard    | Secure if correct   |
+| Complexity          | Simpler          | More complex        |
+| Padding Oracle      | Immune           | Requires care       |
+| Hardware Support    | Wide (AES-NI)    | Wide                |
+| Standard            | NIST SP 800-38D  | SP 800-38A + FIPS   |
+| RECOMMENDATION      | ✅ USE THIS      | ⚠️ Only if needed   |
+
+RSA KEY WRAPPING ENHANCEMENTS:
+-------------------------------
+
+Issue: No RSA key size validation
+
+Current code accepts any key size (even 512-bit weak keys!)
+
+Solution: Key Validation
+```python
+# core/services/crypto_validators.py
+class CryptoValidators:
+    MIN_RSA_KEY_SIZE = 2048
+    MAX_RSA_KEY_SIZE = 8192
+    RECOMMENDED_RSA_KEY_SIZE = 3072
+
+    @staticmethod
+    def validate_rsa_public_key(pubkey_pem: str) -> rsa.RSAPublicKey:
+        """Validate RSA public key with security checks."""
+        pubkey_obj = serialization.load_pem_public_key(pubkey_pem.encode())
+
+        # Check type
+        if not isinstance(pubkey_obj, rsa.RSAPublicKey):
+            raise ValueError(f"Expected RSA key")
+
+        # Check key size
+        key_size = pubkey_obj.key_size
+        if key_size < MIN_RSA_KEY_SIZE:
+            raise ValueError(
+                f"RSA key too small: {key_size} bits < {MIN_RSA_KEY_SIZE} minimum"
+            )
+
+        if key_size > MAX_RSA_KEY_SIZE:
+            raise ValueError(f"RSA key suspiciously large: {key_size} bits")
+
+        # Check public exponent (should be 65537)
+        e = pubkey_obj.public_numbers().e
+        if e != 65537:
+            logger.warning(f"Non-standard public exponent: {e}")
+
+        return pubkey_obj
+```
+
+Algorithm Agility:
+```python
+# core/services/key_wrapping.py
+class KeyWrappingService:
+    """Service for wrapping keys with algorithm agility."""
+
+    ALGORITHMS = {
+        'RSA-OAEP': RSAOAEPKeyWrapping(),
+        'RSA-KEM': RSAKEMKeyWrapping(),  # Future
+    }
+
+    @classmethod
+    def wrap_key(cls, plaintext_key: bytes, public_key_pem: str):
+        """Wrap key with algorithm info."""
+        public_key = CryptoValidators.validate_rsa_public_key(public_key_pem)
+
+        wrapper = cls.ALGORITHMS['RSA-OAEP']
+        wrapped_key = wrapper.wrap(plaintext_key, public_key)
+
+        algo_info = {
+            'algorithm': 'RSA-OAEP',
+            'hash': 'SHA256',
+            'mgf': 'MGF1-SHA256',
+            'key_size': public_key.key_size,
+        }
+
+        return wrapped_key, algo_info
+```
+
+ADDITIONAL SECURITY MEASURES:
+------------------------------
+
+1. Nonce/IV Reuse Detection:
+```python
+class NonceTracker:
+    """Track used nonces to prevent reuse."""
+
+    @classmethod
+    def mark_used(cls, nonce: bytes, key_id: str):
+        nonce_hash = hashlib.sha256(nonce + key_id.encode()).hexdigest()
+        cache_key = f"nonce:{nonce_hash}"
+
+        if cache.get(cache_key):
+            logger.critical("NONCE REUSE DETECTED!")
+            raise ValueError("Nonce reuse")
+
+        cache.set(cache_key, True, timeout=3600*24*7)
+```
+
+2. Constant-Time Operations:
+```python
+import hmac
+
+def constant_time_compare(a: bytes, b: bytes) -> bool:
+    """Compare in constant time (prevent timing attacks)."""
+    return hmac.compare_digest(a, b)
+```
+
+3. Entropy Checks:
+```python
+def check_system_entropy():
+    """Verify sufficient entropy for crypto operations."""
+    if sys.platform.startswith('linux'):
+        with open('/proc/sys/kernel/random/entropy_avail', 'r') as f:
+            entropy = int(f.read().strip())
+
+        if entropy < 256:
+            logger.warning(f"Low entropy: {entropy} bits")
+            return False
+
+    return True
+```
+
+KEY TAKEAWAYS:
+- Switch to AES-GCM for authenticated encryption
+- Validate RSA key sizes (minimum 2048 bits)
+- Implement backward compatibility for old manifests
+- Add nonce reuse detection
+- Use constant-time comparisons
+- Check system entropy on startup
+
+================================================================================
+3.3 AUTHENTICATION AND SESSION SECURITY (OPTION 4)
+================================================================================
+
+CURRENT PROBLEM:
+----------------
+1. PBKDF2-SHA256 password hashing (acceptable but not optimal)
+2. JWT access tokens valid for 24 hours (too long)
+3. No token binding to IP/User-Agent
+4. No password strength requirements beyond Django defaults
+5. No rate limiting on authentication endpoints
+
+PASSWORD SECURITY ISSUES:
+--------------------------
+
+Current: PBKDF2-SHA256 with 720k iterations
+
+Problem: Not memory-hard
+- PBKDF2 designed in 2000
+- Optimized for CPU-based attacks
+- Vulnerable to GPU/ASIC attacks
+- Can be parallelized efficiently
+
+GPU Attack Cost Comparison:
+```
+PBKDF2-SHA256 (720k iterations):
+- 8x RTX 4090 GPUs: 800,000 hashes/second
+- 8-char password: cracked in ~6 hours
+- Cost per hash: $0.0000002
+
+Argon2id (memory=64MB, time=3):
+- Same 8x RTX 4090: 800 hashes/second
+- Same password: cracked in ~7 years
+- Cost per hash: $0.20
+- 1,000,000x more expensive!
+```
+
+DETAILED SOLUTION:
+------------------
+
+PHASE 1: Migrate to Argon2id
+
+Why Argon2id:
+- Winner of Password Hashing Competition (2015)
+- Memory-hard algorithm (resists GPU attacks)
+- Time-hard (resists parallelization)
+- Configurable: memory, time, parallelism
+- Resistant to side-channel attacks
+
+Implementation:
+```python
+# settings.py
+
+# Install: pip install argon2-cffi
+
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.Argon2PasswordHasher',  # PRIMARY
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',  # Backward compat
+]
+
+# Argon2 parameters
+ARGON2_TIME_COST = 3        # Iterations
+ARGON2_MEMORY_COST = 65536  # 64 MB
+ARGON2_PARALLELISM = 4      # Threads
+
+# Custom hasher
+class CustomArgon2Hasher(Argon2PasswordHasher):
+    """
+    Argon2id with custom parameters.
+
+    Target: 250-500ms per hash on server hardware
+    """
+    time_cost = 3
+    memory_cost = 65536  # 64 MB
+    parallelism = 4
+```
+
+Migration:
+- Automatic on login! Django detects old hash and upgrades
+- No manual migration needed
+- Users gradually migrated as they log in
+
+Benchmark Tool:
+```python
+# tools/benchmark_password_hashing.py
+def benchmark_argon2(time_cost, memory_cost, parallelism):
+    password = "test_password_123"
+
+    start = time.time()
+    password_hash = make_password(password, hasher='argon2')
+    hash_time = time.time() - start
+
+    print(f"Argon2id(t={time_cost}, m={memory_cost}, p={parallelism})")
+    print(f"  Hashing: {hash_time*1000:.1f}ms")
+
+    # Calculate attack cost
+    attacker_hashes_per_sec = (1000 * 10) / hash_time  # 1000 GPUs, 10x faster
+    billion_passwords_hours = (1e9 / attacker_hashes_per_sec) / 3600
+
+    print(f"  Attack cost: {billion_passwords_hours:.1f} GPU-hours per billion passwords")
+```
+
+PHASE 2: Enhanced Password Policy
+
+Current: 8-character minimum, basic checks
+
+Problems:
+- 8 characters too short
+- No entropy requirements
+- No breach checking
+
+Solution: Comprehensive Validation
+```python
+# accounts/password_validators.py
+
+class EntropyValidator:
+    """
+    Validate password entropy (randomness).
+    Target: 50+ bits for users, 80+ for admins.
+    """
+
+    def __init__(self, min_entropy=50):
+        self.min_entropy = min_entropy
+
+    def validate(self, password, user=None):
+        entropy = self.calculate_entropy(password)
+
+        if entropy < self.min_entropy:
+            raise ValidationError(
+                f"Password too predictable. Entropy: {entropy:.1f} bits "
+                f"(minimum: {self.min_entropy} bits)"
+            )
+
+    @staticmethod
+    def calculate_entropy(password):
+        """Calculate Shannon entropy."""
+        charset_size = 0
+        if re.search(r'[a-z]', password): charset_size += 26
+        if re.search(r'[A-Z]', password): charset_size += 26
+        if re.search(r'[0-9]', password): charset_size += 10
+        if re.search(r'[^a-zA-Z0-9]', password): charset_size += 32
+
+        return len(password) * math.log2(charset_size) if charset_size else 0
+
+
+class HaveIBeenPwnedValidator:
+    """
+    Check password against breach database.
+    Privacy-preserving: Only sends first 5 chars of SHA-1 hash.
+    """
+
+    def validate(self, password, user=None):
+        sha1_hash = hashlib.sha1(password.encode()).hexdigest().upper()
+        prefix = sha1_hash[:5]
+        suffix = sha1_hash[5:]
+
+        try:
+            # Query API with k-anonymity
+            response = requests.get(
+                f'https://api.pwnedpasswords.com/range/{prefix}',
+                timeout=2
+            )
+
+            # Check if password in breach list
+            for line in response.text.splitlines():
+                hash_suffix, count = line.split(':')
+                if hash_suffix == suffix:
+                    raise ValidationError(
+                        f"This password appeared {count} times in breaches. "
+                        "Choose a different password."
+                    )
+        except requests.RequestException:
+            # Don't block if API down
+            pass
+
+
+class ComplexityValidator:
+    """Require character type diversity."""
+
+    def __init__(self, min_uppercase=1, min_lowercase=1,
+                 min_digits=1, min_symbols=1):
+        self.min_uppercase = min_uppercase
+        self.min_lowercase = min_lowercase
+        self.min_digits = min_digits
+        self.min_symbols = min_symbols
+
+    def validate(self, password, user=None):
+        uppercase = sum(1 for c in password if c.isupper())
+        lowercase = sum(1 for c in password if c.islower())
+        digits = sum(1 for c in password if c.isdigit())
+        symbols = sum(1 for c in password if not c.isalnum())
+
+        errors = []
+        if uppercase < self.min_uppercase:
+            errors.append(f"{self.min_uppercase}+ uppercase")
+        if lowercase < self.min_lowercase:
+            errors.append(f"{self.min_lowercase}+ lowercase")
+        if digits < self.min_digits:
+            errors.append(f"{self.min_digits}+ digits")
+        if symbols < self.min_symbols:
+            errors.append(f"{self.min_symbols}+ symbols")
+
+        if errors:
+            raise ValidationError(
+                "Password must contain: " + ", ".join(errors)
+            )
+```
+
+Updated Settings:
+```python
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+     'OPTIONS': {'min_length': 12}},  # Increased from 8
+    {'NAME': 'accounts.password_validators.EntropyValidator',
+     'OPTIONS': {'min_entropy': 50}},
+    {'NAME': 'accounts.password_validators.HaveIBeenPwnedValidator'},
+    {'NAME': 'accounts.password_validators.ComplexityValidator'},
+]
+```
+
+Frontend Password Strength Meter:
+```javascript
+// PasswordStrengthMeter.js
+const calculateStrength = (password) => {
+  let score = 0;
+
+  if (password.length >= 12) score += 20;
+  if (/[A-Z]/.test(password)) score += 20;
+  if (/[a-z]/.test(password)) score += 20;
+  if (/[0-9]/.test(password)) score += 20;
+  if (/[^A-Za-z0-9]/.test(password)) score += 20;
+
+  if (password.length >= 16) score += 10;
+  if (password.length >= 20) score += 10;
+
+  return Math.min(score, 100);
+};
+```
+
+JWT TOKEN SECURITY:
+-------------------
+
+Current Problem: 24-hour access tokens
+
+Risks:
+- Stolen token = 24 hours of access
+- XSS attack steals from localStorage
+- Server logs accidentally log Authorization header
+- Long window for exploitation
+
+Solution: Short-Lived Tokens with Rotation
+
+Implementation:
+```python
+# settings.py
+
+SIMPLE_JWT = {
+    # Short-lived access token
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),  # Changed from 1 day!
+
+    # Longer refresh token with rotation
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,      # New refresh token each time
+    "BLACKLIST_AFTER_ROTATION": True,   # Invalidate old token
+
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": JWT_SIGNING_KEY,     # Separate key (from Option 1)
+}
+
+# Enable token blacklist
+INSTALLED_APPS = [
+    # ...
+    'rest_framework_simplejwt.token_blacklist',
+]
+```
+
+Run migration:
+```bash
+python manage.py migrate token_blacklist
+```
+
+Frontend Token Refresh:
+```javascript
+// apiClient.js - Automatic token refresh
+
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+// Response interceptor
+apiClient.interceptors.response.use(
+  response => response,
+  async error => {
+    const originalRequest = error.config;
+
+    // If 401 and not already retrying
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      // If already refreshing, queue this request
+      if (isRefreshing) {
+        return new Promise(resolve => {
+          refreshSubscribers.push(token => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            resolve(apiClient(originalRequest));
+          });
+        });
+      }
+
+      isRefreshing = true;
+
+      // Attempt refresh
+      const refreshToken = localStorage.getItem('refreshToken');
+
+      try {
+        const response = await axios.post('/api/token/refresh/', {
+          refresh: refreshToken
+        });
+
+        const { access, refresh } = response.data;
+
+        localStorage.setItem('token', access);
+        if (refresh) {
+          localStorage.setItem('refreshToken', refresh);  // Rotated!
+        }
+
+        // Notify queued requests
+        refreshSubscribers.forEach(callback => callback(access));
+        refreshSubscribers = [];
+
+        // Retry original request
+        originalRequest.headers.Authorization = `Bearer ${access}`;
+        return apiClient(originalRequest);
+
+      } catch (refreshError) {
+        // Refresh failed, logout
+        localStorage.clear();
+        window.location.href = '/login';
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+```
+
+Proactive Token Refresh:
+```javascript
+// useTokenRefresh.js hook
+const useTokenRefresh = () => {
+  useEffect(() => {
+    // Refresh every 10 minutes (before 15min expiration)
+    const interval = setInterval(async () => {
+      const refresh = localStorage.getItem('refreshToken');
+      if (refresh) {
+        try {
+          const response = await apiClient.post('/api/token/refresh/',
+                                                { refresh });
+          localStorage.setItem('token', response.data.access);
+          if (response.data.refresh) {
+            localStorage.setItem('refreshToken', response.data.refresh);
+          }
+        } catch (error) {
+          console.error('Proactive refresh failed:', error);
+        }
+      }
+    }, 10 * 60 * 1000);  // 10 minutes
+
+    return () => clearInterval(interval);
+  }, []);
+};
+```
+
+Impact on UX:
+- User logs in once
+- Token refreshes automatically in background
+- Seamless experience (no interruption)
+- Stolen token only valid 15 minutes (vs 24 hours)
+
+TOKEN BINDING:
+--------------
+
+Problem: JWT works from ANY device/location if stolen
+
+Solution: Bind tokens to client fingerprint
+
+Implementation:
+```python
+# accounts/token_binding.py
+from rest_framework_simplejwt.tokens import AccessToken
+import hashlib
+
+class BoundAccessToken(AccessToken):
+    """Token bound to client IP and User-Agent."""
+
+    @classmethod
+    def for_user(cls, user, request=None):
+        token = super().for_user(user)
+
+        if request:
+            # Get client fingerprint
+            fingerprint = cls.get_client_fingerprint(request)
+            fingerprint_hash = hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
+
+            # Add to token claims
+            token['fingerprint'] = fingerprint_hash
+            token['bound'] = True
+
+        return token
+
+    @staticmethod
+    def get_client_fingerprint(request):
+        """Generate fingerprint from IP + User-Agent."""
+        ip = request.META.get('REMOTE_ADDR', '')
+        user_agent = request.META.get('HTTP_USER_AGENT', '')
+
+        # Option: Use /24 subnet for mobile tolerance
+        if '.' in ip:
+            ip_parts = ip.split('.')
+            ip = '.'.join(ip_parts[:3]) + '.0'  # Allows mobile tower switching
+
+        return f"{ip}|{user_agent}"
+
+    def verify(self, request=None):
+        """Verify token and check binding."""
+        super().verify()
+
+        if self.get('bound', False) and request:
+            stored = self.get('fingerprint')
+            current = self.get_client_fingerprint(request)
+            current_hash = hashlib.sha256(current.encode()).hexdigest()[:16]
+
+            if stored != current_hash:
+                raise TokenError("Token binding verification failed")
+```
+
+Custom Authentication:
+```python
+# accounts/authentication.py
+class BoundJWTAuthentication(JWTAuthentication):
+    """JWT authentication with token binding."""
+
+    def authenticate(self, request):
+        self.request = request  # Store for binding check
+        return super().authenticate(request)
+
+    def get_validated_token(self, raw_token):
+        token = BoundAccessToken(raw_token)
+        token.verify(request=self.request)  # Check binding
+        return token
+```
+
+Trade-offs:
+- ✅ Protects against token theft
+- ⚠️ Breaks if IP changes (mobile networks, VPN)
+- Configurable strictness (/24 subnet more lenient)
+
+KEY TAKEAWAYS:
+- Migrate to Argon2id (1M times more expensive to crack)
+- Reduce JWT lifetime to 15 minutes
+- Implement automatic token refresh
+- Add token binding to IP/User-Agent
+- Enhanced password validation (entropy, breach check, complexity)
+- Frontend password strength meter
+
+================================================================================
+3.4 TOR/NETWORK SECURITY (OPTION 5)
+================================================================================
+
+CURRENT PROBLEM:
+----------------
+All federated traffic uses SAME Tor circuit:
+
+```python
+# sync_service.py
+proxies = {'http': 'socks5h://127.0.0.1:9050',
+           'https': 'socks5h://127.0.0.1:9050'}
+
+# Peer A request → Circuit X
+# Peer B request → Circuit X (SAME!)
+# Peer C request → Circuit X
+```
+
+SECURITY RISK: Traffic Correlation
+
+Attack Scenario:
+```
+Malicious Exit Node or Compromised Relay:
+
+Circuit X sees:
+10:00:01 - Connection to peer1.onion
+10:00:05 - Connection to peer2.onion
+10:00:10 - Connection to peer3.onion
+
+Analysis:
+"All connections from same circuit = same source.
+Single BBS instance connected to all these peers.
+Build social graph of federation network."
+```
+
+Attack Capabilities:
+1. Network Mapping: Identify all peers in federation
+2. Timing Analysis: Correlate message posts with sync times
+3. Deanonymization: Combine with other data sources
+4. Traffic Analysis: Infer content size, frequency
+
+DETAILED SOLUTION:
+------------------
+
+PHASE 1: Per-Peer Circuit Isolation
+
+Mechanism: SOCKS5 Authentication
+- Tor treats different SOCKS5 credentials as different circuits
+- Each peer gets unique credentials = unique circuit
+
+Implementation:
+```python
+# core/services/tor_service.py
+class TorService:
+    """
+    Enhanced Tor service with circuit isolation.
+
+    Features:
+    - Per-destination circuit isolation
+    - Circuit rotation on demand
+    - Health monitoring
+    """
+
+    def __init__(self, socks_host='127.0.0.1', socks_port=9050):
+        self.socks_host = socks_host
+        self.socks_port = socks_port
+
+    def get_isolated_session(self, destination: str,
+                            isolation_id: Optional[str] = None):
+        """
+        Create requests session with isolated circuit.
+
+        Args:
+            destination: Target .onion address
+            isolation_id: Custom ID (default: hash of destination)
+
+        Returns:
+            Configured session with isolated circuit
+        """
+        if isolation_id is None:
+            # Hash destination for isolation ID
+            isolation_id = hashlib.sha256(destination.encode()).hexdigest()[:16]
+
+        session = requests.Session()
+
+        # Configure SOCKS5 with authentication for isolation
+        # Different credentials = different circuit!
+        session.proxies = {
+            'http': f'socks5h://{isolation_id}:unused@{self.socks_host}:{self.socks_port}',
+            'https': f'socks5h://{isolation_id}:unused@{self.socks_host}:{self.socks_port}',
+        }
+
+        return session
+
+    def request_with_isolation(self, method: str, url: str,
+                              isolation_id: Optional[str] = None, **kwargs):
+        """Make HTTP request with circuit isolation."""
+        from urllib.parse import urlparse
+        destination = urlparse(url).netloc
+
+        session = self.get_isolated_session(destination, isolation_id)
+
+        try:
+            return session.request(method, url, **kwargs)
+        finally:
+            session.close()
+
+    def rotate_circuit(self, isolation_id: str):
+        """Force new circuit for isolation ID."""
+        from stem import Signal
+        from stem.control import Controller
+
+        with Controller.from_port(port=9051) as controller:
+            controller.authenticate()
+            controller.signal(Signal.NEWNYM)
+
+    def check_tor_connection(self) -> bool:
+        """Verify Tor is working."""
+        try:
+            session = self.get_isolated_session('test')
+            response = session.get('https://check.torproject.org/api/ip',
+                                 timeout=10)
+            data = response.json()
+            return data.get('IsTor', False)
+        except Exception:
+            return False
+```
+
+Tor Configuration (torrc):
+```bash
+# /etc/tor/torrc
+
+# SOCKS port with isolation support
+SocksPort 9050 IsolateDestAddr IsolateDestPort IsolateSOCKSAuth
+
+# Control port for circuit management
+ControlPort 9051
+CookieAuthentication 1
+
+# Stream isolation for privacy
+IsolateClientProtocol 1
+
+# Circuit building
+CircuitBuildTimeout 60
+NumEntryGuards 3
+```
+
+Updated SyncService:
+```python
+# core/services/sync_service.py
+from .tor_service import tor_service
+
+class SyncService:
+    def poll_peers(self):
+        """Poll peers with isolated circuits."""
+        peers = TrustedInstance.objects.filter(is_trusted_peer=True)
+
+        for peer in peers:
+            # Use isolated circuit per peer
+            isolation_id = f"peer_{peer.id}"
+
+            try:
+                url = f"{peer.web_ui_onion_url}/api/sync/"
+
+                # Isolated request
+                response = tor_service.request_with_isolation(
+                    'GET',
+                    url,
+                    isolation_id=isolation_id,
+                    headers=self._get_auth_headers(),
+                    timeout=120
+                )
+
+                # Process response...
+
+            except Exception as e:
+                logger.error(f"Sync failed: {e}")
+```
+
+Result:
+- Peer A → Circuit 1 (isolated)
+- Peer B → Circuit 2 (isolated)
+- Peer C → Circuit 3 (isolated)
+- No correlation possible!
+
+PHASE 2: Certificate Pinning (TOFU)
+
+Problem: No validation of peer certificates
+
+Solution: Trust On First Use (TOFU)
+```python
+# core/services/cert_pinning.py
+class CertificatePinner:
+    """
+    Certificate pinning for known peers.
+
+    Security model:
+    - First connection: Store certificate hash
+    - Subsequent: Verify hash matches
+    - Alert on mismatch (MITM detection)
+    """
+
+    @classmethod
+    def pin_certificate(cls, peer_url: str, cert_der: bytes):
+        """Pin certificate for peer."""
+        cert = x509.load_der_x509_certificate(cert_der, default_backend())
+
+        # Hash public key (not full cert, for rotation tolerance)
+        public_key_der = cert.public_key().public_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        pin_hash = hashlib.sha256(public_key_der).hexdigest()
+
+        # Store in database
+        instance = TrustedInstance.objects.get(web_ui_onion_url=peer_url)
+        instance.certificate_pin = pin_hash
+        instance.save()
+
+    @classmethod
+    def verify_certificate(cls, peer_url: str, cert_der: bytes) -> bool:
+        """Verify certificate matches pin."""
+        instance = TrustedInstance.objects.get(web_ui_onion_url=peer_url)
+        stored_pin = instance.certificate_pin
+
+        if not stored_pin:
+            # TOFU: Trust on first use
+            cls.pin_certificate(peer_url, cert_der)
+            return True
+
+        # Calculate current pin
+        cert = x509.load_der_x509_certificate(cert_der, default_backend())
+        public_key_der = cert.public_key().public_bytes(...)
+        current_pin = hashlib.sha256(public_key_der).hexdigest()
+
+        # Compare
+        if current_pin == stored_pin:
+            return True
+        else:
+            logger.critical(
+                f"CERTIFICATE MISMATCH for {peer_url}! "
+                f"Possible MITM attack!"
+            )
+            cls._create_alert(peer_url, stored_pin, current_pin)
+            return False
+```
+
+Add to TrustedInstance Model:
+```python
+class TrustedInstance(models.Model):
+    # ... existing fields ...
+
+    certificate_pin = models.CharField(
+        max_length=64, blank=True, null=True,
+        help_text="SHA-256 hash of certificate public key"
+    )
+    certificate_first_seen = models.DateTimeField(
+        blank=True, null=True
+    )
+```
+
+PHASE 3: Traffic Analysis Resistance
+
+Problem: Predictable patterns reveal information
+- Sync every 120 seconds (fixed)
+- Message size reveals content
+- Timing reveals activity
+
+Solution: Traffic Obfuscation
+```python
+# core/services/traffic_obfuscation.py
+class TrafficObfuscator:
+    """Resist traffic analysis attacks."""
+
+    @staticmethod
+    def random_sleep(base_seconds: int, jitter_percent: float = 0.2):
+        """Sleep with randomization."""
+        jitter = base_seconds * jitter_percent
+        sleep_time = base_seconds + random.uniform(-jitter, jitter)
+        time.sleep(sleep_time)
+
+    @staticmethod
+    def pad_message_size(data: bytes, target_size: int = None) -> bytes:
+        """Pad to fixed size to hide length."""
+        current_size = len(data)
+
+        if target_size is None:
+            # Round to next power of 2
+            target_size = 2 ** math.ceil(math.log2(current_size))
+
+        padding_needed = target_size - current_size
+        padding = os.urandom(padding_needed)
+
+        # Format: [data] [padding] [4-byte length]
+        return data + padding + len(data).to_bytes(4, 'big')
+
+    @staticmethod
+    def send_dummy_traffic(peer_url: str):
+        """Send cover traffic (dummy request)."""
+        dummy_url = f"{peer_url}/api/sync/?since=2000-01-01"
+        tor_service.request_with_isolation('GET', dummy_url, ...)
+```
+
+Updated Polling Loop:
+```python
+class SyncService:
+    def _run(self):
+        while True:
+            self.poll_peers()
+
+            # Random sleep (resist timing analysis)
+            TrafficObfuscator.random_sleep(120, jitter_percent=0.3)
+
+            # Occasionally send dummy traffic
+            if random.random() < 0.1:
+                self._send_cover_traffic()
+```
+
+PHASE 4: Health Monitoring
+
+```python
+# core/services/tor_monitor.py
+class TorHealthMonitor:
+    """Monitor Tor health and circuit performance."""
+
+    def __init__(self, check_interval=300):
+        self.check_interval = check_interval
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while True:
+            # Check Tor connection
+            is_healthy = tor_service.check_tor_connection()
+
+            if not is_healthy:
+                logger.critical("TOR CONNECTION LOST!")
+
+            # Get circuit info
+            circuit_info = tor_service.get_circuit_info()
+
+            # Cache status
+            cache.set('tor_health', is_healthy, timeout=600)
+            cache.set('tor_circuits', circuit_info, timeout=600)
+
+            time.sleep(self.check_interval)
+```
+
+Admin Command:
+```bash
+# Check Tor status
+python manage.py tor_status
+
+Output:
+=== Tor Status Check ===
+✓ Tor connection: OK
+  Exit IP: 185.220.101.X
+  Active circuits: 12
+    Circuit 1: BUILT
+      Path: Guard → Middle → Exit
+```
+
+PRODUCTION TOR CONFIGURATION:
+------------------------------
+
+```bash
+# /etc/tor/torrc - Production
+
+# SOCKS with isolation
+SocksPort 9050 IsolateDestAddr IsolateDestPort IsolateSOCKSAuth
+SocksPolicy accept 127.0.0.1
+SocksPolicy reject *
+
+# Control port
+ControlPort 9051
+CookieAuthentication 1
+
+# Circuit configuration
+NumEntryGuards 3
+CircuitBuildTimeout 60
+NewCircuitPeriod 1800  # 30 minutes
+
+# Connection padding (resist timing analysis)
+ConnectionPadding 1
+CircuitPadding 1
+
+# Hidden service (if running .onion)
+HiddenServiceDir /var/lib/tor/axon_bbs/
+HiddenServicePort 80 127.0.0.1:8000
+HiddenServiceVersion 3  # v3 onions only
+
+# Security
+DisableDebuggerAttachment 1
+SafeLogging 1
+ExitPolicy reject *:*  # Client-only
+```
+
+KEY TAKEAWAYS:
+- Implement per-peer circuit isolation (prevent correlation)
+- Certificate pinning with TOFU model
+- Traffic obfuscation (padding, randomization, cover traffic)
+- Health monitoring with alerts
+- Production torrc hardening
+
+================================================================================
+4. IMPLEMENTATION ROADMAP
+================================================================================
+
+PHASE 1: CRITICAL FIXES (Week 1-2)
+-----------------------------------
+Priority: MUST complete before any production use
+
+1. Key Management Separation
+   - Generate separate keys for Django, JWT, KEK
+   - Implement KeyManagementService
+   - Create migration script
+   - Test key rotation procedures
+   Effort: 2-3 days
+   Risk: Medium (requires careful migration)
+
+2. Switch to AES-GCM
+   - Implement AuthenticatedEncryption class
+   - Update manifest format to version 2
+   - Add backward compatibility layer
+   - Update BitSyncService
+   Effort: 3-4 days
+   Risk: Medium (must maintain backward compat)
+
+3. Fix DEBUG and Environment Configuration
+   - Create separate settings files (dev/prod)
+   - Environment-based DEBUG flag
+   - Validate all environment variables on startup
+   Effort: 1 day
+   Risk: Low
+
+4. Reduce JWT Token Lifetime
+   - Update SIMPLE_JWT settings
+   - Implement frontend token refresh
+   - Add proactive refresh hook
+   - Test refresh flow
+   Effort: 2 days
+   Risk: Low (well-documented pattern)
+
+5. RSA Key Validation
+   - Implement CryptoValidators
+   - Add validation to all models
+   - Reject weak keys
+   Effort: 1 day
+   Risk: Low
+
+Total Phase 1: ~2 weeks
+
+PHASE 2: SECURITY HARDENING (Week 3-4)
+---------------------------------------
+Priority: High (complete within 1 month)
+
+6. Tor Circuit Isolation
+   - Implement TorService with isolation
+   - Update SyncService
+   - Configure torrc
+   - Test with multiple peers
+   Effort: 3 days
+   Risk: Medium (requires Tor configuration)
+
+7. Password Migration to Argon2id
+   - Install argon2-cffi
+   - Update PASSWORD_HASHERS
+   - Test migration on login
+   - Benchmark parameters
+   Effort: 2 days
+   Risk: Low (automatic migration)
+
+8. Enhanced Password Validation
+   - Implement custom validators
+   - Add HaveIBeenPwned check
+   - Update settings
+   - Frontend password strength meter
+   Effort: 2 days
+   Risk: Low
+
+9. Certificate Pinning
+   - Implement CertificatePinner
+   - Add fields to TrustedInstance
+   - Create alert system
+   Effort: 2 days
+   Risk: Low
+
+10. Audit Logging
+    - Implement structured logging
+    - Log all security events
+    - Set up log rotation
+    Effort: 2 days
+    Risk: Low
+
+Total Phase 2: ~2 weeks
+
+PHASE 3: INFRASTRUCTURE (Week 5-6)
+-----------------------------------
+Priority: Medium (production readiness)
+
+11. PostgreSQL Migration
+    - Install PostgreSQL
+    - Update database settings
+    - Migrate data from SQLite
+    - Test connection pooling
+    Effort: 2 days
+    Risk: Low (standard procedure)
+
+12. Rate Limiting
+    - Install django-ratelimit
+    - Configure per-endpoint limits
+    - Test rate limiting
+    Effort: 1 day
+    Risk: Low
+
+13. API Versioning
+    - Implement /api/v1/ structure
+    - Update all URL patterns
+    - Document versioning policy
+    Effort: 2 days
+    Risk: Low
+
+14. Monitoring & Alerting
+    - Set up Prometheus + Grafana
+    - Configure alerting rules
+    - Test alert delivery
+    Effort: 3 days
+    Risk: Medium
+
+15. Traffic Obfuscation
+    - Implement TrafficObfuscator
+    - Add message padding
+    - Random polling intervals
+    - Cover traffic
+    Effort: 2 days
+    Risk: Low
+
+Total Phase 3: ~2 weeks
+
+PHASE 4: TESTING & DOCUMENTATION (Week 7-8)
+--------------------------------------------
+Priority: Critical (cannot skip)
+
+16. Test Suite
+    - Unit tests for crypto functions
+    - Integration tests for sync protocol
+    - Test fixtures and factories
+    - CI/CD pipeline setup
+    Effort: 1 week
+    Risk: Low
+
+17. Security Documentation
+    - SECURITY.md (disclosure policy)
+    - THREAT_MODEL.md
+    - CRYPTO_DESIGN.md
+    - FEDERATION_SECURITY.md
+    Effort: 3 days
+    Risk: Low
+
+18. Deployment Guide
+    - Production checklist
+    - Security hardening steps
+    - Tor configuration
+    - Backup procedures
+    Effort: 2 days
+    Risk: Low
+
+Total Phase 4: ~2 weeks
+
+TOTAL TIMELINE: 8 WEEKS (2 MONTHS)
+
+ONGOING:
+--------
+- Security audits (quarterly)
+- Penetration testing (annually)
+- Dependency updates (monthly)
+- Key rotation (per schedule)
+
+================================================================================
+5. TESTING RECOMMENDATIONS
+================================================================================
+
+CRITICAL: No production deployment without comprehensive tests
+
+TEST STRATEGY:
+--------------
+
+1. Unit Tests
+   - Cryptographic functions (encrypt/decrypt)
+   - Key wrapping/unwrapping
+   - Password hashing
+   - Token generation/validation
+   - Nonce tracking
+   - Fingerprint generation
+
+2. Integration Tests
+   - End-to-end encryption flow
+   - BitSync protocol
+   - Federation synchronization
+   - Agent communication
+   - File upload/download
+
+3. Security Tests
+   - Attempt padding oracle
+   - Test nonce reuse detection
+   - Token binding verification
+   - Rate limit enforcement
+   - Input validation
+
+4. Network Tests
+   - Tor circuit isolation verification
+   - Certificate pinning
+   - Timeout handling
+   - Connection failure recovery
+
+TOOLS:
+------
+- pytest: Test framework
+- pytest-django: Django integration
+- factory_boy: Test fixtures
+- bandit: Security linting
+- coverage.py: Code coverage
+- tox: Multi-environment testing
+
+TARGET COVERAGE:
+----------------
+- Crypto utilities: 100%
+- Services: 90%
+- Views: 80%
+- Overall: 85%
+
+EXAMPLE TESTS:
+--------------
+
+```python
+# tests/test_crypto.py
+import pytest
+from core.services.crypto_utils import AuthenticatedEncryption
+
+def test_gcm_encryption_decryption():
+    """Test AES-GCM encryption/decryption."""
+    data = {'message': 'test', 'timestamp': '2025-10-09'}
+    aad = b'metadata'
+
+    # Encrypt
+    encrypted, nonce, key = AuthenticatedEncryption.encrypt_content(data, aad)
+
+    # Decrypt
+    decrypted = AuthenticatedEncryption.decrypt_content(encrypted, nonce, key, aad)
+
+    assert json.loads(decrypted) == data
+
+def test_gcm_authentication_failure():
+    """Test that tampered data is rejected."""
+    data = {'message': 'test'}
+    encrypted, nonce, key = AuthenticatedEncryption.encrypt_content(data)
+
+    # Tamper with ciphertext
+    tampered = bytearray(encrypted)
+    tampered[0] ^= 0x01
+
+    # Should raise authentication error
+    with pytest.raises(ValueError, match="Authentication failed"):
+        AuthenticatedEncryption.decrypt_content(bytes(tampered), nonce, key)
+
+def test_nonce_reuse_detection():
+    """Test that nonce reuse is detected."""
+    from core.services.crypto_utils import NonceTracker
+
+    nonce = os.urandom(12)
+    key_id = 'test_key'
+
+    # First use: OK
+    NonceTracker.mark_used(nonce, key_id)
+
+    # Second use: Should raise
+    with pytest.raises(ValueError, match="Nonce reuse"):
+        NonceTracker.mark_used(nonce, key_id)
+```
+
+```python
+# tests/test_federation.py
+def test_circuit_isolation():
+    """Verify different peers use different circuits."""
+    from core.services.tor_service import tor_service
+
+    # Make requests to two peers
+    session1 = tor_service.get_isolated_session('peer1.onion')
+    session2 = tor_service.get_isolated_session('peer2.onion')
+
+    # Should have different proxy credentials
+    assert session1.proxies != session2.proxies
+
+def test_certificate_pinning():
+    """Test certificate pinning on first connection."""
+    from core.services.cert_pinning import CertificatePinner
+
+    peer_url = 'test.onion'
+    cert = generate_test_certificate()
+
+    # First connection: Pin
+    assert CertificatePinner.verify_certificate(peer_url, cert)
+
+    # Second connection with same cert: OK
+    assert CertificatePinner.verify_certificate(peer_url, cert)
+
+    # Third connection with different cert: Fail
+    different_cert = generate_test_certificate()
+    assert not CertificatePinner.verify_certificate(peer_url, different_cert)
+```
+
+CI/CD Pipeline:
+```yaml
+# .github/workflows/test.yml
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.11
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-django coverage
+      - name: Run tests
+        run: |
+          pytest --cov=. --cov-report=html
+      - name: Security scan
+        run: |
+          pip install bandit
+          bandit -r . -f json -o bandit-report.json
+      - name: Upload coverage
+        uses: codecov/codecov-action@v2
+```
+
+================================================================================
+6. DOCUMENTATION REQUIREMENTS
+================================================================================
+
+SECURITY DOCUMENTATION TO CREATE:
+----------------------------------
+
+1. SECURITY.md
+   - Security disclosure policy
+   - Contact information
+   - Response timeline
+   - Hall of fame (bug bounty)
+
+2. THREAT_MODEL.md
+   - Identified threats
+   - Threat actors
+   - Attack vectors
+   - Mitigations
+   - Residual risks
+
+3. CRYPTO_DESIGN.md
+   - Cryptographic architecture
+   - Algorithm choices and rationale
+   - Key management procedures
+   - Security properties
+
+4. FEDERATION_SECURITY.md
+   - Trust model
+   - Peer authentication
+   - Certificate pinning
+   - Content verification
+
+5. AUDIT_LOG.md
+   - What events are logged
+   - Log retention policy
+   - Log security
+   - Incident response
+
+6. INCIDENT_RESPONSE.md
+   - Detection procedures
+   - Escalation path
+   - Communication templates
+   - Recovery procedures
+
+7. DEPLOYMENT_SECURITY.md
+   - Pre-deployment checklist
+   - Production hardening
+   - Tor configuration
+   - Monitoring setup
+
+8. KEY_ROTATION.md
+   - Rotation schedule
+   - Rotation procedures
+   - Rollback procedures
+   - Key backup
+
+DEVELOPER DOCUMENTATION:
+------------------------
+
+9. CONTRIBUTING.md
+   - Code style guide
+   - Pull request process
+   - Security considerations
+   - Testing requirements
+
+10. API_DOCUMENTATION.md
+    - OpenAPI/Swagger spec
+    - Authentication
+    - Rate limiting
+    - Examples
+
+11. ARCHITECTURE.md (Already exists, enhance with security)
+    - Security architecture
+    - Data flow diagrams
+    - Trust boundaries
+    - Authentication flows
+
+================================================================================
+FINAL RECOMMENDATIONS
+================================================================================
+
+IMMEDIATE ACTIONS (Do Now):
+----------------------------
+1. Create separate keys for Django/JWT/KEK
+2. Switch DEBUG to environment variable
+3. Implement basic rate limiting
+4. Set up audit logging
+
+SHORT-TERM (Within 1 Month):
+-----------------------------
+1. Complete all Phase 1 & 2 items
+2. Switch to PostgreSQL
+3. Implement AES-GCM
+4. Tor circuit isolation
+5. Password hardening
+
+MEDIUM-TERM (2-3 Months):
+--------------------------
+1. Comprehensive test suite (85% coverage)
+2. Security documentation
+3. Professional security audit
+4. Penetration testing
+5. Bug bounty program
+
+LONG-TERM (6-12 Months):
+-------------------------
+1. HSM integration for production
+2. Automated security scanning (CI/CD)
+3. Quarterly security reviews
+4. Regular dependency updates
+5. Community security reviews
+
+WHAT TO PRIORITIZE:
+-------------------
+If resources are limited, focus on:
+1. Key management (Option 1) - CRITICAL
+2. AES-GCM migration (Option 3) - CRITICAL
+3. JWT token lifetime (Option 4) - HIGH
+4. Tor isolation (Option 5) - HIGH
+5. Testing infrastructure - CRITICAL
+
+WHAT CAN WAIT:
+--------------
+- Traffic obfuscation (nice to have)
+- HSM integration (production only)
+- Advanced monitoring (after basics)
+- Bug bounty program (after audit)
+
+ESTIMATED COST (if outsourcing):
+--------------------------------
+- Professional security audit: $10k-20k
+- Penetration testing: $5k-10k
+- Code review (one-time): $3k-5k
+- Bug bounty program: $500-5k/year
+
+DIY ESTIMATE:
+-------------
+- 1 experienced developer
+- 2-3 months full-time
+- Focus on Phases 1-3 first
+
+CONCLUSION:
+-----------
+Axon BBS is a well-architected project with strong foundations. The identified
+issues are fixable and mostly involve standard security hardening practices.
+
+With 2-3 months of focused security work, this project can be production-ready
+for privacy-conscious users.
+
+The most critical issues are:
+1. Key management (easy to fix, high impact)
+2. Authenticated encryption (moderate to fix, high impact)
+3. Token security (easy to fix, medium impact)
+4. Testing (time-consuming but essential)
+
+I recommend prioritizing key management and AES-GCM migration first, as these
+are the most critical security issues. The testing infrastructure is also
+essential but can be built incrementally.
+
+Good luck with the project! The vision is compelling and the execution is
+solid. With these security enhancements, Axon BBS can be a valuable privacy
+tool for the community.
+
+================================================================================
+END OF DOCUMENT
+================================================================================
