@@ -99,16 +99,22 @@ class BitSyncService:
         Ensures a manifest has an encryption envelope for a specific peer.
         If the envelope already exists, it returns the manifest unchanged.
         If not, it decrypts the AES key and creates a new envelope for the peer.
+
+        NOTE: This returns a NEW dict to avoid mutating the original manifest stored in the database.
         """
         peer_checksum = generate_checksum(peer_pubkey)
         if peer_checksum in manifest.get('encrypted_aes_keys', {}):
             return manifest # Already keyed for this peer, no work needed.
-        
+
         logger.info(f"Performing on-demand rekey of manifest {manifest['content_hash'][:10]} for peer {peer_checksum[:10]}")
-        
+
         original_aes_key = self.get_decrypted_aes_key(manifest)
         if not original_aes_key:
             raise ValueError("Failed to obtain original AES key from manifest for re-keying.")
+
+        # Create a deep copy to avoid mutating the database object's manifest
+        import copy
+        rekeyed_manifest = copy.deepcopy(manifest)
 
         try:
             pubkey_obj = serialization.load_pem_public_key(peer_pubkey.encode())
@@ -116,12 +122,12 @@ class BitSyncService:
                 original_aes_key,
                 rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
             )
-            # Add the new key to the existing dictionary
-            manifest['encrypted_aes_keys'][peer_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
+            # Add the new key to the copied dictionary
+            rekeyed_manifest['encrypted_aes_keys'][peer_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
         except Exception as e:
             logger.error(f"Failed to create new envelope for peer with checksum {peer_checksum}: {e}")
 
-        return manifest
+        return rekeyed_manifest
 
     def rekey_manifest_for_new_peers(self, manifest: dict):
         original_aes_key = self.get_decrypted_aes_key(manifest)

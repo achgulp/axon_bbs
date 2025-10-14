@@ -78,14 +78,55 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             instance.refresh_from_db()
 
             if instance.pubkey:
-                from messaging.models import Message
+                from messaging.models import Message, PrivateMessage
                 from core.models import FileAttachment
-                all_content = list(Message.objects.all()) + list(FileAttachment.objects.all())
-                for item in all_content:
-                    if hasattr(item, 'metadata_manifest') and item.metadata_manifest:
-                        item.metadata_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(item.metadata_manifest)
-                        item.save()
-                self.message_user(request, f"Forced refresh and re-keyed all content for {instance.web_ui_onion_url}.", messages.SUCCESS)
+                from applets.models import Applet
+                import logging
+                logger = logging.getLogger(__name__)
+
+                # Re-key all content types
+                messages_updated = 0
+                files_updated = 0
+                pms_updated = 0
+                applets_updated = 0
+
+                for message in Message.objects.all():
+                    if message.metadata_manifest:
+                        try:
+                            message.metadata_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(message.metadata_manifest)
+                            message.save()
+                            messages_updated += 1
+                        except Exception as e:
+                            logger.error(f"Failed to rekey message {message.id}: {e}")
+
+                for file_obj in FileAttachment.objects.all():
+                    if file_obj.metadata_manifest:
+                        try:
+                            file_obj.metadata_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(file_obj.metadata_manifest)
+                            file_obj.save()
+                            files_updated += 1
+                        except Exception as e:
+                            logger.error(f"Failed to rekey file {file_obj.id}: {e}")
+
+                for pm in PrivateMessage.objects.all():
+                    if pm.metadata_manifest:
+                        try:
+                            pm.metadata_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(pm.metadata_manifest)
+                            pm.save()
+                            pms_updated += 1
+                        except Exception as e:
+                            logger.error(f"Failed to rekey PM {pm.id}: {e}")
+
+                for applet in Applet.objects.all():
+                    if applet.code_manifest:
+                        try:
+                            applet.code_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(applet.code_manifest)
+                            applet.save()
+                            applets_updated += 1
+                        except Exception as e:
+                            logger.error(f"Failed to rekey applet {applet.id}: {e}")
+
+                self.message_user(request, f"Forced refresh and re-keyed all content for {instance.web_ui_onion_url}. Updated: {messages_updated} messages, {files_updated} files, {pms_updated} PMs, {applets_updated} applets.", messages.SUCCESS)
     force_refresh_and_rekey.short_description = "Force Refresh and Re-key Peer"
 
     def clone_config_from_peer(self, request, queryset):
