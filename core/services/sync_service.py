@@ -187,15 +187,43 @@ class SyncService:
         future.add_done_callback(partial(self._download_done_callback, manifest))
 
     def _process_received_manifests(self, manifests: list):
+        from .service_manager import service_manager
+
         for manifest in manifests:
             content_hash = manifest.get('content_hash')
             if not content_hash: continue
-            
-            exists = Message.objects.filter(metadata_manifest__content_hash=content_hash).exists() or \
-                     FileAttachment.objects.filter(metadata_manifest__content_hash=content_hash).exists() or \
-                     PrivateMessage.objects.filter(metadata_manifest__content_hash=content_hash).exists()
 
-            if not exists:
+            # Check if content already exists and update manifests if needed
+            existing_message = Message.objects.filter(metadata_manifest__content_hash=content_hash).first()
+            existing_file = FileAttachment.objects.filter(metadata_manifest__content_hash=content_hash).first()
+            existing_pm = PrivateMessage.objects.filter(metadata_manifest__content_hash=content_hash).first()
+            existing_applet = Applet.objects.filter(code_manifest__content_hash=content_hash).first()
+
+            if existing_message or existing_file or existing_pm or existing_applet:
+                # Content exists - update its manifest to include new encryption keys
+                try:
+                    updated_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
+
+                    if existing_message:
+                        existing_message.metadata_manifest = updated_manifest
+                        existing_message.save()
+                        logger.info(f"Updated manifest for existing message {content_hash[:10]}")
+                    elif existing_file:
+                        existing_file.metadata_manifest = updated_manifest
+                        existing_file.save()
+                        logger.info(f"Updated manifest for existing file {content_hash[:10]}")
+                    elif existing_pm:
+                        existing_pm.metadata_manifest = updated_manifest
+                        existing_pm.save()
+                        logger.info(f"Updated manifest for existing PM {content_hash[:10]}")
+                    elif existing_applet:
+                        existing_applet.code_manifest = updated_manifest
+                        existing_applet.save()
+                        logger.info(f"Updated manifest for existing applet {content_hash[:10]}")
+                except Exception as e:
+                    logger.error(f"Failed to update manifest for {content_hash[:10]}: {e}")
+            else:
+                # New content - schedule download
                 self._schedule_download(manifest)
 
     def _process_received_actions(self, actions: list):
