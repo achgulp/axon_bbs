@@ -17,7 +17,7 @@
 
 from django.core.management.base import BaseCommand
 from applets.models import Applet
-from core.services.service_manager import service_manager
+from core.services.bitsync_service import BitSyncService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,9 +27,8 @@ class Command(BaseCommand):
     help = 'Update all applet manifests to include encryption keys for current trusted instances'
 
     def handle(self, *args, **options):
-        if not service_manager.bitsync_service:
-            self.stdout.write(self.style.ERROR('BitSync service not initialized'))
-            return
+        # Initialize BitSync service directly
+        bitsync_service = BitSyncService()
 
         applets = Applet.objects.filter(code_manifest__isnull=False)
         updated_count = 0
@@ -37,7 +36,7 @@ class Command(BaseCommand):
 
         for applet in applets:
             try:
-                updated_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(
+                updated_manifest = bitsync_service.rekey_manifest_for_new_peers(
                     applet.code_manifest
                 )
                 applet.code_manifest = updated_manifest
