@@ -28,28 +28,12 @@ from django.views.generic import TemplateView
 from django.views.static import serve
 
 from rest_framework_simplejwt.views import TokenRefreshView
-from accounts.views import (
-    CustomTokenObtainPairView, 
-    RegisterView, LogoutView, ImportIdentityView,
-    ExportIdentityView, UpdateNicknameView, UserProfileView, UploadAvatarView,
-    GetPublicKeyView, GetSecurityQuestionsView, SubmitRecoveryView, ClaimAccountView,
-    ChangePasswordView, ResetSecurityQuestionsView, GetDisplayTimezoneView, UpdateTimezoneView
-)
-from messaging.views import (
-    MessageBoardListView, MessageListView, PostMessageView, PrivateMessageListView,
-    PrivateMessageOutboxView, SendPrivateMessageView, DeletePrivateMessageView,
-    DownloadContentView, StreamContentView, FileUploadView, StreamLibraryView
-)
-from federation.views import (
-    SyncView, BitSyncHasContentView, BitSyncChunkView, IgnorePubkeyView, BanPubkeyView,
-    ReportMessageView, ReviewReportView, RequestContentExtensionView,
-    ReviewContentExtensionView, UnpinContentView, ReviewProfileUpdateView,
-    UnifiedQueueView, ContactModeratorsView, ExportConfigView
-)
-from applets.views import (
-    AppletListView, GetSaveAppletDataView, HighScoreListView, PostAppletEventView,
-    ReadAppletEventsView, AppletSharedStateView, AppletStateVersionView, UpdateStateView
-)
+
+# Import views from each app with a namespace
+from accounts import views as accounts_views
+from messaging import views as messaging_views
+from federation import views as federation_views
+from applets import views as applets_views
 
 
 class NoCacheTemplateView(TemplateView):
@@ -62,73 +46,73 @@ class NoCacheTemplateView(TemplateView):
 
 api_urlpatterns = [
     # Auth & Config
-    path('register/', RegisterView.as_view(), name='register'),
-    path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('register/', accounts_views.RegisterView.as_view(), name='register'),
+    path('token/', accounts_views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('logout/', LogoutView.as_view(), name='logout'),
-    path('config/timezone/', GetDisplayTimezoneView.as_view(), name='get-timezone'),
+    path('logout/', accounts_views.LogoutView.as_view(), name='logout'),
+    path('config/timezone/', accounts_views.GetDisplayTimezoneView.as_view(), name='get-timezone'),
     
     # Identity & User Profile
-    path('identity/import/', ImportIdentityView.as_view(), name='import-identity'),
-    path('identity/export/', ExportIdentityView.as_view(), name='export-identity'),
-    path('identity/public_key/', GetPublicKeyView.as_view(), name='get-public-key'),
-    path('identity/claim/', ClaimAccountView.as_view(), name='claim-identity'),
+    path('identity/import/', accounts_views.ImportIdentityView.as_view(), name='import-identity'),
+    path('identity/export/', accounts_views.ExportIdentityView.as_view(), name='export-identity'),
+    path('identity/public_key/', accounts_views.GetPublicKeyView.as_view(), name='get-public-key'),
+    path('identity/claim/', accounts_views.ClaimAccountView.as_view(), name='claim-identity'),
     
-    path('user/profile/', UserProfileView.as_view(), name='user-profile'),
-    path('user/nickname/', UpdateNicknameView.as_view(), name='update-nickname'),
-    path('user/avatar/', UploadAvatarView.as_view(), name='user-avatar'),
-    path('user/timezone/', UpdateTimezoneView.as_view(), name='update-timezone'),
-    path('user/change_password/', ChangePasswordView.as_view(), name='change-password'),
-    path('user/reset_security_questions/', ResetSecurityQuestionsView.as_view(), name='reset-security-questions'),
+    path('user/profile/', accounts_views.UserProfileView.as_view(), name='user-profile'),
+    path('user/nickname/', accounts_views.UpdateNicknameView.as_view(), name='update-nickname'),
+    path('user/avatar/', accounts_views.UploadAvatarView.as_view(), name='user-avatar'),
+    path('user/timezone/', accounts_views.UpdateTimezoneView.as_view(), name='update-timezone'),
+    path('user/change_password/', accounts_views.ChangePasswordView.as_view(), name='change-password'),
+    path('user/reset_security_questions/', accounts_views.ResetSecurityQuestionsView.as_view(), name='reset-security-questions'),
 
     # Recovery URLs
-    path('recovery/get_questions/', GetSecurityQuestionsView.as_view(), name='recovery-get-questions'),
-    path('recovery/submit/', SubmitRecoveryView.as_view(), name='recovery-submit'),
+    path('recovery/get_questions/', accounts_views.GetSecurityQuestionsView.as_view(), name='recovery-get-questions'),
+    path('recovery/submit/', accounts_views.SubmitRecoveryView.as_view(), name='recovery-submit'),
     
     # Private Messaging
-    path('pm/send/', SendPrivateMessageView.as_view(), name='pm-send'),
-    path('pm/list/', PrivateMessageListView.as_view(), name='pm-list'),
-    path('pm/outbox/', PrivateMessageOutboxView.as_view(), name='pm-outbox'),
-    path('pm/delete/<uuid:pk>/', DeletePrivateMessageView.as_view(), name='pm-delete'),
+    path('pm/send/', messaging_views.SendPrivateMessageView.as_view(), name='pm-send'),
+    path('pm/list/', messaging_views.PrivateMessageListView.as_view(), name='pm-list'),
+    path('pm/outbox/', messaging_views.PrivateMessageOutboxView.as_view(), name='pm-outbox'),
+    path('pm/delete/<uuid:pk>/', messaging_views.DeletePrivateMessageView.as_view(), name='pm-delete'),
 
     # Content & Moderation
-    path('boards/', MessageBoardListView.as_view(), name='board-list'),
-    path('boards/<int:pk>/messages/', MessageListView.as_view(), name='message-list'),
-    path('messages/post/', PostMessageView.as_view(), name='post-message'),
-    path('files/upload/', FileUploadView.as_view(), name='file-upload'),
-    path('user/ignore/', IgnorePubkeyView.as_view(), name='ignore-pubkey'),
-    path('messages/report/', ReportMessageView.as_view(), name='report-message'),
-    path('moderation/contact/', ContactModeratorsView.as_view(), name='moderation-contact'),
-    path('moderation/unified_queue/', UnifiedQueueView.as_view(), name='moderation-unified-queue'),
-    path('moderation/review/<int:report_id>/', ReviewReportView.as_view(), name='mod-review'),
-    path('moderation/profile_review/<uuid:action_id>/', ReviewProfileUpdateView.as_view(), name='mod-profile-review'),
+    path('boards/', messaging_views.MessageBoardListView.as_view(), name='board-list'),
+    path('boards/<int:pk>/messages/', messaging_views.MessageListView.as_view(), name='message-list'),
+    path('messages/post/', messaging_views.PostMessageView.as_view(), name='post-message'),
+    path('files/upload/', messaging_views.FileUploadView.as_view(), name='file-upload'),
+    path('user/ignore/', federation_views.IgnorePubkeyView.as_view(), name='ignore-pubkey'),
+    path('messages/report/', federation_views.ReportMessageView.as_view(), name='report-message'),
+    path('moderation/contact/', federation_views.ContactModeratorsView.as_view(), name='moderation-contact'),
+    path('moderation/unified_queue/', federation_views.UnifiedQueueView.as_view(), name='moderation-unified-queue'),
+    path('moderation/review/<int:report_id>/', federation_views.ReviewReportView.as_view(), name='mod-review'),
+    path('moderation/profile_review/<uuid:action_id>/', federation_views.ReviewProfileUpdateView.as_view(), name='mod-profile-review'),
     
     # Admin & Moderator Actions
-    path('admin/ban/', BanPubkeyView.as_view(), name='ban-pubkey'),
-    path('content/request-extension/', RequestContentExtensionView.as_view(), name='request-extension'),
-    path('content/review-extension/<int:pk>/', ReviewContentExtensionView.as_view(), name='review-extension'),
-    path('content/unpin/', UnpinContentView.as_view(), name='unpin-content'),
-    path('content/download/<str:content_hash>/', DownloadContentView.as_view(), name='content-download'),
-    path('content/stream/<str:content_hash>/', StreamContentView.as_view(), name='content-stream'),
+    path('admin/ban/', federation_views.BanPubkeyView.as_view(), name='ban-pubkey'),
+    path('content/request-extension/', federation_views.RequestContentExtensionView.as_view(), name='request-extension'),
+    path('content/review-extension/<int:pk>/', federation_views.ReviewContentExtensionView.as_view(), name='review-extension'),
+    path('content/unpin/', federation_views.UnpinContentView.as_view(), name='unpin-content'),
+    path('content/download/<str:content_hash>/', messaging_views.DownloadContentView.as_view(), name='content-download'),
+    path('content/stream/<str:content_hash>/', messaging_views.StreamContentView.as_view(), name='content-stream'),
 
     # Applet Framework
-    path('applets/', AppletListView.as_view(), name='applet-list'),
-    path('applets/<uuid:applet_id>/data/', GetSaveAppletDataView.as_view(), name='applet-data'),
-    path('high_scores/<uuid:applet_id>/', HighScoreListView.as_view(), name='high-scores'),
-    path('applets/<uuid:applet_id>/post_event/', PostAppletEventView.as_view(), name='applet-post-event'),
-    path('applets/<uuid:applet_id>/read_events/', ReadAppletEventsView.as_view(), name='applet-read-events'),
-    path('applets/<uuid:applet_id>/shared_state/', AppletSharedStateView.as_view(), name='applet-shared-state'),
-    path('applets/<uuid:applet_id>/state_version/', AppletStateVersionView.as_view(), name='applet-state-version'),
-    path('applets/<uuid:applet_id>/update_state/', UpdateStateView.as_view(), name='applet-update-state'),
-    path('libraries/<str:library_name>/', StreamLibraryView.as_view(), name='stream-library'),
+    path('applets/', applets_views.AppletListView.as_view(), name='applet-list'),
+    path('applets/<uuid:applet_id>/data/', applets_views.GetSaveAppletDataView.as_view(), name='applet-data'),
+    path('high_scores/<uuid:applet_id>/', applets_views.HighScoreListView.as_view(), name='high-scores'),
+    path('applets/<uuid:applet_id>/post_event/', applets_views.PostAppletEventView.as_view(), name='applet-post-event'),
+    path('applets/<uuid:applet_id>/read_events/', applets_views.ReadAppletEventsView.as_view(), name='applet-read-events'),
+    path('applets/<uuid:applet_id>/shared_state/', applets_views.AppletSharedStateView.as_view(), name='applet-shared-state'),
+    path('applets/<uuid:applet_id>/state_version/', applets_views.AppletStateVersionView.as_view(), name='applet-state-version'),
+    path('applets/<uuid:applet_id>/update_state/', applets_views.UpdateStateView.as_view(), name='applet-update-state'),
+    path('libraries/<str:library_name>/', messaging_views.StreamLibraryView.as_view(), name='stream-library'),
 
     # BitSync P2P Protocol
-    path('sync/', SyncView.as_view(), name='sync'),
-    path('bitsync/has_content/<str:content_hash>/', BitSyncHasContentView.as_view(), name='bitsync-has-content'),
-    path('bitsync/chunk/<str:content_hash>/<int:chunk_index>/', BitSyncChunkView.as_view(), name='bitsync-chunk'),
+    path('sync/', federation_views.SyncView.as_view(), name='sync'),
+    path('bitsync/has_content/<str:content_hash>/', federation_views.BitSyncHasContentView.as_view(), name='bitsync-has-content'),
+    path('bitsync/chunk/<str:content_hash>/<int:chunk_index>/', federation_views.BitSyncChunkView.as_view(), name='bitsync-chunk'),
 
     # Federation Admin
-    path('federation/export_config/', ExportConfigView.as_view(), name='federation-export-config'),
+    path('federation/export_config/', federation_views.ExportConfigView.as_view(), name='federation-export-config'),
 ]
 
 

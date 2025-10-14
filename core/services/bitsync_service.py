@@ -94,13 +94,40 @@ class BitSyncService:
             rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
         )
 
-    def rekey_manifest_for_new_peers(self, manifest: dict):
+    def rekey_manifest_for_peer(self, manifest: dict, peer_pubkey: str) -> dict:
+        """
+        Ensures a manifest has an encryption envelope for a specific peer.
+        If the envelope already exists, it returns the manifest unchanged.
+        If not, it decrypts the AES key and creates a new envelope for the peer.
+        """
+        peer_checksum = generate_checksum(peer_pubkey)
+        if peer_checksum in manifest.get('encrypted_aes_keys', {}):
+            return manifest # Already keyed for this peer, no work needed.
         
+        logger.info(f"Performing on-demand rekey of manifest {manifest['content_hash'][:10]} for peer {peer_checksum[:10]}")
+        
+        original_aes_key = self.get_decrypted_aes_key(manifest)
+        if not original_aes_key:
+            raise ValueError("Failed to obtain original AES key from manifest for re-keying.")
+
+        try:
+            pubkey_obj = serialization.load_pem_public_key(peer_pubkey.encode())
+            encrypted_key = pubkey_obj.encrypt(
+                original_aes_key,
+                rsa_padding.OAEP(mgf=rsa_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+            )
+            # Add the new key to the existing dictionary
+            manifest['encrypted_aes_keys'][peer_checksum] = base64.b64encode(encrypted_key).decode('utf-8')
+        except Exception as e:
+            logger.error(f"Failed to create new envelope for peer with checksum {peer_checksum}: {e}")
+
+        return manifest
+
+    def rekey_manifest_for_new_peers(self, manifest: dict):
         original_aes_key = self.get_decrypted_aes_key(manifest)
         if not original_aes_key:
             raise ValueError("Failed to obtain original AES key from manifest.")
 
-        # Get all instances that should have access (all peers + local)
         all_instances = TrustedInstance.objects.filter(Q(is_trusted_peer=True) | Q(encrypted_private_key__isnull=False))
         
         new_encrypted_aes_keys = {}
@@ -122,7 +149,6 @@ class BitSyncService:
             except Exception as e:
                 logger.error(f"Failed to create new envelope for instance {instance.web_ui_onion_url or 'Local'}: {e}")
         
-        # Replace the old dictionary with the newly generated one
         manifest['encrypted_aes_keys'] = new_encrypted_aes_keys
         logger.info(f"Manifest re-keyed for {updated_count} total instance(s).")
         
@@ -162,7 +188,6 @@ class BitSyncService:
             for pkey in recipients_pubkeys:
                 pubkeys_to_encrypt_for.add(pkey)
         else:
-            # For public content, encrypt for all trusted peers AND self.
             all_instances = TrustedInstance.objects.all()
             for instance in all_instances:
                 if instance.pubkey:

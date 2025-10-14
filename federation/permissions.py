@@ -37,6 +37,7 @@ class TrustedPeerPermission(permissions.BasePermission):
     Custom permission to only allow requests from trusted peer instances.
     - Verifies the sender's public key is in the local TrustedInstance table.
     - Verifies the request signature to prove ownership of the key.
+    - Attaches the peer's TrustedInstance object to the request.
     """
     def has_permission(self, request, view):
         sender_pubkey_pem = None
@@ -91,10 +92,10 @@ class TrustedPeerPermission(permissions.BasePermission):
             logger.warning(f"Failed to parse/normalize incoming public key: {e}")
             return False
         
-        trusted_peers = TrustedInstance.objects.filter(is_trusted_peer=True)
-        trusted_pubkeys = [p.pubkey for p in trusted_peers if p.pubkey]
-        
-        if cleaned_sender_pubkey not in trusted_pubkeys:
+        try:
+            peer_instance = TrustedInstance.objects.get(pubkey=cleaned_sender_pubkey, is_trusted_peer=True)
+            request.peer_instance = peer_instance
+        except TrustedInstance.DoesNotExist:
             incoming_checksum = generate_checksum(cleaned_sender_pubkey)
             logger.warning(f"REJECTED request from untrusted public key with checksum: {incoming_checksum}. This key was not found in the list of trusted peers.")
             return False
