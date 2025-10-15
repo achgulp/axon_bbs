@@ -1,0 +1,25 @@
+{
+  "id": "da497695-e3b0-4b92-917c-d324cddead12",
+  "name": "MimsTris",
+  "description": "Tetris like clone",
+  "author_pubkey": "-----BEGIN PUBLIC KEY-----\r\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnKzr3etFG1F3mQyEf5Df\r\nhiN1dwc4FbYOruUavqRvrZ2EHHup2h20f/FiSzvOoRh/hGsN4HoGSLqJPOUejBWU\r\nEJlZukutZ3qkQxcgP4YFkdvo7jhgN45iM3sFqKL36kYtd7/iTjV4ZNRxtKeGXST3\r\n3hIcAPi1buwyxn5iXjfEYMmvomDou0bRslY3qEUOqY1WzJMK4ksh4KmddaHcZ2sd\r\nuunaq0wkdKfCQpkc1nBhZxc97bxQuaGkIICe+fO3EOt4/9JMYtamZyTSGqAs5RIs\r\nS6VY7HbGpTgPOoitE+9s5XDceCe+9iP52YiOMLdpEnvZLrsj7blwDOLPPoVCMTXe\r\nvwIDAQAB\r\n-----END PUBLIC KEY-----",
+  "code_manifest": {
+    "content_hash": "85dc28ab145d508b6370512f703cfc80ad47943abbc49b5f826628c925577a32",
+    "chunk_size": 262144,
+    "chunk_hashes": [
+      "238b499f6bc954235d8c94272c67cfb01773e16260052527c4e3fcc285a2e197"
+    ],
+    "encryption_iv": "58BY583XAYaZdhMBAxPn1A==",
+    "encrypted_aes_keys": {
+      "214467155aac6beeb17ed5819cc45a0b": "kAwxsiqBG9VZKrj8sIDcDlUYammPPxbASTpEU4m48HECsdHVulJC1yJqB5XrYw2gGyfBMMrgL/AIDoSwA/VFYYSiFXSYUESM9y/45/H3I6Op2jxyCi4IQXbqncsyE1XvAn11Gwq0wLLegAUBLSL92d46BRnfzcqG55LzZd5UEe2x3cqDfAZDruMnpzq+a7aSZwQ3Vq4XnagwPcnuCfZYocxJRM49MF7G9lOhpAAe7BwQ1R4nHdAOU/1Pu1KR13lHANE74iji2l6zLdgj6lQofJyv8nJxvW3w8+cqQOExJcGVx5pPOOBHq2Iq6YUyD6QE8YOyaU83m7MOMjzBzV7CHQ==",
+      "8aeedafc38d2b9daf17f088cd091d74a": "jnJoAUpmGgLIOLU1a/g544kq8m2HByMSHleEIh0O0BsyqSQ82nw3gMMd9qWUlz1epWPTUxWJQ4Ohb4u/vmLOksCSqpQmyFSIRvlUbCCeaw8hmzeDZVPc6FrXmsKfTeVWYGVoCrhwZx1hYbbqMIDmfUqHsX0235Ba14w+UMgcLW/L+CQCRwvqr0pRUEzE9sauzxvkyikg8cEcf+fS4yiSjwiuN0tJswm2nV5G9LtGhX0He2ozd9pMyqCp2fQDKZ4bCyPwuSihPzcdWy+I2tcjnXOyTLaoPA6vgjKCujvXsLosId0ME0DVrFn6LOb1jtMGfbYz3OhoxWa2D+hZt/84Pg=="
+    }
+  },
+  "parameters": {},
+  "is_local": false,
+  "created_at": "2025-09-27T03:16:04.871901+00:00",
+  "category": "Games",
+  "is_debug_mode": true,
+  "event_board": null,
+  "handles_mime_types": ""
+}

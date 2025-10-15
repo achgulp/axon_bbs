@@ -51,7 +51,7 @@ def federate_delete_action(modeladmin, request, queryset):
 @admin.register(TrustedInstance)
 class TrustedInstanceAdmin(admin.ModelAdmin):
     list_display = ('__str__', 'is_trusted_peer', 'last_synced_at')
-    actions = ['fetch_public_key', 'force_refresh_and_rekey', 'clone_config_from_peer']
+    actions = ['fetch_public_key', 'force_refresh_and_rekey', 'clone_config_from_peer', 'clone_full_bbs']
 
     def fetch_public_key(self, request, queryset):
         for instance in queryset.filter(is_trusted_peer=True):
@@ -130,10 +130,11 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
     force_refresh_and_rekey.short_description = "Force Refresh and Re-key Peer"
 
     def clone_config_from_peer(self, request, queryset):
+        """Clone configuration only (no applets). For full clone including applets, use clone_full_bbs."""
         if queryset.count() != 1:
             self.message_user(request, "Please select exactly one peer to clone from.", messages.ERROR)
             return
-        
+
         peer = queryset.first()
         sync_service = service_manager.sync_service
         if not sync_service or not sync_service.private_key:
@@ -147,9 +148,9 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             response = requests.get(target_url, headers=headers, proxies=proxies, timeout=120)
             if response.status_code != 200:
                 raise Exception(f"Peer returned status {response.status_code}")
-            
+
             data = response.json()
-            
+
             # Step 1: Find all superuser primary keys from the peer data
             superuser_pks = {
                 obj['pk'] for obj in data
@@ -168,7 +169,7 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
                 owner_pk = fields.get('owner')      # Used in Applet
                 user_pk = fields.get('user')        # Used in IgnoredPubkey
                 author_pk = fields.get('author')    # Used in Message, FileAttachment
-                
+
                 if (owner_pk in superuser_pks or
                     user_pk in superuser_pks or
                     author_pk in superuser_pks):
@@ -187,10 +188,48 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
 
             call_command('backfill_avatars')
 
-            self.message_user(request, f"Successfully cloned configuration from {peer.web_ui_onion_url}.", messages.SUCCESS)
+            self.message_user(request, f"Successfully cloned configuration from {peer.web_ui_onion_url}. Note: Applets were NOT cloned. Use 'Clone full BBS' to include applets.", messages.SUCCESS)
         except Exception as e:
             self.message_user(request, f"Failed to clone configuration: {e}", messages.ERROR)
-    clone_config_from_peer.short_description = "Clone configuration from peer"
+    clone_config_from_peer.short_description = "Clone configuration from peer (config only, no applets)"
+
+    def clone_full_bbs(self, request, queryset):
+        """Clone complete BBS including configuration and applets."""
+        if queryset.count() != 1:
+            self.message_user(request, "Please select exactly one peer to clone from.", messages.ERROR)
+            return
+
+        peer = queryset.first()
+
+        try:
+            # Run the full clone command
+            from io import StringIO
+            import sys
+
+            # Capture output
+            output = StringIO()
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            sys.stdout = output
+            sys.stderr = output
+
+            try:
+                call_command('clone_from_bbs', peer.web_ui_onion_url)
+            finally:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+
+            output_text = output.getvalue()
+
+            if "Clone complete!" in output_text:
+                self.message_user(request, f"Successfully cloned full BBS from {peer.web_ui_onion_url}. Check server logs for details.", messages.SUCCESS)
+            else:
+                self.message_user(request, f"Clone may have encountered issues. Output: {output_text[:200]}", messages.WARNING)
+        except Exception as e:
+            self.message_user(request, f"Failed to clone BBS: {e}", messages.ERROR)
+            import traceback
+            traceback.print_exc()
+    clone_full_bbs.short_description = "Clone full BBS from peer (config + applets)"
 
 @admin.register(FileAttachment)
 class FileAttachmentAdmin(admin.ModelAdmin):

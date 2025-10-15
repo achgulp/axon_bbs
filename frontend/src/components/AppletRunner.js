@@ -266,38 +266,40 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
     const checksum = applet?.code_manifest?.content_hash || 'N/A';
     const debugMode = applet?.is_debug_mode || false;
 
-    // Generate script tags for all required libraries
-    const libraryScriptTags = libraryScripts.map(scriptContent => 
-        `<script>${scriptContent}<\/script>`
-    ).join('');
+    // Create blob URLs for libraries to avoid embedding issues
+    const libraryBlobUrls = libraryScripts.map((scriptContent, index) => {
+        console.log(`Creating blob for library ${index + 1}/${libraryScripts.length}, length: ${scriptContent.length}`);
+        const blob = new Blob([scriptContent], { type: 'application/javascript' });
+        return URL.createObjectURL(blob);
+    });
 
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${applet.name}</title>
-          ${libraryScriptTags}
-        </head>
-        <body>
-          <div id="applet-root"></div>
-          <script>
-            window.BBS_APPLET_CHECKSUM = '${checksum}';
-            window.BBS_DEBUG_MODE = ${debugMode};
-            document.addEventListener("DOMContentLoaded", function() {
-              try {
-                ${appletCode}
-              } catch (e) {
-                const root = document.getElementById('applet-root');
-                if (root) {
-                  root.innerHTML = '<p style="color: red; font-family: monospace;">Applet Failed to Execute: ' + e.message + '</p>';
-                }
-                console.error("Applet execution error:", e);
-              }
-            });
-          </script>
-        </body>
-      </html>
-    `;
+    // Create blob URL for applet code
+    const appletBlob = new Blob([appletCode], { type: 'application/javascript' });
+    const appletBlobUrl = URL.createObjectURL(appletBlob);
+
+    // Generate script tags that reference the blob URLs
+    const libraryScriptTags = libraryBlobUrls.map(url =>
+        `<script src="${url}"></script>`
+    ).join('\n    ');
+
+    const html =
+      '<!DOCTYPE html>\n' +
+      '<html>\n' +
+      '  <head>\n' +
+      '    <title>' + applet.name + '</title>\n' +
+      '    ' + libraryScriptTags + '\n' +
+      '  </head>\n' +
+      '  <body>\n' +
+      '    <div id="applet-root"></div>\n' +
+      '    <script>\n' +
+      '      window.BBS_APPLET_CHECKSUM = \'' + checksum + '\';\n' +
+      '      window.BBS_DEBUG_MODE = ' + debugMode + ';\n' +
+      '    </script>\n' +
+      '    <script src="' + appletBlobUrl + '"></script>\n' +
+      '  </body>\n' +
+      '</html>';
+
+    return html;
   };
 
   return (

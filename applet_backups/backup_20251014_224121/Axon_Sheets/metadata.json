@@ -1,0 +1,25 @@
+{
+  "id": "f7572ea6-22a6-4c63-ba4b-98b22cc5cd4d",
+  "name": "Axon Sheets",
+  "description": "Spread Sheet",
+  "author_pubkey": "-----BEGIN PUBLIC KEY-----\r\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnKzr3etFG1F3mQyEf5Df\r\nhiN1dwc4FbYOruUavqRvrZ2EHHup2h20f/FiSzvOoRh/hGsN4HoGSLqJPOUejBWU\r\nEJlZukutZ3qkQxcgP4YFkdvo7jhgN45iM3sFqKL36kYtd7/iTjV4ZNRxtKeGXST3\r\n3hIcAPi1buwyxn5iXjfEYMmvomDou0bRslY3qEUOqY1WzJMK4ksh4KmddaHcZ2sd\r\nuunaq0wkdKfCQpkc1nBhZxc97bxQuaGkIICe+fO3EOt4/9JMYtamZyTSGqAs5RIs\r\nS6VY7HbGpTgPOoitE+9s5XDceCe+9iP52YiOMLdpEnvZLrsj7blwDOLPPoVCMTXe\r\nvwIDAQAB\r\n-----END PUBLIC KEY-----",
+  "code_manifest": {
+    "content_hash": "eb33a20d73ccdcbc3b5fb05e96e36df779990f18d7efba681695adc24f8c681a",
+    "chunk_size": 262144,
+    "chunk_hashes": [
+      "f606ba3ae824594449dd87975cb603c7de8d550930b225325ec8eb77c55274f3"
+    ],
+    "encryption_iv": "jayF1/Mec/5Lq8+bnVYMvQ==",
+    "encrypted_aes_keys": {
+      "214467155aac6beeb17ed5819cc45a0b": "WpVGyEEul18hjaYTcb/xqe7VcR1S8f0AKq5pDFltYruiqWnWBH0do81ADAukWStlpjBjqhXBwDQi0DRGt7qsxsaIp+n6YNa0yiqD1CMqfuVyjndUwHUHRJWjBYQw8bUHTbEWHMPKpioPqo1M991eN0Ics3jSk9Fs7fmryreuZohdljKnqimmvIAb6zc3zAw8GzM4+vk8kt1aWK8icLSDnCSZo0RYguThFUmKqmUJQZEg8zwsTqLp8XXsT2uFDJNaVF5hUWb2WBeQEJ5Ed771SfRQbEvlzS7yycPO519hQghnqRlQd9gOwS7GKl4L+SnidSfxxgV3COwVVW7GXovY8g==",
+      "8aeedafc38d2b9daf17f088cd091d74a": "X3lZ6bEE03nboalKiXmPawkF9vBxYvheFuSuoW8jemN5XN5aVIPdMl28RmQa7ubVwS2IdYiDJ72CW9WP6yDmYM38dkBAmtVno2b/07LJ78cRa9nqCT5PxwoE99QWy8dpmCHp6fKBX8/QccuLCuiJR14+Ty31zbzAKYYV7mPQQzGQ647LaDCyjvyPteRXHDgaaJQ+4kMSCEC0CqjZcSw9QolKwrTOp1ScVCkNujmNyHlgrEHP78LpL2FkMS/WcJjFbSlAUkKcYOwwLluxyCt6w+sBFYIj2F2vjA3aaHt3umtB2wYXFh+pOG7r6GELs2iZZvDu/AJZrQHVSqmIWsDPZA=="
+    }
+  },
+  "parameters": {},
+  "is_local": false,
+  "created_at": "2025-09-27T00:45:43.173397+00:00",
+  "category": "Office",
+  "is_debug_mode": true,
+  "event_board": null,
+  "handles_mime_types": ""
+}

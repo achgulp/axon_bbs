@@ -200,26 +200,44 @@ class SyncService:
             existing_applet = Applet.objects.filter(code_manifest__content_hash=content_hash).first()
 
             if existing_message or existing_file or existing_pm or existing_applet:
-                # Content exists - update its manifest to include new encryption keys
+                # Content exists - check if manifest needs updating
                 try:
-                    updated_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
-
+                    # Get the current manifest from the database
                     if existing_message:
-                        existing_message.metadata_manifest = updated_manifest
-                        existing_message.save()
-                        logger.info(f"Updated manifest for existing message {content_hash[:10]}")
+                        current_manifest = existing_message.metadata_manifest
                     elif existing_file:
-                        existing_file.metadata_manifest = updated_manifest
-                        existing_file.save()
-                        logger.info(f"Updated manifest for existing file {content_hash[:10]}")
+                        current_manifest = existing_file.metadata_manifest
                     elif existing_pm:
-                        existing_pm.metadata_manifest = updated_manifest
-                        existing_pm.save()
-                        logger.info(f"Updated manifest for existing PM {content_hash[:10]}")
-                    elif existing_applet:
-                        existing_applet.code_manifest = updated_manifest
-                        existing_applet.save()
-                        logger.info(f"Updated manifest for existing applet {content_hash[:10]}")
+                        current_manifest = existing_pm.metadata_manifest
+                    else:  # existing_applet
+                        current_manifest = existing_applet.code_manifest
+
+                    # Check if the incoming manifest has any new encryption keys
+                    current_keys = set(current_manifest.get('encrypted_aes_keys', {}).keys())
+                    incoming_keys = set(manifest.get('encrypted_aes_keys', {}).keys())
+
+                    # Only update if there are new keys we don't have
+                    if not incoming_keys.issubset(current_keys):
+                        # New keys detected - merge them in
+                        updated_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
+
+                        if existing_message:
+                            existing_message.metadata_manifest = updated_manifest
+                            existing_message.save()
+                            logger.info(f"Updated manifest for existing message {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
+                        elif existing_file:
+                            existing_file.metadata_manifest = updated_manifest
+                            existing_file.save()
+                            logger.info(f"Updated manifest for existing file {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
+                        elif existing_pm:
+                            existing_pm.metadata_manifest = updated_manifest
+                            existing_pm.save()
+                            logger.info(f"Updated manifest for existing PM {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
+                        elif existing_applet:
+                            existing_applet.code_manifest = updated_manifest
+                            existing_applet.save()
+                            logger.info(f"Updated manifest for existing applet {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
+                    # else: No new keys, skip update
                 except Exception as e:
                     logger.error(f"Failed to update manifest for {content_hash[:10]}: {e}")
             else:

@@ -1,0 +1,31 @@
+{
+  "id": "cd0819d5-d489-49b5-94bd-9ffd01477736",
+  "name": "HexGL",
+  "description": "HexGL Game",
+  "author_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnKzr3etFG1F3mQyEf5Df\nhiN1dwc4FbYOruUavqRvrZ2EHHup2h20f/FiSzvOoRh/hGsN4HoGSLqJPOUejBWU\nEJlZukutZ3qkQxcgP4YFkdvo7jhgN45iM3sFqKL36kYtd7/iTjV4ZNRxtKeGXST3\n3hIcAPi1buwyxn5iXjfEYMmvomDou0bRslY3qEUOqY1WzJMK4ksh4KmddaHcZ2sd\nuunaq0wkdKfCQpkc1nBhZxc97bxQuaGkIICe+fO3EOt4/9JMYtamZyTSGqAs5RIs\nS6VY7HbGpTgPOoitE+9s5XDceCe+9iP52YiOMLdpEnvZLrsj7blwDOLPPoVCMTXe\nvwIDAQAB\n-----END PUBLIC KEY-----",
+  "code_manifest": {
+    "content_hash": "74a1af472dc9b574831c5420fbe9fc18e279f8a2dbf086dfc072a77e60783d16",
+    "chunk_size": 262144,
+    "chunk_hashes": [
+      "99f94151a8a449133071bf9a8500b2ecad4b2500aee7c7345b35e0c903042890"
+    ],
+    "encryption_iv": "vwhdoiP12bQVTx1zBmpWng==",
+    "encrypted_aes_keys": {
+      "214467155aac6beeb17ed5819cc45a0b": "a0LcttOaGgPlmWtIJGKnHrJ/gfe4hI0PPlPc9NkikdiZEs1rFfa+oBG29kDL86CufnKeAKOCR3Jt/Vu3smnAgArezQQ8/dlmT+81hko5p2HGKWq5Lai1X5r/eJTHFtSx+P0Rn5zXXo5mCs6Qx5tH8I+43B0A4M6SBtELXg+k+rPqO09i+TlX2ZXB8v+G8WmLvQBD4vdoswvDMZXAddo6MU0A5MoAKrnzX5Xc0/Sp76hpc+wr1QIe3JbT/W4FkkAms0ZjFoU1nfv/bokSpP3phsTUb5p0Q/I7TQqNMRUIy4tYX61RSmMUSIgndpIA/P/t1ywloPlh/ECgHBgkndQr7A==",
+      "8aeedafc38d2b9daf17f088cd091d74a": "QdYXH3tK/TR9830vZrZySLSy+lGMNtIu0/f6JOS/3LpgEWJZ/hSlqfw3JLgkLUCLcO8s4Zd+DV0jOWSg/9mcfqG0fSghTlBFQj6h4apScpfVMXQ/mnYKtuiR3xClb8xWvQ2G/GQjW93rVSz7RILK4it63apG37uKRK78sk8edBo56PVZLUCau22NNSHVhdYcvTLXPRRwaIJArgoLyRcgu/owebtRtGMYcIrcBsC79274HH6LaP5l4rHyN6DVUcyrv77E+xhTqtsm8dhSJ7AidnDhuC3wkL0JJk+UQ8oako6f1GnTOH7sYNbg/8KKbPnS9jkYu+ZRhbXHSNiv53Ol+Q=="
+    }
+  },
+  "parameters": {
+    "asset_hash": "86e4875da9d0fcaedc987b5487f89ae6abd5c96cd3235adb1f028ba2ae81a97f",
+    "required_libraries": [
+      "jszip",
+      "three.js"
+    ]
+  },
+  "is_local": false,
+  "created_at": "2025-10-04T04:01:38.663030+00:00",
+  "category": "Games",
+  "is_debug_mode": true,
+  "event_board": null,
+  "handles_mime_types": ""
+}
