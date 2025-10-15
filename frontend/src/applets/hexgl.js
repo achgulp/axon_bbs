@@ -207,11 +207,12 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                         debugLog("  Material[" + i + "]: DbgColor=" + (mat.DbgColor !== undefined ? "0x" + mat.DbgColor.toString(16) : "undefined") + ", using 0x" + color.toString(16));
                         const material = new THREE.MeshPhongMaterial({
                             color: color,
-                            emissive: 0x444444,
-                            specular: 0x999999,
+                            emissive: 0x222222,
+                            specular: 0x666666,
                             shininess: mat.specularCoef || 30,
                             side: THREE.DoubleSide,
-                            wireframe: true
+                            wireframe: false,
+                            flatShading: false
                         });
                         materials.push(material);
                     }
