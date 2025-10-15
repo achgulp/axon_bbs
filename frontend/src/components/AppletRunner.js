@@ -244,6 +244,33 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
             const readResponse = await apiClient.get(`/api/applets/${applet.id}/read_events/`);
             response.payload = readResponse.data;
             break;
+          case 'fetch':
+            const { url, options = {} } = payload;
+            if (!url) {
+              throw new Error("fetch command requires a URL");
+            }
+            // Perform the fetch request using apiClient
+            const method = options.method || 'GET';
+            const headers = options.headers || {};
+            const body = options.body;
+
+            let fetchResponse;
+            if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+              fetchResponse = await apiClient({
+                method: method,
+                url: url,
+                headers: headers,
+                data: body ? (typeof body === 'string' ? JSON.parse(body) : body) : undefined
+              });
+            } else {
+              fetchResponse = await apiClient({
+                method: method,
+                url: url,
+                headers: headers
+              });
+            }
+            response.payload = fetchResponse.data;
+            break;
           default:
             return;
         }

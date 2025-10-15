@@ -17,21 +17,9 @@
 # Full path: axon_bbs/core/urls.py
 
 from django.urls import path
-from .views import (
-    applet_state,
-    applet_update,
-    applet_events # Import the new view
-)
+from core.views.applet_events import applet_event_stream
 
 urlpatterns = [
-    # ... other existing url patterns ...
-
-    # Endpoint for an applet to get its current shared state (still useful for initial load)
-    path('api/applets/<int:applet_id>/state/', applet_state.get_applet_state, name='get_applet_state'),
-    
-    # Endpoint for an applet to post an update to its shared state
-    path('api/applets/<int:applet_id>/update_state/', applet_update.update_applet_state, name='update_applet_state'),
-    
-    # NEW: Endpoint for the Server-Sent Events (SSE) stream
-    path('api/applets/<int:applet_id>/events/', applet_events.applet_event_stream, name='applet_event_stream'),
+    # Server-Sent Events (SSE) stream for real-time chat updates
+    path('applets/<uuid:applet_id>/events/', applet_event_stream, name='applet_event_stream'),
 ]

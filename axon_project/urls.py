@@ -45,6 +45,9 @@ class NoCacheTemplateView(TemplateView):
         return response
 
 api_urlpatterns = [
+    # Core URLs (includes SSE endpoint for chat)
+    path('', include('core.urls')),
+
     # Auth & Config
     path('register/', accounts_views.RegisterView.as_view(), name='register'),
     path('token/', accounts_views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
