@@ -1,7 +1,7 @@
-Axon BBS - Architectural Blueprint (Version 10.26.0)
-Version: 10.26.0
+Axon BBS - Architectural Blueprint (Version 10.27.0)
+Version: 10.27.0
 
-Last Updated: 2025-10-05
+Last Updated: 2025-10-15
 
 This document outlines the high-level architectural plans and guiding principles for the Axon BBS project. It is intended for developers to understand the "why" behind the code structure.
 
@@ -57,3 +57,9 @@ This framework allows any file type to be displayed within a message thread usin
 -   Mechanism: The Applet model has a handles_mime_types field (e.g., "video/mp4,video/webm").
 -   Frontend Flow: The MessageList component finds a handler applet and launches it in the AppletRunner, passing the file's content_hash as context.
 -   Secure Data Access: The applet uses the getAttachmentBlob API to securely fetch and render the file, without ever having direct access to the network or the user's session.
+
+Applet Development Workflow
+A streamlined workflow enables rapid applet development and deployment:
+-   Post Applet Update Command: The post_applet_update Django management command automates the entire deployment process. It accepts an applet JavaScript file path, creates a proper BitSync manifest with encrypted content chunks, uploads it as a FileAttachment, posts a formatted message to the "Applet Library" board with installation instructions, and automatically updates the target applet's code_manifest field in the database.
+-   BitSync Integration: The command initializes BitSyncService if needed and uses create_encrypted_content() to generate proper manifests compatible with federation and peer synchronization.
+-   Automatic Versioning: Posted updates include version numbers, file hashes (SHA-256), manifest JSON, and FileAttachment IDs for complete traceability.

@@ -1,10 +1,17 @@
-Axon BBS - Project Brief & Development Context (Version 10.26.0)
-Version: 10.26.0
+Axon BBS - Project Brief & Development Context (Version 10.27.0)
+Version: 10.27.0
 
-Last Updated: 2025-10-05
+Last Updated: 2025-10-15
 
 Project Summary
 Axon BBS is a federated, anonymous, and modern bulletin board system. The core architecture is a Django backend with a React single-page application frontend. Key systems include a custom P2P data synchronization protocol (BitSync) and a sandboxed applet framework for extensibility. The applet framework has recently been hardened to include client-side integrity verification and support for a hybrid architecture for large, complex applications.
+
+Developer Tools
+The project includes management commands to streamline applet development and deployment:
+
+post_applet_update: Automates the process of posting applet updates to the "Applet Library" message board with proper BitSync manifests. This command creates the necessary FileAttachment with encrypted content, posts a formatted message with installation instructions, and automatically updates the applet's code_manifest in the database.
+
+check_applet_manifest: Diagnostic tool to verify applet manifests and troubleshoot federation issues.
 
 Immediate To-Do List / Roadmap
 This is the prioritized list of features to be implemented next:

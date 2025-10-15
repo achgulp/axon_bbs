@@ -1,7 +1,7 @@
-Axon BBS - Project Status & Roadmap (Version 10.26.0)
-Date: 2025-10-05
+Axon BBS - Project Status & Roadmap (Version 10.27.0)
+Date: 2025-10-15
 
-Version: 10.26.0 (Stable)
+Version: 10.27.0 (Stable)
 
 This document summarizes the development progress, outlining completed tasks and the remaining work required to fulfill the project brief and architectural blueprint.
 
@@ -25,6 +25,10 @@ Federated Chat Backend (Phase 1) (✅ Complete): The foundational backend for th
 Dynamic Agent Loading (✅ Complete): The ServiceManager now dynamically loads and configures backend agents based on database entries, allowing for easier administration.
 
 Automated Configuration Cloning (✅ Complete): A secure admin tool for bootstrapping new BBS instances from a trusted peer is implemented.
+
+Applet Development Tooling (✅ Complete): Management commands streamline applet development and deployment.
+- The post_applet_update command automates posting applet updates to the "Applet Library" board with proper BitSync manifests, creating FileAttachments with encrypted content, and updating applet code_manifest fields.
+- The check_applet_manifest command provides diagnostic capabilities for troubleshooting applet manifests and federation issues.
 
 II. Remaining Work / Roadmap
 

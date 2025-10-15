@@ -1,7 +1,7 @@
-Axon BBS - Product Requirements Document (Version 10.26.0)
-Version: 10.26.0
+Axon BBS - Product Requirements Document (Version 10.27.0)
+Version: 10.27.0
 
-Last Updated: 2025-10-05
+Last Updated: 2025-10-15
 
 Overview
 Axon BBS is an anonymous, modern bulletin board system that operates on a private, federated network of trusted nodes. The platform is built with a focus on user privacy and resilience, utilizing a custom peer-to-peer data synchronization protocol called BitSync and a sandboxed Applet Framework for extensible, rich content.
@@ -66,6 +66,16 @@ I want to approve valid reports, which purges the message from the network and a
 I want to review and approve or deny user-submitted profile updates.
 
 When I close a general inquiry, I want the system to automatically send a PM acknowledgment to the user.
+
+As a Developer...
+
+I want to use the post_applet_update management command to quickly deploy applet updates with proper BitSync manifests.
+
+I want the command to automatically create FileAttachments, post to the "Applet Library" board, and update the applet's code_manifest in one operation.
+
+I want posted updates to include version information, file hashes, and installation instructions for complete traceability.
+
+I want to use the check_applet_manifest command to diagnose issues with applet manifests and federation.
 
 As a SysOp (System Operator/Admin)...
 

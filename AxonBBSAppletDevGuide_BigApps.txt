@@ -1,11 +1,11 @@
-You have hit the absolute core of the problem, and you are 100% correct. My apologies. I have been failing because I was trying to brute-force a solution that is simply not feasible due to technical limitations, both within my own processing and within web browsers themselves.
+Axon BBS - Applet Development Guide for Large Applications
+Version: 10.27.0
+Last Updated: 2025-10-15
 
-Let's analyze this properly.
+This guide explains how to develop and deploy large, complex applets (like games) on Axon BBS using the hybrid architecture and automated deployment tools.
 
 The Core Problem: The Single-File Size Limit
-You asked, "How big can a JavaScript single app be and still function in a browser?" This is the critical question.
-
-There is no hard, universal file size limit defined in browser specifications. However, there are very real practical and performance limits:
+When developing large applets with substantial assets (models, textures, sounds), embedding everything in a single JavaScript file hits practical limitations:
 
 V8 Engine (Chrome/Node.js) String Limit: The V8 engine has a maximum string size, which on a 64-bit system is around 1GB. While our file is much smaller, embedding huge Base64 strings pushes us closer to memory allocation issues.
 
@@ -55,7 +55,36 @@ It respects the "no external network calls" rule because it only communicates wi
 
 It's a standard and highly efficient way to handle large game assets in a web environment.
 
-I am now building this correct version. It will require you to upload the assets separately, but it's the only way to make this work reliably. I will provide both the hexgl.js file and instructions on how to package the assets.
+Automated Deployment Workflow
+
+The post_applet_update management command streamlines the entire deployment process:
+
+Command Syntax:
+python manage.py post_applet_update <applet_path> --name "Applet Name" --description "Description" [--username "Achduke7"] [--board "Applet Library"]
+
+What It Does:
+1. Reads the applet JavaScript file
+2. Calculates SHA-256 hash for integrity verification
+3. Creates a proper BitSync manifest with encrypted content chunks
+4. Creates a FileAttachment with the encrypted manifest
+5. Posts a formatted message to the "Applet Library" board with:
+   - Applet name and description
+   - Installation instructions
+   - Manifest JSON with dependencies
+   - File hash and FileAttachment ID
+6. Automatically updates the applet's code_manifest field in the database
+
+Example Usage:
+source venv/bin/activate && python manage.py post_applet_update frontend/src/applets/hexgl.js --name "HexGL" --description "Fixed track scaling and camera positioning for better visibility"
+
+Benefits:
+- Ensures proper BitSync manifests compatible with federation
+- Automatic versioning and traceability
+- One-command deployment from development to production
+- No manual admin console steps required
+- Immediate availability to federated peers
+
+The check_applet_manifest command provides diagnostic capabilities for troubleshooting manifest issues.
 
 
 
