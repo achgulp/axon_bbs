@@ -452,6 +452,26 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             debugLog(`Rendered user list: ${sortedUsers.length} users`);
         }
 
+        // Helper function to format timestamp in user's timezone
+        // This works around Tor Browser's timezone privacy protections
+        function formatTimestamp(isoString) {
+            try {
+                const date = new Date(isoString);
+                // Use toLocaleString with explicit timezone - this forces conversion
+                return date.toLocaleString('en-US', {
+                    timeZone: displayTimezone,
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                });
+            } catch (error) {
+                debugLog(`Timezone conversion error: ${error.message}`);
+                // Fallback to simple time display
+                return new Date(isoString).toLocaleTimeString();
+            }
+        }
+
         // Render messages
         function renderMessages(messages) {
             // Only re-render if message count changed (optimization to prevent flickering)
@@ -471,7 +491,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
                 const timestamp = document.createElement('span');
                 timestamp.className = 'timestamp';
-                timestamp.textContent = new Date(msg.timestamp).toLocaleTimeString([], { timeZone: displayTimezone });
+                timestamp.textContent = formatTimestamp(msg.timestamp);
 
                 const user = document.createElement('span');
                 user.className = 'user';
