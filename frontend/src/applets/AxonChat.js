@@ -329,8 +329,19 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         let activeUsers = new Map(); // Map of user short ID -> { nickname, avatar, lastSeen }
         let eventSource = null;
 
+        // Helper function to compute short user ID from pubkey
+        async function computeShortId(pubkey) {
+            if (!pubkey) return null;
+            const encoder = new TextEncoder();
+            const data = encoder.encode(pubkey);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex.substring(0, 16);
+        }
+
         // Always add current user to active users list
-        const currentUserShortId = userInfo.pubkey.substring(0, 16);
+        const currentUserShortId = await computeShortId(userInfo.pubkey);
         activeUsers.set(currentUserShortId, {
             nickname: userInfo.nickname || currentUserShortId,
             avatar: userInfo.avatar_url || `/media/avatars/default_cow_${currentUserShortId}.png`,
@@ -356,14 +367,35 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             messages.forEach(msg => {
                 const timestamp = new Date(msg.timestamp).getTime();
                 if (now - timestamp < activeThreshold) {
-                    if (!activeUsers.has(msg.user)) {
-                        activeUsers.set(msg.user, {
-                            nickname: msg.user,
-                            avatar: `/media/avatars/default_cow_${msg.user}.png`, // Default avatar
+                    // Use user_pubkey as the unique ID, fall back to nickname
+                    const userId = msg.user_pubkey || msg.user;
+                    const nickname = msg.user;
+
+                    // Check if this might be the current user by comparing nickname
+                    const isCurrentUser = (userId === currentUserShortId || nickname === userInfo.nickname);
+
+                    if (isCurrentUser) {
+                        // Update current user's last seen time
+                        if (activeUsers.has(currentUserShortId)) {
+                            activeUsers.get(currentUserShortId).lastSeen = timestamp;
+                        }
+                        return;
+                    }
+
+                    if (!activeUsers.has(userId)) {
+                        activeUsers.set(userId, {
+                            nickname: nickname,
+                            avatar: msg.avatar_url || `/media/avatars/default_cow_${userId}.png`,
                             lastSeen: timestamp
                         });
                     } else {
-                        activeUsers.get(msg.user).lastSeen = timestamp;
+                        // Update avatar and last seen time
+                        const userData = activeUsers.get(userId);
+                        userData.lastSeen = timestamp;
+                        userData.nickname = nickname; // Update nickname in case it changed
+                        if (msg.avatar_url) {
+                            userData.avatar = msg.avatar_url;
+                        }
                     }
                 }
             });

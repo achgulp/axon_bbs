@@ -21,6 +21,7 @@ import requests
 import logging
 import threading
 import queue
+import hashlib
 from django.utils import timezone
 
 # It is critical that model imports are NOT at the top level.
@@ -139,8 +140,20 @@ class ChatAgentService:
             state_obj, _ = AppletSharedState.objects.get_or_create(applet_id=self.applet_id)
             current_state = state_obj.state_data or {'messages': []}
 
+            # Build avatar URL and short user ID
+            avatar_url = None
+            if user.avatar:
+                avatar_url = user.avatar.url
+
+            # Generate short user ID from pubkey hash
+            user_short_id = None
+            if user.pubkey:
+                user_short_id = hashlib.sha256(user.pubkey.encode()).hexdigest()[:16]
+
             new_message = {
                 'user': user.nickname or user.username,
+                'user_pubkey': user_short_id,
+                'avatar_url': avatar_url,
                 'text': text.strip(),
                 'timestamp': timezone.now().isoformat(),
             }
@@ -175,8 +188,14 @@ class ChatAgentService:
             state_obj, _ = AppletSharedState.objects.get_or_create(applet_id=self.applet_id)
             current_state = state_obj.state_data or {'messages': []}
 
+            # For federated messages, we don't have user object, so no avatar
+            # Generate short user ID from pubkey hash
+            user_short_id = hashlib.sha256(user_pubkey.encode()).hexdigest()[:16] if user_pubkey else None
+
             new_message = {
-                'user': user_pubkey[:16],
+                'user': user_short_id or user_pubkey[:16],
+                'user_pubkey': user_short_id,
+                'avatar_url': None,  # Federated messages don't have avatar info yet
                 'text': text.strip(),
                 'timestamp': timezone.now().isoformat(),
             }
