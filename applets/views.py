@@ -22,6 +22,8 @@ from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404
 import json
 import logging
+import pytz
+from datetime import datetime
 
 from .serializers import AppletSerializer, HighScoreSerializer
 from messaging.serializers import MessageSerializer
@@ -31,6 +33,42 @@ from messaging.models import Message
 from core.services.service_manager import service_manager
 
 logger = logging.getLogger(__name__)
+
+
+def convert_timestamps_to_user_tz(state_data, user_timezone):
+    """
+    Convert message timestamps from UTC to user's timezone.
+    Returns a modified copy of state_data with display_time fields added.
+    """
+    if not state_data or 'messages' not in state_data:
+        return state_data
+
+    try:
+        tz = pytz.timezone(user_timezone)
+    except Exception as e:
+        logger.warning(f"Invalid timezone '{user_timezone}': {e}, using UTC")
+        tz = pytz.UTC
+
+    modified_data = state_data.copy()
+    modified_data['messages'] = []
+
+    for msg in state_data.get('messages', []):
+        msg_copy = msg.copy()
+        try:
+            # Parse the UTC timestamp
+            utc_time = datetime.fromisoformat(msg['timestamp'].replace('Z', '+00:00'))
+            # Convert to user's timezone
+            local_time = utc_time.astimezone(tz)
+            # Format as display string (portable format without -)
+            hour = local_time.strftime('%I').lstrip('0') or '12'  # Remove leading zero, handle midnight
+            msg_copy['display_time'] = f"{hour}:{local_time.strftime('%M:%S %p')}"  # e.g., "8:10:51 PM"
+        except Exception as e:
+            logger.error(f"Could not convert timestamp {msg.get('timestamp')}: {e}")
+            msg_copy['display_time'] = msg.get('timestamp', '')
+
+        modified_data['messages'].append(msg_copy)
+
+    return modified_data
 
 
 class AppletListView(generics.ListAPIView):
@@ -175,13 +213,18 @@ class RoomSharedStateView(views.APIView):
     permission_classes = [permissions.IsAuthenticated | TrustedPeerPermission]
 
     def get(self, request, room_id, *args, **kwargs):
+        # Get user's timezone for timestamp conversion
+        user_timezone = getattr(request.user, 'timezone', 'UTC') if hasattr(request, 'user') else 'UTC'
+
         try:
             shared_state = AppletSharedState.objects.get(room_id=room_id)
+            # Convert timestamps to user's timezone
+            converted_state_data = convert_timestamps_to_user_tz(shared_state.state_data, user_timezone)
             return Response({
                 "room_id": shared_state.room_id,
                 "applet_id": shared_state.applet_id,
                 "version": shared_state.version,
-                "state_data": shared_state.state_data,
+                "state_data": converted_state_data,
                 "last_updated": shared_state.last_updated
             })
         except AppletSharedState.DoesNotExist:
