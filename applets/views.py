@@ -194,12 +194,23 @@ class AppletSharedStateView(views.APIView):
     permission_classes = [permissions.IsAuthenticated | TrustedPeerPermission]
 
     def get(self, request, applet_id, *args, **kwargs):
+        # Get user's timezone for timestamp conversion
+        user_timezone = 'UTC'
+        if hasattr(request, 'user') and request.user.is_authenticated:
+            user_timezone = getattr(request.user, 'timezone', 'UTC')
+
+        username = request.user.username if hasattr(request, 'user') and request.user.is_authenticated else 'anonymous'
+        logger.warning(f"[TIMEZONE DEBUG] AppletSharedStateView: user={username}, timezone={user_timezone}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else False}")
+
         try:
             shared_state = AppletSharedState.objects.get(applet_id=applet_id)
+            # Convert timestamps to user's timezone
+            converted_state_data = convert_timestamps_to_user_tz(shared_state.state_data, user_timezone)
+            logger.warning(f"[TIMEZONE DEBUG] AppletSharedStateView: converted {len(converted_state_data.get('messages', []))} messages for timezone {user_timezone}")
             return Response({
                 "applet_id": shared_state.applet_id,
                 "version": shared_state.version,
-                "state_data": shared_state.state_data,
+                "state_data": converted_state_data,
                 "last_updated": shared_state.last_updated
             })
         except AppletSharedState.DoesNotExist:
