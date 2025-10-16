@@ -354,19 +354,29 @@ class ChatAgentService:
             defaults={'applet_id': self.applet_id}
         )
         local_state = local_state_obj.state_data or {'messages': []}
-        
-        local_message_ids = { (m['timestamp'], m['user']) for m in local_state.get('messages', []) }
-        
+
+        # Use user_pubkey + text + timestamp for deduplication (more robust than user + timestamp)
+        # This handles cases where the user display name might differ across instances
+        local_message_ids = {
+            (m.get('user_pubkey'), m.get('text'), m.get('timestamp'))
+            for m in local_state.get('messages', [])
+        }
+
         new_messages_found = False
         for remote_message in remote_state.get('messages', []):
-            message_id = (remote_message.get('timestamp'), remote_message.get('user'))
+            message_id = (
+                remote_message.get('user_pubkey'),
+                remote_message.get('text'),
+                remote_message.get('timestamp')
+            )
             if message_id not in local_message_ids:
                 local_state['messages'].append(remote_message)
                 local_message_ids.add(message_id)
                 new_messages_found = True
+                logger.debug(f"Adding new message from {remote_message.get('user')}: {remote_message.get('text')[:30]}")
 
         if new_messages_found:
             local_state['messages'].sort(key=lambda m: m['timestamp'])
             local_state_obj.state_data = local_state
             local_state_obj.save()
-            logger.info(f"Merged new messages for room {self.room_id} from peer {peer_hostname}")
+            logger.info(f"Merged {len([m for m in remote_state.get('messages', []) if (m.get('user_pubkey'), m.get('text'), m.get('timestamp')) not in {(lm.get('user_pubkey'), lm.get('text'), lm.get('timestamp')) for lm in local_state.get('messages', [])[:-len(remote_state.get('messages', []))]}])} new messages for room {self.room_id} from peer {peer_hostname}")
