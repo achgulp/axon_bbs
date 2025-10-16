@@ -185,7 +185,14 @@ class RoomSharedStateView(views.APIView):
                 "last_updated": shared_state.last_updated
             })
         except AppletSharedState.DoesNotExist:
-            raise Http404
+            # Return empty state for rooms that haven't been initialized yet
+            return Response({
+                "room_id": room_id,
+                "applet_id": None,
+                "version": 0,
+                "state_data": {"messages": []},
+                "last_updated": None
+            })
 
 class AppletStateVersionView(views.APIView):
     permission_classes = [TrustedPeerPermission]
