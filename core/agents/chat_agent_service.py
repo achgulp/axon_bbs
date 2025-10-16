@@ -22,7 +22,12 @@ import logging
 import threading
 import queue
 import hashlib
+import base64
+from datetime import datetime, timezone as dt_timezone
 from django.utils import timezone
+from django.conf import settings
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 
 # It is critical that model imports are NOT at the top level.
 # We will import them inside the functions that need them.
@@ -53,6 +58,11 @@ class ChatAgentService:
         self.subscriber_queues = []
         self.subscribers_lock = threading.Lock()
 
+        # Federation authentication
+        self.local_instance = None
+        self.private_key = None
+        self._load_identity()
+
         logger.info(f"ChatAgentService initialized for Applet ID: {self.applet_id} with poll interval {self.poll_interval}s.")
 
     def start(self):
@@ -82,6 +92,44 @@ class ChatAgentService:
             if q in self.subscriber_queues:
                 self.subscriber_queues.remove(q)
                 logger.debug(f"SSE subscriber removed. Total subscribers: {len(self.subscriber_queues)}")
+
+    def _load_identity(self):
+        """Load local instance identity for authentication"""
+        from core.models import TrustedInstance
+        try:
+            self.local_instance = TrustedInstance.objects.filter(
+                encrypted_private_key__isnull=False,
+                is_trusted_peer=False
+            ).first()
+
+            if self.local_instance and self.local_instance.encrypted_private_key:
+                key = base64.urlsafe_b64encode(settings.SECRET_KEY.encode()[:32])
+                from cryptography.fernet import Fernet
+                f = Fernet(key)
+                decrypted_pem = f.decrypt(self.local_instance.encrypted_private_key.encode())
+                self.private_key = serialization.load_pem_private_key(decrypted_pem, password=None)
+        except Exception as e:
+            logger.error(f"Failed to load local identity for chat agent: {e}")
+            self.local_instance, self.private_key = None, None
+
+    def _get_auth_headers(self):
+        """Generate authenticated headers for federation requests"""
+        if not self.private_key or not self.local_instance:
+            return {}
+
+        timestamp = datetime.now(dt_timezone.utc).isoformat()
+        hasher = hashlib.sha256(timestamp.encode('utf-8'))
+        digest = hasher.digest()
+        signature = self.private_key.sign(
+            digest,
+            rsa_padding.PSS(mgf=rsa_padding.MGF1(hashes.SHA256()), salt_length=rsa_padding.PSS.MAX_LENGTH),
+            hashes.SHA256()
+        )
+        return {
+            'X-Pubkey': base64.b64encode(self.local_instance.pubkey.encode('utf-8')).decode('utf-8'),
+            'X-Timestamp': timestamp,
+            'X-Signature': base64.b64encode(signature).decode('utf-8')
+        }
 
     def _broadcast_update(self, state_data):
         """
@@ -212,13 +260,33 @@ class ChatAgentService:
     def _synchronize_with_peers(self):
         """
         Poll federated peers for new chat messages.
-        Simplified version - authentication is handled at the BitSync level.
-        For now, just fetch state without auth (will add proper auth later).
+        Only syncs with peers specified in the applet's 'trusted_peers' parameter.
         """
         from core.models import TrustedInstance
+        import json
 
-        trusted_peers = TrustedInstance.objects.filter(is_trusted_peer=True)
+        # Get list of allowed peer onion URLs from applet parameters
+        allowed_peer_urls = []
+        if self.applet.parameters:
+            try:
+                params = json.loads(self.applet.parameters) if isinstance(self.applet.parameters, str) else self.applet.parameters
+                allowed_peer_urls = params.get('trusted_peers', [])
+            except (json.JSONDecodeError, AttributeError):
+                logger.warning(f"Could not parse applet parameters for {self.applet_id}")
+                return
+
+        # If no trusted_peers specified, don't sync with anyone
+        if not allowed_peer_urls:
+            return
+
+        # Get TrustedInstance objects for the specified URLs
+        trusted_peers = TrustedInstance.objects.filter(
+            is_trusted_peer=True,
+            web_ui_onion_url__in=allowed_peer_urls
+        )
+
         if not trusted_peers.exists():
+            logger.debug(f"No matching trusted peers found for applet {self.applet_id}")
             return
 
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
@@ -228,14 +296,15 @@ class ChatAgentService:
                 continue
 
             try:
-                state_url = f"{peer.web_ui_onion_url.strip('/')}/api/applets/{self.applet_id}/state/"
+                state_url = f"{peer.web_ui_onion_url.strip('/')}/api/applets/{self.applet_id}/shared_state/"
 
-                # TODO: Add proper authentication headers like SyncService does
-                # For now, attempt unauthenticated request
-                response = requests.get(state_url, proxies=proxies, timeout=10)
+                # Authenticated request with X-Pubkey, X-Timestamp, X-Signature headers
+                response = requests.get(state_url, headers=self._get_auth_headers(), proxies=proxies, timeout=10)
 
                 if response.status_code == 200:
-                    remote_state_data = response.json()
+                    response_data = response.json()
+                    # Extract state_data from the response
+                    remote_state_data = response_data.get('state_data', {})
                     self._merge_state(remote_state_data, peer.web_ui_onion_url)
                 else:
                     logger.debug(f"Peer {peer.web_ui_onion_url} returned status {response.status_code} for chat state")

@@ -326,6 +326,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         // State management
         let currentMessages = [];
+        let lastRenderedMessageCount = 0;
         let activeUsers = new Map(); // Map of user short ID -> { nickname, avatar, lastSeen }
         let eventSource = null;
 
@@ -352,7 +353,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         // Extract unique users from messages
         function updateActiveUsers(messages) {
             const now = Date.now();
-            const activeThreshold = 5 * 60 * 1000; // 5 minutes
+            const activeThreshold = 60 * 1000; // 1 minute - users disappear if no activity
 
             // Always keep current user in the list
             if (!activeUsers.has(currentUserShortId)) {
@@ -449,11 +450,18 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         // Render messages
         function renderMessages(messages) {
+            // Only re-render if message count changed (optimization to prevent flickering)
+            if (messages.length === lastRenderedMessageCount) {
+                return;
+            }
+
             const messagesContainer = document.getElementById('chat-messages');
             const wasAtBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50;
 
-            messagesContainer.innerHTML = '';
-            messages.forEach(msg => {
+            // Only append new messages instead of clearing everything
+            const messagesToAdd = messages.slice(lastRenderedMessageCount);
+
+            messagesToAdd.forEach(msg => {
                 const msgElement = document.createElement('div');
                 msgElement.className = 'chat-message';
 
@@ -476,7 +484,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 messagesContainer.appendChild(msgElement);
             });
 
-            debugLog(`Rendered ${messages.length} messages`);
+            lastRenderedMessageCount = messages.length;
+            debugLog(`Rendered ${messagesToAdd.length} new messages (total: ${messages.length})`);
 
             // Auto-scroll to bottom if user was already at bottom
             if (wasAtBottom) {
