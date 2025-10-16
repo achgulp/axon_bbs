@@ -215,13 +215,13 @@ class RoomSharedStateView(views.APIView):
     def get(self, request, room_id, *args, **kwargs):
         # Get user's timezone for timestamp conversion
         user_timezone = getattr(request.user, 'timezone', 'UTC') if hasattr(request, 'user') else 'UTC'
-        logger.info(f"RoomSharedStateView: user={request.user.username if hasattr(request, 'user') else 'anonymous'}, timezone={user_timezone}")
+        logger.warning(f"[TIMEZONE DEBUG] RoomSharedStateView: user={request.user.username if hasattr(request, 'user') else 'anonymous'}, timezone={user_timezone}, has_user={hasattr(request, 'user')}")
 
         try:
             shared_state = AppletSharedState.objects.get(room_id=room_id)
             # Convert timestamps to user's timezone
             converted_state_data = convert_timestamps_to_user_tz(shared_state.state_data, user_timezone)
-            logger.info(f"RoomSharedStateView: converted {len(converted_state_data.get('messages', []))} messages")
+            logger.warning(f"[TIMEZONE DEBUG] RoomSharedStateView: converted {len(converted_state_data.get('messages', []))} messages for timezone {user_timezone}")
             return Response({
                 "room_id": shared_state.room_id,
                 "applet_id": shared_state.applet_id,
