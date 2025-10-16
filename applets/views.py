@@ -153,7 +153,7 @@ class ReadAppletEventsView(generics.ListAPIView):
         return Message.objects.none()
 
 class AppletSharedStateView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated | TrustedPeerPermission]
 
     def get(self, request, applet_id, *args, **kwargs):
         try:
