@@ -44,10 +44,13 @@ class ChatAgentService:
     def __init__(self, applet_id, poll_interval=5, **kwargs):
         from applets.models import Applet
 
+        print(f"[DEBUG] ChatAgentService __init__ called with applet_id={applet_id}")
         self.applet_id = applet_id
         try:
             self.applet = Applet.objects.get(id=self.applet_id)
+            print(f"[DEBUG] Applet found: {self.applet.name}")
         except Applet.DoesNotExist:
+            print(f"[DEBUG] Applet {applet_id} does not exist!")
             raise ValueError(f"Applet with ID {self.applet_id} does not exist.")
 
         self.poll_interval = int(poll_interval)
@@ -61,13 +64,18 @@ class ChatAgentService:
         # Federation authentication
         self.local_instance = None
         self.private_key = None
+        print(f"[DEBUG] About to load identity...")
         self._load_identity()
+        print(f"[DEBUG] Identity loaded. local_instance={self.local_instance is not None}")
 
         logger.info(f"ChatAgentService initialized for Applet ID: {self.applet_id} with poll interval {self.poll_interval}s.")
+        print(f"[DEBUG] ChatAgentService __init__ complete")
 
     def start(self):
         """Start the agent's background thread"""
+        print(f"[DEBUG] ChatAgentService.start() called")
         self.thread.start()
+        print(f"[DEBUG] Thread.start() completed. Thread alive: {self.thread.is_alive()}")
         logger.info(f"ChatAgentService thread started for applet {self.applet_id}")
 
     def stop(self):
@@ -153,9 +161,12 @@ class ChatAgentService:
 
     def _run(self):
         """Background loop: poll peers and broadcast updates"""
+        print(f"[DEBUG] _run() method started!")
         logger.info(f"Starting federation sync loop for Applet ID: {self.applet_id}")
+        print(f"[DEBUG] About to enter while loop...")
 
         while not self.shutdown_event.wait(self.poll_interval):
+            print(f"[DEBUG] Inside while loop iteration")
             try:
                 # Synchronize with federated peers
                 self._synchronize_with_peers()
