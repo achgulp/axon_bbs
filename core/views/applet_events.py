@@ -38,7 +38,8 @@ def convert_timestamps_to_user_tz(state_data, user_timezone):
 
     try:
         tz = pytz.timezone(user_timezone)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Invalid timezone '{user_timezone}': {e}, using UTC")
         tz = pytz.UTC
 
     modified_data = state_data.copy()
@@ -51,10 +52,12 @@ def convert_timestamps_to_user_tz(state_data, user_timezone):
             utc_time = datetime.fromisoformat(msg['timestamp'].replace('Z', '+00:00'))
             # Convert to user's timezone
             local_time = utc_time.astimezone(tz)
-            # Format as display string
-            msg_copy['display_time'] = local_time.strftime('%-I:%M:%S %p')  # e.g., "8:10:51 PM"
+            # Format as display string (portable format without -)
+            hour = local_time.strftime('%I').lstrip('0') or '12'  # Remove leading zero, handle midnight
+            msg_copy['display_time'] = f"{hour}:{local_time.strftime('%M:%S %p')}"  # e.g., "8:10:51 PM"
+            logger.debug(f"Converted {msg['timestamp']} to {msg_copy['display_time']} in timezone {user_timezone}")
         except Exception as e:
-            logger.debug(f"Could not convert timestamp: {e}")
+            logger.error(f"Could not convert timestamp {msg.get('timestamp')}: {e}")
             msg_copy['display_time'] = msg.get('timestamp', '')
 
         modified_data['messages'].append(msg_copy)
