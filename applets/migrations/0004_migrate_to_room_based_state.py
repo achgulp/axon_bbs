@@ -6,7 +6,7 @@ import uuid
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('applets', '0002_applet_owner_alter_applet_author_pubkey'),
+        ('applets', '0003_alter_applet_parameters'),
     ]
 
     operations = [
