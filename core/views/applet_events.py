@@ -19,11 +19,48 @@
 import json
 import queue
 import logging
+import pytz
+from datetime import datetime
 from django.http import StreamingHttpResponse
 from applets.models import AppletSharedState
 from core.services.service_manager import service_manager
 
 logger = logging.getLogger(__name__)
+
+
+def convert_timestamps_to_user_tz(state_data, user_timezone):
+    """
+    Convert message timestamps from UTC to user's timezone.
+    Returns a modified copy of state_data with display_time fields added.
+    """
+    if not state_data or 'messages' not in state_data:
+        return state_data
+
+    try:
+        tz = pytz.timezone(user_timezone)
+    except Exception:
+        tz = pytz.UTC
+
+    modified_data = state_data.copy()
+    modified_data['messages'] = []
+
+    for msg in state_data.get('messages', []):
+        msg_copy = msg.copy()
+        try:
+            # Parse the UTC timestamp
+            utc_time = datetime.fromisoformat(msg['timestamp'].replace('Z', '+00:00'))
+            # Convert to user's timezone
+            local_time = utc_time.astimezone(tz)
+            # Format as display string
+            msg_copy['display_time'] = local_time.strftime('%-I:%M:%S %p')  # e.g., "8:10:51 PM"
+        except Exception as e:
+            logger.debug(f"Could not convert timestamp: {e}")
+            msg_copy['display_time'] = msg.get('timestamp', '')
+
+        modified_data['messages'].append(msg_copy)
+
+    return modified_data
+
 
 def applet_event_stream(request, applet_id):
     """
@@ -42,6 +79,9 @@ def applet_event_stream(request, applet_id):
             yield "data: {\"error\": \"Chat agent not running\"}\n\n"
             return
 
+        # Get user's timezone
+        user_timezone = getattr(request.user, 'timezone', 'UTC')
+
         # Subscribe to the agent's broadcast queue
         update_queue = agent.subscribe()
 
@@ -49,7 +89,8 @@ def applet_event_stream(request, applet_id):
             # Send initial state immediately
             try:
                 state = AppletSharedState.objects.get(applet_id=applet_id)
-                yield f"data: {json.dumps(state.state_data)}\n\n"
+                converted_state = convert_timestamps_to_user_tz(state.state_data, user_timezone)
+                yield f"data: {json.dumps(converted_state)}\n\n"
                 logger.info(f"SSE client connected to applet {applet_id}, sent initial state")
             except AppletSharedState.DoesNotExist:
                 # No state yet, send empty messages array
@@ -65,8 +106,11 @@ def applet_event_stream(request, applet_id):
                     # Wait up to 30 seconds for an update
                     state_data = update_queue.get(timeout=30)
 
+                    # Convert timestamps to user's timezone before sending
+                    converted_state = convert_timestamps_to_user_tz(state_data, user_timezone)
+
                     # Push the update to the client
-                    yield f"data: {json.dumps(state_data)}\n\n"
+                    yield f"data: {json.dumps(converted_state)}\n\n"
 
                 except queue.Empty:
                     # No updates in 30 seconds, send a keepalive comment

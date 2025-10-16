@@ -85,10 +85,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const userInfo = await window.bbs.getUserInfo();
         debugLog(`User info received: nickname=${userInfo.nickname}, pubkey=${userInfo.pubkey}, avatar=${userInfo.avatar_url}`);
 
-        // Get user's timezone from the userInfo (it's included in the profile response)
-        const displayTimezone = userInfo.timezone || 'UTC';
-        debugLog(`Using timezone: ${displayTimezone}`);
-
         const appletId = appletInfo.id;
 
         // Render UI
@@ -452,26 +448,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             debugLog(`Rendered user list: ${sortedUsers.length} users`);
         }
 
-        // Helper function to format timestamp in user's timezone
-        // This works around Tor Browser's timezone privacy protections
-        function formatTimestamp(isoString) {
-            try {
-                const date = new Date(isoString);
-                // Use toLocaleString with explicit timezone - this forces conversion
-                return date.toLocaleString('en-US', {
-                    timeZone: displayTimezone,
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: true
-                });
-            } catch (error) {
-                debugLog(`Timezone conversion error: ${error.message}`);
-                // Fallback to simple time display
-                return new Date(isoString).toLocaleTimeString();
-            }
-        }
-
         // Render messages
         function renderMessages(messages) {
             // Only re-render if message count changed (optimization to prevent flickering)
@@ -491,7 +467,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
                 const timestamp = document.createElement('span');
                 timestamp.className = 'timestamp';
-                timestamp.textContent = formatTimestamp(msg.timestamp);
+                // Use display_time from server (already converted to user's timezone)
+                // Falls back to timestamp if display_time not available
+                timestamp.textContent = msg.display_time || new Date(msg.timestamp).toLocaleTimeString();
 
                 const user = document.createElement('span');
                 user.className = 'user';
