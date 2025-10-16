@@ -85,18 +85,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const userInfo = await window.bbs.getUserInfo();
         debugLog(`User info received: nickname=${userInfo.nickname}, pubkey=${userInfo.pubkey}, avatar=${userInfo.avatar_url}`);
 
-        // Get user's timezone preference
-        debugLog("Fetching user timezone preference...");
-        let displayTimezone = 'UTC';
-        try {
-            const tzResponse = await window.bbs.fetch('/api/config/timezone/');
-            if (tzResponse && tzResponse.timezone) {
-                displayTimezone = tzResponse.timezone;
-                debugLog(`Using timezone: ${displayTimezone}`);
-            }
-        } catch (error) {
-            debugLog(`Could not fetch timezone, defaulting to UTC: ${error.message}`);
-        }
+        // Get user's timezone from the userInfo (it's included in the profile response)
+        const displayTimezone = userInfo.timezone || 'UTC';
+        debugLog(`Using timezone: ${displayTimezone}`);
 
         const appletId = appletInfo.id;
 
