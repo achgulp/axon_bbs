@@ -240,5 +240,10 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'applets': {
+            'handlers': ['console', 'file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
     },
 }
