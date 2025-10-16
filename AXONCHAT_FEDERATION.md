@@ -4,7 +4,9 @@ AxonChat now supports BBS-to-BBS federation, allowing users on different Axon BB
 
 ## How It Works
 
-- Each AxonChat applet can specify which trusted BBS instances to federate with
+- Each AxonChat applet specifies a **room_id** to identify which chat room to join
+- Multiple AxonChat applet instances (even with different UUIDs) can share the same room by using the same room_id
+- Each applet can specify which trusted BBS instances to federate with
 - Messages are synchronized every 5 seconds using authenticated requests
 - Federation uses the same cryptographic authentication as BitSync
 
@@ -19,10 +21,11 @@ First, make sure both BBS instances have each other as trusted peers in the admi
 
 ### 2. Configure AxonChat Parameters
 
-When running AxonChat, set the `parameters` field in JSON format:
+When running AxonChat, set the `parameters` field in JSON format with both `room_id` and `trusted_peers`:
 
 ```json
 {
+  "room_id": "global-chat",
   "trusted_peers": [
     "http://peer1abc123xyz.onion",
     "http://peer2def456uvw.onion"
@@ -30,11 +33,13 @@ When running AxonChat, set the `parameters` field in JSON format:
 }
 ```
 
+**Important**: All AxonChat applets that want to share the same chat room MUST use the same `room_id` value, even if they have different applet UUIDs!
+
 **Via Django Admin:**
 1. Go to Admin > Applets
 2. Find the AxonChat applet
 3. Edit the "Parameters" field
-4. Add the JSON configuration above with your peer URLs
+4. Add the JSON configuration above with your room_id and peer URLs
 5. Save
 
 **Via API/Code:**
@@ -44,12 +49,15 @@ import json
 
 applet = Applet.objects.get(name='AxonChat')
 applet.parameters = json.dumps({
+    "room_id": "global-chat",
     "trusted_peers": [
         "http://yourpeer.onion"
     ]
 })
 applet.save()
 ```
+
+**Note**: If you don't specify a `room_id`, the applet will default to using its own UUID as the room_id (backward compatible behavior).
 
 ### 3. Restart the Chat Agent
 
@@ -71,10 +79,18 @@ python3 manage.py runserver 0.0.0.0:8000
 
 ## Technical Details
 
-- **Endpoint**: `/api/applets/{applet_id}/shared_state/`
+- **Federation Endpoint**: `/api/rooms/{room_id}/shared_state/`
+- **Legacy Endpoint**: `/api/applets/{applet_id}/shared_state/` (still supported for backward compatibility)
 - **Authentication**: X-Pubkey, X-Timestamp, X-Signature headers (RSA-PSS)
 - **Sync Interval**: 5 seconds (configurable via `poll_interval` parameter)
 - **Transport**: Tor SOCKS5 proxy (127.0.0.1:9050)
+
+### Why room_id instead of applet_id?
+
+Each BBS instance creates applet instances with unique UUIDs. Using `room_id` allows:
+- Multiple applet instances (with different UUIDs) to join the same chat room
+- No need to coordinate UUID creation across federated BBSes
+- Clean separation between "applet instance" and "chat room" concepts
 
 ## Troubleshooting
 

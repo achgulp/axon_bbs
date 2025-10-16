@@ -72,13 +72,15 @@ class AppletData(models.Model):
         return f"Data for '{self.applet.name}' owned by {self.owner.username}"
 
 class AppletSharedState(models.Model):
-    applet = models.OneToOneField(Applet, on_delete=models.CASCADE, primary_key=True, related_name='shared_state')
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    applet_id = models.CharField(max_length=100, db_index=True, default='', help_text="The applet instance ID (for backward compatibility)")
+    room_id = models.CharField(max_length=100, unique=True, db_index=True, default='', help_text="The shared room ID (allows multiple applet instances to share state)")
     state_data = models.JSONField(default=dict)
     version = models.PositiveIntegerField(default=0)
     last_updated = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Shared State for '{self.applet.name}' (v{self.version})"
+        return f"Shared State for room '{self.room_id}' (v{self.version})"
 
 
 class HighScore(models.Model):

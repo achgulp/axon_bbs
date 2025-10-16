@@ -43,6 +43,7 @@ class ChatAgentService:
 
     def __init__(self, applet_id, poll_interval=5, **kwargs):
         from applets.models import Applet
+        import json
 
         print(f"[DEBUG] ChatAgentService __init__ called with applet_id={applet_id}")
         self.applet_id = applet_id
@@ -52,6 +53,16 @@ class ChatAgentService:
         except Applet.DoesNotExist:
             print(f"[DEBUG] Applet {applet_id} does not exist!")
             raise ValueError(f"Applet with ID {self.applet_id} does not exist.")
+
+        # Extract room_id from applet parameters, default to applet_id for backward compatibility
+        self.room_id = self.applet_id
+        if self.applet.parameters:
+            try:
+                params = json.loads(self.applet.parameters) if isinstance(self.applet.parameters, str) else self.applet.parameters
+                self.room_id = params.get('room_id', self.applet_id)
+                print(f"[DEBUG] Room ID: {self.room_id}")
+            except (json.JSONDecodeError, AttributeError):
+                logger.warning(f"Could not parse applet parameters, using applet_id as room_id")
 
         self.poll_interval = int(poll_interval)
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -68,7 +79,7 @@ class ChatAgentService:
         self._load_identity()
         print(f"[DEBUG] Identity loaded. local_instance={self.local_instance is not None}")
 
-        logger.info(f"ChatAgentService initialized for Applet ID: {self.applet_id} with poll interval {self.poll_interval}s.")
+        logger.info(f"ChatAgentService initialized for Applet ID: {self.applet_id}, Room ID: {self.room_id} with poll interval {self.poll_interval}s.")
         print(f"[DEBUG] ChatAgentService __init__ complete")
 
     def start(self):
@@ -162,7 +173,7 @@ class ChatAgentService:
     def _run(self):
         """Background loop: poll peers and broadcast updates"""
         print(f"[DEBUG] _run() method started!")
-        logger.info(f"Starting federation sync loop for Applet ID: {self.applet_id}")
+        logger.info(f"Starting federation sync loop for Applet ID: {self.applet_id}, Room ID: {self.room_id}")
         print(f"[DEBUG] About to enter while loop...")
 
         while not self.shutdown_event.wait(self.poll_interval):
@@ -174,14 +185,14 @@ class ChatAgentService:
                 # Broadcast current state to all local SSE subscribers
                 from applets.models import AppletSharedState
                 try:
-                    state_obj = AppletSharedState.objects.get(applet_id=self.applet_id)
+                    state_obj = AppletSharedState.objects.get(room_id=self.room_id)
                     self._broadcast_update(state_obj.state_data)
                 except AppletSharedState.DoesNotExist:
                     # No state yet, broadcast empty state
                     self._broadcast_update({'messages': []})
 
             except Exception as e:
-                logger.error(f"Error during peer synchronization for applet {self.applet_id}: {e}", exc_info=True)
+                logger.error(f"Error during peer synchronization for room {self.room_id}: {e}", exc_info=True)
 
     def handle_action(self, applet, user, action_data):
         """
@@ -196,7 +207,10 @@ class ChatAgentService:
 
             from applets.models import AppletSharedState
 
-            state_obj, _ = AppletSharedState.objects.get_or_create(applet_id=self.applet_id)
+            state_obj, _ = AppletSharedState.objects.get_or_create(
+                room_id=self.room_id,
+                defaults={'applet_id': self.applet_id}
+            )
             current_state = state_obj.state_data or {'messages': []}
 
             # Build avatar URL and short user ID
@@ -222,7 +236,7 @@ class ChatAgentService:
             state_obj.state_data = current_state
             state_obj.save()
 
-            logger.info(f"Saved new message for applet {self.applet_id} from user {user.nickname or user.username}")
+            logger.info(f"Saved new message for room {self.room_id} from user {user.nickname or user.username}")
 
             # Immediately broadcast to local SSE clients (don't wait for federation poll)
             self._broadcast_update(current_state)
@@ -244,7 +258,10 @@ class ChatAgentService:
             if not text or not isinstance(text, str) or len(text.strip()) == 0:
                 return
 
-            state_obj, _ = AppletSharedState.objects.get_or_create(applet_id=self.applet_id)
+            state_obj, _ = AppletSharedState.objects.get_or_create(
+                room_id=self.room_id,
+                defaults={'applet_id': self.applet_id}
+            )
             current_state = state_obj.state_data or {'messages': []}
 
             # For federated messages, we don't have user object, so no avatar
@@ -263,7 +280,7 @@ class ChatAgentService:
             current_state['messages'].sort(key=lambda m: m['timestamp'])
             state_obj.state_data = current_state
             state_obj.save()
-            logger.info(f"Saved new message for applet {self.applet_id} from user {user_pubkey[:16]}")
+            logger.info(f"Saved new message for room {self.room_id} from user {user_pubkey[:16]}")
 
             # Broadcast to SSE clients
             self._broadcast_update(current_state)
@@ -297,7 +314,7 @@ class ChatAgentService:
         )
 
         if not trusted_peers.exists():
-            logger.debug(f"No matching trusted peers found for applet {self.applet_id}")
+            logger.debug(f"No matching trusted peers found for room {self.room_id}")
             return
 
         proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
@@ -307,7 +324,8 @@ class ChatAgentService:
                 continue
 
             try:
-                state_url = f"{peer.web_ui_onion_url.strip('/')}/api/applets/{self.applet_id}/shared_state/"
+                # Use room_id instead of applet_id in the URL
+                state_url = f"{peer.web_ui_onion_url.strip('/')}/api/rooms/{self.room_id}/shared_state/"
 
                 # Authenticated request with X-Pubkey, X-Timestamp, X-Signature headers
                 response = requests.get(state_url, headers=self._get_auth_headers(), proxies=proxies, timeout=10)
@@ -318,20 +336,23 @@ class ChatAgentService:
                     remote_state_data = response_data.get('state_data', {})
                     self._merge_state(remote_state_data, peer.web_ui_onion_url)
                 else:
-                    logger.debug(f"Peer {peer.web_ui_onion_url} returned status {response.status_code} for chat state")
+                    logger.debug(f"Peer {peer.web_ui_onion_url} returned status {response.status_code} for room {self.room_id}")
 
             except requests.exceptions.RequestException as e:
-                logger.debug(f"Could not connect to peer {peer.web_ui_onion_url} for applet {self.applet_id}: {e}")
+                logger.debug(f"Could not connect to peer {peer.web_ui_onion_url} for room {self.room_id}: {e}")
             except Exception as e:
                 logger.error(f"Unexpected error syncing with {peer.web_ui_onion_url}: {e}")
 
     def _merge_state(self, remote_state, peer_hostname):
-        from core.models import AppletSharedState
-        
+        from applets.models import AppletSharedState
+
         if not remote_state or 'messages' not in remote_state:
             return
 
-        local_state_obj, _ = AppletSharedState.objects.get_or_create(applet_id=self.applet_id)
+        local_state_obj, _ = AppletSharedState.objects.get_or_create(
+            room_id=self.room_id,
+            defaults={'applet_id': self.applet_id}
+        )
         local_state = local_state_obj.state_data or {'messages': []}
         
         local_message_ids = { (m['timestamp'], m['user']) for m in local_state.get('messages', []) }
@@ -348,4 +369,4 @@ class ChatAgentService:
             local_state['messages'].sort(key=lambda m: m['timestamp'])
             local_state_obj.state_data = local_state
             local_state_obj.save()
-            logger.info(f"Merged new messages for applet {self.applet_id} from peer {peer_hostname}")
+            logger.info(f"Merged new messages for room {self.room_id} from peer {peer_hostname}")

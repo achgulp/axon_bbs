@@ -167,6 +167,26 @@ class AppletSharedStateView(views.APIView):
         except AppletSharedState.DoesNotExist:
             raise Http404
 
+class RoomSharedStateView(views.APIView):
+    """
+    Federation-friendly endpoint that uses room_id instead of applet_id.
+    This allows different applet instances across BBSes to share the same chat room.
+    """
+    permission_classes = [permissions.IsAuthenticated | TrustedPeerPermission]
+
+    def get(self, request, room_id, *args, **kwargs):
+        try:
+            shared_state = AppletSharedState.objects.get(room_id=room_id)
+            return Response({
+                "room_id": shared_state.room_id,
+                "applet_id": shared_state.applet_id,
+                "version": shared_state.version,
+                "state_data": shared_state.state_data,
+                "last_updated": shared_state.last_updated
+            })
+        except AppletSharedState.DoesNotExist:
+            raise Http404
+
 class AppletStateVersionView(views.APIView):
     permission_classes = [TrustedPeerPermission]
 

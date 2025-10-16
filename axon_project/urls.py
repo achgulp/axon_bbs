@@ -109,6 +109,9 @@ api_urlpatterns = [
     path('applets/<uuid:applet_id>/update_state/', applets_views.UpdateStateView.as_view(), name='applet-update-state'),
     path('libraries/<str:library_name>/', messaging_views.StreamLibraryView.as_view(), name='stream-library'),
 
+    # Room-based endpoints for federation (rooms can span multiple applet instances)
+    path('rooms/<str:room_id>/shared_state/', applets_views.RoomSharedStateView.as_view(), name='room-shared-state'),
+
     # BitSync P2P Protocol
     path('sync/', federation_views.SyncView.as_view(), name='sync'),
     path('bitsync/has_content/<str:content_hash>/', federation_views.BitSyncHasContentView.as_view(), name='bitsync-has-content'),
