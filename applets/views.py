@@ -62,6 +62,7 @@ def convert_timestamps_to_user_tz(state_data, user_timezone):
             # Format as display string (portable format without -)
             hour = local_time.strftime('%I').lstrip('0') or '12'  # Remove leading zero, handle midnight
             msg_copy['display_time'] = f"{hour}:{local_time.strftime('%M:%S %p')}"  # e.g., "8:10:51 PM"
+            logger.warning(f"[TZ CONVERT] UTC: {msg['timestamp']} -> {user_timezone}: {msg_copy['display_time']}")
         except Exception as e:
             logger.error(f"Could not convert timestamp {msg.get('timestamp')}: {e}")
             msg_copy['display_time'] = msg.get('timestamp', '')
