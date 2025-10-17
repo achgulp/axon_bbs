@@ -541,10 +541,11 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
             // Get JWT token from localStorage (same origin as parent)
             const token = localStorage.getItem('access_token');
+            debugLog(`Token from localStorage: ${token ? 'FOUND (length=' + token.length + ')' : 'NOT FOUND'}`);
             const sseUrl = token
                 ? `/api/applets/${appletId}/events/?token=${encodeURIComponent(token)}`
                 : `/api/applets/${appletId}/events/`;
-            debugLog(`Creating SSE connection to: ${sseUrl.replace(token || '', 'TOKEN_HIDDEN')}`);
+            debugLog(`Creating SSE connection to: ${token ? 'URL with token' : 'URL without token'}`);
 
             // Create SSE connection
             try {
