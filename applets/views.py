@@ -62,7 +62,7 @@ def convert_timestamps_to_user_tz(state_data, user_timezone):
             # Format as display string (portable format without -)
             hour = local_time.strftime('%I').lstrip('0') or '12'  # Remove leading zero, handle midnight
             msg_copy['display_time'] = f"{hour}:{local_time.strftime('%M:%S %p')}"  # e.g., "8:10:51 PM"
-            logger.warning(f"[TZ CONVERT] UTC: {msg['timestamp']} -> {user_timezone}: {msg_copy['display_time']}")
+            logger.debug(f"[TZ CONVERT] UTC: {msg['timestamp']} -> {user_timezone}: {msg_copy['display_time']}")
         except Exception as e:
             logger.error(f"Could not convert timestamp {msg.get('timestamp')}: {e}")
             msg_copy['display_time'] = msg.get('timestamp', '')
@@ -232,13 +232,13 @@ class RoomSharedStateView(views.APIView):
             user_timezone = getattr(request.user, 'timezone', 'UTC')
 
         username = request.user.username if hasattr(request, 'user') and request.user.is_authenticated else 'anonymous'
-        logger.warning(f"[TIMEZONE DEBUG] RoomSharedStateView: user={username}, timezone={user_timezone}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else False}")
+        logger.debug(f"[TIMEZONE DEBUG] RoomSharedStateView: user={username}, timezone={user_timezone}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else False}")
 
         try:
             shared_state = AppletSharedState.objects.get(room_id=room_id)
             # Convert timestamps to user's timezone
             converted_state_data = convert_timestamps_to_user_tz(shared_state.state_data, user_timezone)
-            logger.warning(f"[TIMEZONE DEBUG] RoomSharedStateView: converted {len(converted_state_data.get('messages', []))} messages for timezone {user_timezone}")
+            logger.debug(f"[TIMEZONE DEBUG] RoomSharedStateView: converted {len(converted_state_data.get('messages', []))} messages for timezone {user_timezone}")
             return Response({
                 "room_id": shared_state.room_id,
                 "applet_id": shared_state.applet_id,
