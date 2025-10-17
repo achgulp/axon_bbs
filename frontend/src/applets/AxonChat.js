@@ -539,13 +539,22 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             statusElement.textContent = 'Connecting...';
             statusElement.className = 'disconnected';
 
+            // Get user's timezone from browser
+            const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            debugLog(`Detected browser timezone: ${userTimezone}`);
+
             // Get JWT token from localStorage (same origin as parent)
             const token = localStorage.getItem('access_token');
             debugLog(`Token from localStorage: ${token ? 'FOUND (length=' + token.length + ')' : 'NOT FOUND'}`);
-            const sseUrl = token
-                ? `/api/applets/${appletId}/events/?token=${encodeURIComponent(token)}`
-                : `/api/applets/${appletId}/events/`;
-            debugLog(`Creating SSE connection to: ${token ? 'URL with token' : 'URL without token'}`);
+
+            // Build SSE URL with timezone (and optionally token)
+            const params = new URLSearchParams();
+            params.append('tz', userTimezone);
+            if (token) {
+                params.append('token', token);
+            }
+            const sseUrl = `/api/applets/${appletId}/events/?${params.toString()}`;
+            debugLog(`Creating SSE connection with timezone=${userTimezone}`);
 
             // Create SSE connection
             try {

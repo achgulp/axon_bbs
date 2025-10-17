@@ -109,9 +109,17 @@ def applet_event_stream(request, applet_id):
             yield "data: {\"error\": \"Chat agent not running\"}\n\n"
             return
 
-        # Get user's timezone
-        user_timezone = getattr(request.user, 'timezone', None) or 'UTC'
-        logger.warning(f"[SSE DEBUG] Inside event_stream generator, user={request.user}, user_timezone={user_timezone}, raw timezone value={getattr(request.user, 'timezone', 'NO ATTR')}")
+        # Get user's timezone from three sources (in priority order):
+        # 1. Query parameter 'tz' (from browser detection)
+        # 2. Authenticated user's timezone setting
+        # 3. Default to UTC
+        user_timezone = request.GET.get('tz')
+        if not user_timezone and request.user.is_authenticated:
+            user_timezone = getattr(request.user, 'timezone', None)
+        if not user_timezone:
+            user_timezone = 'UTC'
+
+        logger.warning(f"[SSE DEBUG] Inside event_stream generator, user={request.user}, user_timezone={user_timezone}, from_query={request.GET.get('tz')}, from_user={getattr(request.user, 'timezone', 'NO ATTR') if request.user.is_authenticated else 'N/A'}")
 
         # Subscribe to the agent's broadcast queue
         update_queue = agent.subscribe()
