@@ -23,6 +23,8 @@ import pytz
 from datetime import datetime
 from django.http import StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken
 from applets.models import AppletSharedState
 from core.services.service_manager import service_manager
 
@@ -74,8 +76,29 @@ def applet_event_stream(request, applet_id):
     when the ChatAgentService broadcasts updates.
 
     Uses an event-driven queue system instead of database polling for efficiency.
+
+    Supports JWT authentication via:
+    1. Authorization header (Bearer token)
+    2. Query parameter 'token' (for EventSource which doesn't support custom headers)
     """
-    logger.warning(f"[SSE DEBUG] applet_event_stream called for applet_id={applet_id}, user={request.user}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else 'no user attr'}, session_key={request.session.session_key if hasattr(request, 'session') else 'NO SESSION'}")
+    # Try to authenticate using JWT
+    jwt_auth = JWTAuthentication()
+
+    # Check if token is in query parameters (for EventSource)
+    token_param = request.GET.get('token')
+    if token_param:
+        # Temporarily add token to Authorization header for JWT authentication
+        request.META['HTTP_AUTHORIZATION'] = f'Bearer {token_param}'
+
+    try:
+        auth_result = jwt_auth.authenticate(request)
+        if auth_result is not None:
+            request.user, _ = auth_result
+            logger.warning(f"[SSE DEBUG] JWT authentication successful: user={request.user}, timezone={getattr(request.user, 'timezone', 'NO ATTR')}")
+    except (InvalidToken, Exception) as e:
+        logger.warning(f"[SSE DEBUG] JWT authentication failed: {e}, user will be anonymous")
+
+    logger.warning(f"[SSE DEBUG] applet_event_stream called for applet_id={applet_id}, user={request.user}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else 'no user attr'}")
 
     def event_stream():
         # Get the chat agent for this applet

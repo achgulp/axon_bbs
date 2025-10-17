@@ -539,8 +539,12 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             statusElement.textContent = 'Connecting...';
             statusElement.className = 'disconnected';
 
-            const sseUrl = `/api/applets/${appletId}/events/`;
-            debugLog(`Creating SSE connection to: ${sseUrl}`);
+            // Get JWT token from localStorage (same origin as parent)
+            const token = localStorage.getItem('access_token');
+            const sseUrl = token
+                ? `/api/applets/${appletId}/events/?token=${encodeURIComponent(token)}`
+                : `/api/applets/${appletId}/events/`;
+            debugLog(`Creating SSE connection to: ${sseUrl.replace(token || '', 'TOKEN_HIDDEN')}`);
 
             // Create SSE connection
             try {
