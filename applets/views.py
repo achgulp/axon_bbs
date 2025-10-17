@@ -192,22 +192,32 @@ class ReadAppletEventsView(generics.ListAPIView):
         return Message.objects.none()
 
 class AppletSharedStateView(views.APIView):
+    """
+    Client-facing endpoint that returns applet shared state.
+    Converts timestamps to user's timezone for authenticated users.
+    Optionally supports 'tz' query parameter for browser-detected timezone.
+    """
     permission_classes = [permissions.IsAuthenticated | TrustedPeerPermission]
 
     def get(self, request, applet_id, *args, **kwargs):
-        # Get user's timezone for timestamp conversion
-        user_timezone = 'UTC'
-        if hasattr(request, 'user') and request.user.is_authenticated:
-            user_timezone = getattr(request.user, 'timezone', 'UTC')
+        # Get user's timezone from three sources (in priority order):
+        # 1. Query parameter 'tz' (from browser detection)
+        # 2. Authenticated user's timezone setting
+        # 3. Default to UTC
+        user_timezone = request.GET.get('tz')
+        if not user_timezone and hasattr(request, 'user') and request.user.is_authenticated:
+            user_timezone = getattr(request.user, 'timezone', None)
+        if not user_timezone:
+            user_timezone = 'UTC'
 
         username = request.user.username if hasattr(request, 'user') and request.user.is_authenticated else 'anonymous'
-        logger.warning(f"[TIMEZONE DEBUG] AppletSharedStateView: user={username}, timezone={user_timezone}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else False}")
+        logger.debug(f"[TIMEZONE DEBUG] AppletSharedStateView: user={username}, timezone={user_timezone}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else False}")
 
         try:
             shared_state = AppletSharedState.objects.get(applet_id=applet_id)
             # Convert timestamps to user's timezone
             converted_state_data = convert_timestamps_to_user_tz(shared_state.state_data, user_timezone)
-            logger.warning(f"[TIMEZONE DEBUG] AppletSharedStateView: converted {len(converted_state_data.get('messages', []))} messages for timezone {user_timezone}")
+            logger.debug(f"[TIMEZONE DEBUG] AppletSharedStateView: converted {len(converted_state_data.get('messages', []))} messages for timezone {user_timezone}")
             return Response({
                 "applet_id": shared_state.applet_id,
                 "version": shared_state.version,
@@ -221,29 +231,22 @@ class RoomSharedStateView(views.APIView):
     """
     Federation-friendly endpoint that uses room_id instead of applet_id.
     This allows different applet instances across BBSes to share the same chat room.
+
+    IMPORTANT: This endpoint returns RAW UTC timestamps for federation sync.
+    Timezone conversion should only happen at display time (SSE stream, client-facing APIs).
     """
     permission_classes = [permissions.IsAuthenticated | TrustedPeerPermission]
 
     def get(self, request, room_id, *args, **kwargs):
-        # Get user's timezone for timestamp conversion
-        # Check if user is authenticated (not AnonymousUser)
-        user_timezone = 'UTC'
-        if hasattr(request, 'user') and request.user.is_authenticated:
-            user_timezone = getattr(request.user, 'timezone', 'UTC')
-
-        username = request.user.username if hasattr(request, 'user') and request.user.is_authenticated else 'anonymous'
-        logger.debug(f"[TIMEZONE DEBUG] RoomSharedStateView: user={username}, timezone={user_timezone}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else False}")
-
         try:
             shared_state = AppletSharedState.objects.get(room_id=room_id)
-            # Convert timestamps to user's timezone
-            converted_state_data = convert_timestamps_to_user_tz(shared_state.state_data, user_timezone)
-            logger.debug(f"[TIMEZONE DEBUG] RoomSharedStateView: converted {len(converted_state_data.get('messages', []))} messages for timezone {user_timezone}")
+            # Return raw state_data with UTC timestamps (no conversion)
+            # Federation peers should store UTC and convert at display time
             return Response({
                 "room_id": shared_state.room_id,
                 "applet_id": shared_state.applet_id,
                 "version": shared_state.version,
-                "state_data": converted_state_data,
+                "state_data": shared_state.state_data,  # Raw UTC timestamps
                 "last_updated": shared_state.last_updated
             })
         except AppletSharedState.DoesNotExist:

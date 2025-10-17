@@ -375,7 +375,10 @@ class ChatAgentService:
                 remote_message.get('timestamp')
             )
             if message_id not in local_message_ids:
-                local_state['messages'].append(remote_message)
+                # Strip display_time field if present (for backward compatibility)
+                # Database should only store UTC timestamps, conversion happens at display time
+                clean_message = {k: v for k, v in remote_message.items() if k != 'display_time'}
+                local_state['messages'].append(clean_message)
                 local_message_ids.add(message_id)
                 new_messages_found = True
                 logger.debug(f"Adding new message from {remote_message.get('user')}: {remote_message.get('text')[:30]}")
