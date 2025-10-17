@@ -85,8 +85,8 @@ def applet_event_stream(request, applet_id):
             return
 
         # Get user's timezone
-        user_timezone = getattr(request.user, 'timezone', 'UTC')
-        logger.warning(f"[SSE DEBUG] Inside event_stream generator, user_timezone={user_timezone}")
+        user_timezone = getattr(request.user, 'timezone', None) or 'UTC'
+        logger.warning(f"[SSE DEBUG] Inside event_stream generator, user={request.user}, user_timezone={user_timezone}, raw timezone value={getattr(request.user, 'timezone', 'NO ATTR')}")
 
         # Subscribe to the agent's broadcast queue
         update_queue = agent.subscribe()

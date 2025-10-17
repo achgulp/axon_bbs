@@ -182,14 +182,19 @@ class ChatAgentService:
                 # Synchronize with federated peers
                 self._synchronize_with_peers()
 
-                # Broadcast current state to all local SSE subscribers
-                from applets.models import AppletSharedState
-                try:
-                    state_obj = AppletSharedState.objects.get(room_id=self.room_id)
-                    self._broadcast_update(state_obj.state_data)
-                except AppletSharedState.DoesNotExist:
-                    # No state yet, broadcast empty state
-                    self._broadcast_update({'messages': []})
+                # Only broadcast if there are active SSE subscribers
+                with self.subscribers_lock:
+                    has_subscribers = len(self.subscriber_queues) > 0
+
+                if has_subscribers:
+                    # Broadcast current state to all local SSE subscribers
+                    from applets.models import AppletSharedState
+                    try:
+                        state_obj = AppletSharedState.objects.get(room_id=self.room_id)
+                        self._broadcast_update(state_obj.state_data)
+                    except AppletSharedState.DoesNotExist:
+                        # No state yet, broadcast empty state
+                        self._broadcast_update({'messages': []})
 
             except Exception as e:
                 logger.error(f"Error during peer synchronization for room {self.room_id}: {e}", exc_info=True)
