@@ -506,13 +506,13 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             if (messageText) {
                 try {
                     debugLog(`Sending message: "${messageText}"`);
-                    await window.bbs.fetch(`/api/applets/${appletId}/update_state/`, {
+                    // NEW: Use /api/chat/post/ endpoint (MessageBoard-based)
+                    await window.bbs.fetch('/api/chat/post/', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            action: 'post_message',
                             text: messageText
                         })
                     });
@@ -553,7 +553,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             if (token) {
                 params.append('token', token);
             }
-            const sseUrl = `/api/applets/${appletId}/events/?${params.toString()}`;
+            // NEW: Use /api/chat/events/ endpoint (realtime board-based)
+            const sseUrl = `/api/chat/events/?${params.toString()}`;
             debugLog(`Creating SSE connection with timezone=${userTimezone}`);
 
             // Create SSE connection
@@ -608,26 +609,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         // Render initial user list (at least shows current user)
         renderUserList();
 
-        // Fetch initial state and connect to SSE
-        try {
-            debugLog(`Fetching initial state from /api/applets/${appletId}/shared_state/`);
-            const initialState = await window.bbs.fetch(`/api/applets/${appletId}/shared_state/`);
-            debugLog(`Initial state response: ${JSON.stringify(initialState).substring(0, 200)}`);
-
-            if (initialState && initialState.state_data && initialState.state_data.messages) {
-                currentMessages = initialState.state_data.messages;
-                debugLog(`Found ${currentMessages.length} messages in initial state`);
-                renderMessages(currentMessages);
-            } else {
-                debugLog('No messages in initial state, starting with empty chat');
-            }
-        } catch (error) {
-            debugLog(`Could not fetch initial state: ${error.message}`);
-            console.warn('AxonChat: Could not fetch initial state, starting with empty chat', error);
-        }
-
-        // Connect to SSE for real-time updates
-        debugLog('Connecting to SSE stream...');
+        // NEW: No need to fetch initial state - SSE endpoint sends initial messages
+        // Connect to SSE for real-time updates (includes initial messages)
+        debugLog('Connecting to SSE stream for initial messages and updates...');
         connectEventSource();
 
         // Cleanup function for when applet is stopped

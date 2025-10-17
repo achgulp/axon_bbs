@@ -107,6 +107,7 @@ api_urlpatterns = [
     path('applets/<uuid:applet_id>/shared_state/', applets_views.AppletSharedStateView.as_view(), name='applet-shared-state'),
     path('applets/<uuid:applet_id>/state_version/', applets_views.AppletStateVersionView.as_view(), name='applet-state-version'),
     path('applets/<uuid:applet_id>/update_state/', applets_views.UpdateStateView.as_view(), name='applet-update-state'),
+    path('chat/post/', applets_views.PostChatMessageView.as_view(), name='post-chat-message'),
     path('libraries/<str:library_name>/', messaging_views.StreamLibraryView.as_view(), name='stream-library'),
 
     # Room-based endpoints for federation (rooms can span multiple applet instances)

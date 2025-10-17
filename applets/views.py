@@ -271,27 +271,63 @@ class AppletStateVersionView(views.APIView):
 
 class UpdateStateView(views.APIView):
     """
-    Handles high-speed state update requests from applets, passing them
-    directly to a corresponding backend agent for processing.
+    DEPRECATED: This endpoint is deprecated and will be removed in a future version.
+
+    For AxonChat, use PostChatMessageView at /api/chat/post/ instead.
+    For new applets requiring state updates, consider using MessageBoard with agent processing.
+
+    This legacy endpoint relied on ChatAgentService which has been removed.
+    Kept for backward compatibility only.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, applet_id, *args, **kwargs):
         applet = get_object_or_404(Applet, id=applet_id)
+        logger.warning(f"[DEPRECATED] UpdateStateView called for applet '{applet.name}'. This endpoint is deprecated. Use /api/chat/post/ for AxonChat.")
+
+        return Response(
+            {"error": "This endpoint is deprecated. For AxonChat, use /api/chat/post/ instead."},
+            status=status.HTTP_410_GONE
+        )
+
+
+class PostChatMessageView(views.APIView):
+    """
+    Posts a chat message to the AxonChat MessageBoard (realtime board).
+    Replaces the old UpdateStateView for AxonChat applet.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
         user = request.user
-        action = request.data
-        
-        # This assumes the agent is named 'chat_agent'.
-        # This can be made more dynamic later if needed.
-        agent_instance = service_manager.game_agents.get('chat_agent')
-        
-        if not agent_instance:
-            logger.error(f"UpdateStateView called for applet '{applet.name}', but 'chat_agent' service is not running.")
-            return Response({"error": "The backend service for this applet is not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-            
+        text = request.data.get('text', '').strip()[:500]  # Limit to 500 chars
+
+        if not text:
+            return Response({"error": "Message text cannot be empty."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            response_data = agent_instance.handle_action(applet, user, action)
-            return Response(response_data, status=status.HTTP_200_OK)
+            from messaging.models import MessageBoard
+            # Get the AxonChat realtime board (ID=9 on both BBSes)
+            board = MessageBoard.objects.get(name='AxonChat', is_realtime=True)
+
+            # Create message
+            message = Message.objects.create(
+                board=board,
+                subject='Chat',  # Default subject for chat messages
+                body=text,
+                author=user,
+                pubkey=user.pubkey
+            )
+
+            logger.info(f"Chat message posted by {user.username} to board '{board.name}'")
+            return Response({
+                "status": "message posted",
+                "message_id": str(message.id)
+            }, status=status.HTTP_201_CREATED)
+
+        except MessageBoard.DoesNotExist:
+            logger.error("AxonChat MessageBoard not found. Run setup_realtime_test_board command.")
+            return Response({"error": "Chat board not configured."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
-            logger.error(f"Error in ChatAgentService while handling action for applet '{applet.name}': {e}", exc_info=True)
-            return Response({"error": "An internal error occurred while processing the action."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"Error posting chat message for {user.username}: {e}", exc_info=True)
+            return Response({"error": "Server error while posting message."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

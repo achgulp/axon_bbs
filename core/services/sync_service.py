@@ -381,14 +381,55 @@ class SyncService:
                 logger.info(f"Successfully saved new message: '{message.subject}'")
 
             elif content_type == 'file':
+                # Check if file has an author pubkey and auto-create federated user if needed
+                author_pubkey = content.get('pubkey')
+                author_user = None
+                if author_pubkey:
+                    short_id = generate_short_id(author_pubkey, length=8)
+                    # Use nickname from content if available, otherwise fallback to Moo-{short_id}
+                    federated_nickname = content.get('nickname', f"Moo-{short_id}")
+                    original_username = content.get('username')  # Username from their home BBS
+
+                    defaults = {
+                        'nickname': federated_nickname,
+                        'is_active': False,
+                        'password': User.objects.make_random_password()
+                    }
+                    try:
+                        author_user, created = User.objects.get_or_create(
+                            pubkey=author_pubkey,
+                            defaults={**defaults, 'username': f"federated_{short_id}"}
+                        )
+                        if created:
+                            logger.info(f"Discovered new federated user via file upload. Created profile '{author_user.nickname}' (home username: {original_username}).")
+                    except IntegrityError:
+                        random_suffix = uuid.uuid4().hex[:4]
+                        author_user, created = User.objects.get_or_create(
+                            pubkey=author_pubkey,
+                            defaults={**defaults, 'username': f"federated_{short_id}_{random_suffix}", 'nickname': f"{federated_nickname}-{random_suffix}"}
+                        )
+                        if created:
+                            logger.info(f"Created federated user with fallback nickname '{author_user.nickname}'.")
+
                 attachment = FileAttachment.objects.create(
                     filename=content.get('filename', 'unknown'),
                     content_type=content.get('content_type', 'application/octet-stream'),
                     size=content.get('size', 0),
+                    author=author_user,
                     metadata_manifest=final_manifest
                 )
                 logger.info(f"Successfully saved new file: '{content.get('filename')}'")
-                
+
+                # If this is an avatar file (cow_*.png) and we just created the user, apply it as their avatar
+                if author_user and content.get('filename', '').startswith('cow_'):
+                    try:
+                        image_bytes = base64.b64decode(content.get('data'))
+                        content_file = ContentFile(image_bytes, name=content.get('filename'))
+                        author_user.avatar.save(content.get('filename'), content_file, save=True)
+                        logger.info(f"Applied federated avatar for user '{author_user.nickname}'")
+                    except Exception as e:
+                        logger.error(f"Failed to apply avatar for federated user: {e}")
+
                 pending_actions = FederatedAction.objects.filter(
                     action_type='update_profile',
                     action_details__avatar_hash=content_hash

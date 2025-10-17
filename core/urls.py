@@ -17,12 +17,15 @@
 # Full path: axon_bbs/core/urls.py
 
 from django.urls import path
-from core.views.applet_events import applet_event_stream
+from core.views.applet_events import applet_event_stream, chat_event_stream
 from core.views.realtime_board_events import realtime_board_events
 from core.views.realtime_federation_api import RealtimeRoomMessagesView
 
 urlpatterns = [
-    # Server-Sent Events (SSE) stream for real-time chat updates (legacy AxonChat)
+    # AxonChat SSE stream (new realtime implementation)
+    path('chat/events/', chat_event_stream, name='chat_event_stream'),
+
+    # Server-Sent Events (SSE) stream for real-time chat updates (legacy AxonChat - DEPRECATED)
     path('applets/<uuid:applet_id>/events/', applet_event_stream, name='applet_event_stream'),
 
     # Generic real-time message board SSE endpoint

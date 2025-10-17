@@ -69,18 +69,118 @@ def convert_timestamps_to_user_tz(state_data, user_timezone):
 
 
 @csrf_exempt
+def chat_event_stream(request):
+    """
+    NEW SSE endpoint for AxonChat using RealtimeMessageService.
+    Replaces applet_event_stream for chat functionality.
+
+    Connects to the AxonChat MessageBoard (realtime board) for <1s latency.
+    """
+    # JWT authentication
+    jwt_auth = JWTAuthentication()
+    token_param = request.GET.get('token')
+    if token_param:
+        request.META['HTTP_AUTHORIZATION'] = f'Bearer {token_param}'
+
+    try:
+        auth_result = jwt_auth.authenticate(request)
+        if auth_result is not None:
+            request.user, _ = auth_result
+    except (InvalidToken, Exception) as e:
+        logger.warning(f"[SSE] JWT authentication failed: {e}")
+
+    def event_stream():
+        try:
+            from messaging.models import MessageBoard
+            from core.services.service_manager import service_manager
+
+            # Get AxonChat board
+            board = MessageBoard.objects.get(name='AxonChat', is_realtime=True)
+
+            # Get the realtime service for this board
+            realtime_service = service_manager.realtime_services.get(board.id)
+            if not realtime_service:
+                yield "event: error\n"
+                yield "data: {\"error\": \"Chat service not running\"}\n\n"
+                return
+
+            # Get user's timezone
+            user_timezone = request.GET.get('tz')
+            if not user_timezone and request.user.is_authenticated:
+                user_timezone = getattr(request.user, 'timezone', None)
+            if not user_timezone:
+                user_timezone = 'UTC'
+
+            # Subscribe to updates
+            update_queue = realtime_service.subscribe()
+
+            try:
+                # Send initial messages (last 50)
+                from messaging.models import Message
+                from core.views.realtime_board_events import convert_message_timestamps
+
+                initial_messages = Message.objects.filter(board=board).order_by('-created_at')[:50]
+                if initial_messages.exists():
+                    converted = convert_message_timestamps(initial_messages, user_timezone)
+                    # Format as AxonChat expected format
+                    chat_messages = [{
+                        'id': str(msg['id']),
+                        'timestamp': msg['created_at'],
+                        'display_time': msg['display_time'],
+                        'user': msg['author_nickname'],  # Frontend expects 'user' field
+                        'user_pubkey': msg['pubkey'],
+                        'text': msg['body']
+                    } for msg in converted]
+                    yield f"data: {json.dumps({'messages': chat_messages})}\n\n"
+
+                yield ": connected\n\n"
+
+                # Wait for updates
+                while True:
+                    try:
+                        new_messages_queryset = update_queue.get(timeout=30)
+                        converted = convert_message_timestamps(new_messages_queryset, user_timezone)
+                        chat_messages = [{
+                            'id': str(msg['id']),
+                            'timestamp': msg['created_at'],
+                            'display_time': msg['display_time'],
+                            'user': msg['author_nickname'],  # Frontend expects 'user' field
+                            'user_pubkey': msg['pubkey'],
+                            'text': msg['body']
+                        } for msg in converted]
+                        yield f"data: {json.dumps({'messages': chat_messages})}\n\n"
+                    except queue.Empty:
+                        yield ": keepalive\n\n"
+            finally:
+                realtime_service.unsubscribe(update_queue)
+
+        except MessageBoard.DoesNotExist:
+            yield "event: error\n"
+            yield "data: {\"error\": \"Chat board not configured\"}\n\n"
+        except Exception as e:
+            logger.error(f"Error in chat SSE stream: {e}", exc_info=True)
+            yield "event: error\n"
+            yield f"data: {{\"error\": \"Server error\"}}\n\n"
+
+    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
+
+
+@csrf_exempt
 def applet_event_stream(request, applet_id):
     """
-    Handles the Server-Sent Events (SSE) stream for a given applet.
-    This view keeps a connection open and pushes data to the client
-    when the ChatAgentService broadcasts updates.
+    DEPRECATED: This endpoint is deprecated and will be removed in a future version.
 
-    Uses an event-driven queue system instead of database polling for efficiency.
+    For chat functionality, use chat_event_stream() at /api/chat/events/ instead.
+    For new applets requiring shared state, consider using MessageBoard with RealtimeMessageService.
 
-    Supports JWT authentication via:
-    1. Authorization header (Bearer token)
-    2. Query parameter 'token' (for EventSource which doesn't support custom headers)
+    This legacy endpoint relied on ChatAgentService which has been removed.
+    Kept for backward compatibility only.
     """
+    logger.warning(f"[DEPRECATED] applet_event_stream called for applet_id={applet_id}. This endpoint is deprecated. Use /api/chat/events/ instead.")
+
     # Try to authenticate using JWT
     jwt_auth = JWTAuthentication()
 
@@ -94,11 +194,8 @@ def applet_event_stream(request, applet_id):
         auth_result = jwt_auth.authenticate(request)
         if auth_result is not None:
             request.user, _ = auth_result
-            logger.warning(f"[SSE DEBUG] JWT authentication successful: user={request.user}, timezone={getattr(request.user, 'timezone', 'NO ATTR')}")
     except (InvalidToken, Exception) as e:
-        logger.warning(f"[SSE DEBUG] JWT authentication failed: {e}, user will be anonymous")
-
-    logger.warning(f"[SSE DEBUG] applet_event_stream called for applet_id={applet_id}, user={request.user}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else 'no user attr'}")
+        logger.warning(f"[SSE] JWT authentication failed: {e}")
 
     def event_stream():
         # Get the chat agent for this applet
