@@ -22,6 +22,7 @@ import logging
 import pytz
 from datetime import datetime
 from django.http import StreamingHttpResponse
+from django.views.decorators.csrf import csrf_exempt
 from applets.models import AppletSharedState
 from core.services.service_manager import service_manager
 
@@ -65,6 +66,7 @@ def convert_timestamps_to_user_tz(state_data, user_timezone):
     return modified_data
 
 
+@csrf_exempt
 def applet_event_stream(request, applet_id):
     """
     Handles the Server-Sent Events (SSE) stream for a given applet.
@@ -73,7 +75,7 @@ def applet_event_stream(request, applet_id):
 
     Uses an event-driven queue system instead of database polling for efficiency.
     """
-    logger.warning(f"[SSE DEBUG] applet_event_stream called for applet_id={applet_id}, user={request.user}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else 'no user attr'}")
+    logger.warning(f"[SSE DEBUG] applet_event_stream called for applet_id={applet_id}, user={request.user}, is_authenticated={request.user.is_authenticated if hasattr(request, 'user') else 'no user attr'}, session_key={request.session.session_key if hasattr(request, 'session') else 'NO SESSION'}")
 
     def event_stream():
         # Get the chat agent for this applet
