@@ -8,6 +8,34 @@ class MessageBoard(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     required_access_level = models.PositiveIntegerField(default=10)
+
+    # Real-time federation fields
+    is_realtime = models.BooleanField(
+        default=False,
+        help_text="Enable real-time federation sync for low-latency updates. "
+                  "When True, messages bypass BitSync polling and use direct BBS-to-BBS push (1s poll interval)."
+    )
+    federation_room_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        unique=True,
+        help_text="Shared room identifier for federated real-time boards (e.g., 'global-chat'). "
+                  "Multiple BBS instances use the same room_id to sync messages in real-time."
+    )
+    trusted_peers = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of trusted peer onion URLs for real-time sync. "
+                  "Format: ['http://peer1.onion', 'http://peer2.onion']. "
+                  "Only applies when is_realtime=True."
+    )
+    message_retention_days = models.PositiveIntegerField(
+        default=30,
+        help_text="Number of days to retain messages before automatic expiration. "
+                  "Real-time boards typically use 1 day, regular boards use 30 days."
+    )
+
     def __str__(self):
         return self.name
 

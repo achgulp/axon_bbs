@@ -32,7 +32,8 @@ class ServiceManager:
         self.bitsync_service = None
         self.sync_service = None
         self.high_score_service = None
-        self.game_agents = {}
+        self.game_agents = {}  # User-based agents (keyed by username)
+        self.realtime_services = {}  # Board-based realtime services (keyed by board_id)
 
     def initialize_services(self):
         from core.models import TrustedInstance
@@ -54,7 +55,8 @@ class ServiceManager:
         self.high_score_service.start()
 
         self.start_all_game_agents()
-        
+        self.start_all_realtime_boards()
+
         logger.info("All services initialized.")
 
     def _load_and_start_agent(self, agent_user):
@@ -164,6 +166,85 @@ class ServiceManager:
                 logger.error(f"Cannot restart agent for '{username}': User not found.")
                 return False
         return False
+
+    def start_all_realtime_boards(self):
+        """
+        Start RealtimeMessageService for all MessageBoards with is_realtime=True.
+        Called during service initialization.
+        """
+        from messaging.models import MessageBoard
+        from core.agents.realtime_message_service import RealtimeMessageService
+
+        try:
+            if MessageBoard._meta.db_table not in connection.introspection.table_names():
+                logger.warning("MessageBoard table not yet created. Skipping realtime board initialization.")
+                return
+        except Exception as e:
+            logger.error(f"Database connection not ready, skipping realtime board initialization: {e}")
+            return
+
+        realtime_boards = MessageBoard.objects.filter(is_realtime=True)
+
+        if not realtime_boards.exists():
+            logger.info("No real-time message boards configured.")
+            return
+
+        logger.info(f"Found {realtime_boards.count()} real-time message board(s) to start...")
+        for board in realtime_boards:
+            try:
+                service = RealtimeMessageService(board_id=board.id)
+                service.start()
+                self.realtime_services[board.id] = service
+                logger.info(f"Started RealtimeMessageService for board '{board.name}' (id={board.id})")
+            except Exception as e:
+                logger.error(f"Failed to start RealtimeMessageService for board '{board.name}': {e}", exc_info=True)
+
+    def start_realtime_board(self, board_id):
+        """Start a realtime service for a specific board (manual start)"""
+        from messaging.models import MessageBoard
+        from core.agents.realtime_message_service import RealtimeMessageService
+
+        if board_id in self.realtime_services:
+            logger.warning(f"RealtimeMessageService for board {board_id} is already running.")
+            return False
+
+        try:
+            board = MessageBoard.objects.get(id=board_id)
+            if not board.is_realtime:
+                logger.error(f"Cannot start realtime service for board '{board.name}': is_realtime=False")
+                return False
+
+            service = RealtimeMessageService(board_id=board.id)
+            service.start()
+            self.realtime_services[board.id] = service
+            logger.info(f"Started RealtimeMessageService for board '{board.name}' (id={board.id})")
+            return True
+
+        except MessageBoard.DoesNotExist:
+            logger.error(f"Cannot start realtime service: MessageBoard {board_id} not found")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to start RealtimeMessageService for board {board_id}: {e}", exc_info=True)
+            return False
+
+    def stop_realtime_board(self, board_id):
+        """Stop a running realtime service for a specific board"""
+        if board_id not in self.realtime_services:
+            logger.warning(f"Cannot stop realtime service for board {board_id}: Not running.")
+            return False
+
+        logger.info(f"Stopping RealtimeMessageService for board {board_id}...")
+        service = self.realtime_services.get(board_id)
+        service.stop()
+        service.thread.join(timeout=10)
+
+        if service.thread.is_alive():
+            logger.error(f"Failed to stop realtime service for board {board_id} in time.")
+            return False
+
+        del self.realtime_services[board_id]
+        logger.info(f"RealtimeMessageService for board {board_id} stopped successfully.")
+        return True
 
     def shutdown(self):
         if self.tor_service and self.tor_service.is_running():

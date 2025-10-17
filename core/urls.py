@@ -18,8 +18,16 @@
 
 from django.urls import path
 from core.views.applet_events import applet_event_stream
+from core.views.realtime_board_events import realtime_board_events
+from core.views.realtime_federation_api import RealtimeRoomMessagesView
 
 urlpatterns = [
-    # Server-Sent Events (SSE) stream for real-time chat updates
+    # Server-Sent Events (SSE) stream for real-time chat updates (legacy AxonChat)
     path('applets/<uuid:applet_id>/events/', applet_event_stream, name='applet_event_stream'),
+
+    # Generic real-time message board SSE endpoint
+    path('realtime/boards/<int:board_id>/events/', realtime_board_events, name='realtime_board_events'),
+
+    # Federation API for real-time message boards
+    path('realtime/rooms/<str:room_id>/messages/', RealtimeRoomMessagesView.as_view(), name='realtime_room_messages'),
 ]
