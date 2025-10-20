@@ -76,8 +76,9 @@ class RealtimeMessageService:
 
     def start(self):
         """Start the service's background thread"""
+        logger.info(f"[DEBUG] About to start thread for board '{self.board.name}', thread={self.thread}, daemon={self.thread.daemon}")
         self.thread.start()
-        logger.info(f"RealtimeMessageService thread started for board '{self.board.name}'")
+        logger.info(f"[DEBUG] Thread.start() called successfully for board '{self.board.name}', is_alive={self.thread.is_alive()}")
 
     def stop(self):
         """Stop the service's background thread"""
