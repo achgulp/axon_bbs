@@ -76,9 +76,11 @@ class RealtimeMessageService:
 
     def start(self):
         """Start the service's background thread"""
-        logger.info(f"[DEBUG] About to start thread for board '{self.board.name}', thread={self.thread}, daemon={self.thread.daemon}")
+        print(f"[DEBUG] RealtimeMessageService.start() called for board '{self.board.name}'")
+        print(f"[DEBUG] Thread object: {self.thread}, daemon={self.thread.daemon}")
         self.thread.start()
-        logger.info(f"[DEBUG] Thread.start() called successfully for board '{self.board.name}', is_alive={self.thread.is_alive()}")
+        print(f"[DEBUG] Thread.start() completed. is_alive={self.thread.is_alive()}")
+        logger.info(f"RealtimeMessageService thread started for board '{self.board.name}'")
 
     def stop(self):
         """Stop the service's background thread"""
@@ -166,7 +168,9 @@ class RealtimeMessageService:
 
     def _run(self):
         """Background loop: poll for new local messages, sync with peers, broadcast to SSE clients"""
+        print(f"[DEBUG] _run() method started for board '{self.board.name}'!")
         try:
+            print(f"[DEBUG] About to enter while loop for board '{self.board.name}'")
             logger.info(f"[RealtimeMessageService] Starting real-time sync loop for board '{self.board.name}', room_id: {self.board.federation_room_id}")
 
             while not self.shutdown_event.wait(self.poll_interval):
