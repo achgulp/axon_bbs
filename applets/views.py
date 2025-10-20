@@ -177,19 +177,47 @@ class PostAppletEventView(views.APIView):
             logger.error(f"Error posting applet event for {request.user.username}: {e}", exc_info=True)
             return Response({"error": "Server error while posting event."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class ReadAppletEventsView(generics.ListAPIView):
-    serializer_class = MessageSerializer
+class ReadAppletEventsView(views.APIView):
+    """
+    Read events from an applet's event board with timezone conversion.
+    Returns messages with display_time field for consistent timezone display across browsers.
+    Supports 'tz' query parameter for browser-detected timezone (needed for Tor Browser).
+    """
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        applet_id = self.kwargs.get('applet_id')
+    def get(self, request, applet_id, *args, **kwargs):
+        from core.views.realtime_board_events import convert_message_timestamps
+
+        # Get user's timezone from query parameter or user setting
+        user_timezone = request.GET.get('tz')
+        if not user_timezone and request.user.is_authenticated:
+            user_timezone = getattr(request.user, 'timezone', None)
+        if not user_timezone:
+            user_timezone = 'UTC'
+
         try:
             applet = Applet.objects.get(id=applet_id)
-            if applet.event_board:
-                return Message.objects.filter(board=applet.event_board).order_by('-created_at')[:50]
+            if not applet.event_board:
+                return Response([], status=status.HTTP_200_OK)
+
+            # Get messages from event board
+            messages = Message.objects.filter(
+                board=applet.event_board
+            ).order_by('-created_at')[:50]
+
+            # Convert timestamps to user's timezone
+            converted_messages = convert_message_timestamps(messages, user_timezone)
+
+            # Reverse to chronological order (oldest first)
+            converted_messages.reverse()
+
+            return Response(converted_messages, status=status.HTTP_200_OK)
+
         except Applet.DoesNotExist:
-            return Message.objects.none()
-        return Message.objects.none()
+            return Response({"error": "Applet not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error reading applet events: {e}", exc_info=True)
+            return Response({"error": "Server error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class AppletSharedStateView(views.APIView):
     """

@@ -552,10 +552,12 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                         processedMessageIds.add(event.id);
 
                         // Convert backend message format to frontend format
+                        // Backend now provides display_time with correct timezone conversion
                         const chatMessage = {
                             id: event.id,
                             timestamp: event.created_at,
-                            user: event.author_display || event.author_username || 'Anonymous',
+                            display_time: event.display_time,  // Server-converted timezone
+                            user: event.author_display || event.author || event.author_nickname || 'Anonymous',
                             user_pubkey: event.pubkey,
                             text: event.body
                         };

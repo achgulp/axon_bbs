@@ -241,7 +241,11 @@ const AppletRunner = ({ applet, onBack, attachmentContext = null }) => {
             response.payload = postResponse.data;
             break;
           case 'readEvents':
-            const readResponse = await apiClient.get(`/api/applets/${applet.id}/read_events/`);
+            // Detect browser timezone and pass to backend for timestamp conversion
+            const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const readResponse = await apiClient.get(`/api/applets/${applet.id}/read_events/`, {
+              params: { tz: userTimezone }
+            });
             response.payload = readResponse.data;
             break;
           case 'fetch':
