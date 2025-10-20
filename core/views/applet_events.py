@@ -115,12 +115,15 @@ def chat_event_stream(request):
             update_queue = realtime_service.subscribe()
 
             try:
-                # Send initial messages (last 50)
+                # Send initial messages (last 50, in chronological order)
                 from messaging.models import Message
                 from core.views.realtime_board_events import convert_message_timestamps
 
-                initial_messages = Message.objects.filter(board=board).order_by('-created_at')[:50]
-                if initial_messages.exists():
+                initial_messages = list(Message.objects.filter(board=board).order_by('-created_at')[:50])
+                # Reverse to get chronological order (oldest first)
+                initial_messages.reverse()
+
+                if initial_messages:
                     converted = convert_message_timestamps(initial_messages, user_timezone)
                     # Format as AxonChat expected format
                     chat_messages = [{
@@ -132,14 +135,24 @@ def chat_event_stream(request):
                         'text': msg['body']
                     } for msg in converted]
                     yield f"data: {json.dumps({'messages': chat_messages})}\n\n"
+                else:
+                    # Send empty message list for initial connection
+                    yield f"data: {json.dumps({'messages': []})}\n\n"
 
                 yield ": connected\n\n"
+
+                # Keep track of all messages for cumulative updates
+                all_messages = initial_messages.copy() if initial_messages else []
 
                 # Wait for updates
                 while True:
                     try:
                         new_messages_queryset = update_queue.get(timeout=30)
-                        converted = convert_message_timestamps(new_messages_queryset, user_timezone)
+                        # Append new messages to the cumulative list
+                        all_messages.extend(list(new_messages_queryset))
+
+                        # Send the complete cumulative list (frontend expects full history)
+                        converted = convert_message_timestamps(all_messages, user_timezone)
                         chat_messages = [{
                             'id': str(msg['id']),
                             'timestamp': msg['created_at'],
