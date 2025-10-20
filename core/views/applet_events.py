@@ -71,10 +71,10 @@ def convert_timestamps_to_user_tz(state_data, user_timezone):
 @csrf_exempt
 def chat_event_stream(request):
     """
-    NEW SSE endpoint for AxonChat using RealtimeMessageService.
-    Replaces applet_event_stream for chat functionality.
+    SSE endpoint for AxonChat using RealtimeMessageService.
+    Filters messages from Realtime Event Board by subject='AxonChat'.
 
-    Connects to the AxonChat MessageBoard (realtime board) for <1s latency.
+    This uses the unified Realtime Event Board instead of a dedicated board.
     """
     # JWT authentication
     jwt_auth = JWTAuthentication()
@@ -94,8 +94,8 @@ def chat_event_stream(request):
             from messaging.models import MessageBoard
             from core.services.service_manager import service_manager
 
-            # Get AxonChat board
-            board = MessageBoard.objects.get(name='AxonChat', is_realtime=True)
+            # Get Realtime Event Board (unified board for all realtime applets)
+            board = MessageBoard.objects.get(name='Realtime Event Board', is_realtime=True)
 
             # Get the realtime service for this board
             realtime_service = service_manager.realtime_services.get(board.id)
@@ -115,11 +115,14 @@ def chat_event_stream(request):
             update_queue = realtime_service.subscribe()
 
             try:
-                # Send initial messages (last 50, in chronological order)
+                # Send initial messages (last 50 with subject='AxonChat', in chronological order)
                 from messaging.models import Message
                 from core.views.realtime_board_events import convert_message_timestamps
 
-                initial_messages = list(Message.objects.filter(board=board).order_by('-created_at')[:50])
+                initial_messages = list(Message.objects.filter(
+                    board=board,
+                    subject='AxonChat'  # Filter by subject to get only AxonChat messages
+                ).order_by('-created_at')[:50])
                 # Reverse to get chronological order (oldest first)
                 initial_messages.reverse()
 
@@ -148,20 +151,24 @@ def chat_event_stream(request):
                 while True:
                     try:
                         new_messages_queryset = update_queue.get(timeout=30)
-                        # Append new messages to the cumulative list
-                        all_messages.extend(list(new_messages_queryset))
+                        # Filter new messages to only AxonChat subject
+                        new_chat_messages = [msg for msg in new_messages_queryset if msg.subject == 'AxonChat']
 
-                        # Send the complete cumulative list (frontend expects full history)
-                        converted = convert_message_timestamps(all_messages, user_timezone)
-                        chat_messages = [{
-                            'id': str(msg['id']),
-                            'timestamp': msg['created_at'],
-                            'display_time': msg['display_time'],
-                            'user': msg['author_nickname'],  # Frontend expects 'user' field
-                            'user_pubkey': msg['pubkey'],
-                            'text': msg['body']
-                        } for msg in converted]
-                        yield f"data: {json.dumps({'messages': chat_messages})}\n\n"
+                        if new_chat_messages:
+                            # Append new chat messages to the cumulative list
+                            all_messages.extend(new_chat_messages)
+
+                            # Send the complete cumulative list (frontend expects full history)
+                            converted = convert_message_timestamps(all_messages, user_timezone)
+                            chat_messages = [{
+                                'id': str(msg['id']),
+                                'timestamp': msg['created_at'],
+                                'display_time': msg['display_time'],
+                                'user': msg['author_nickname'],  # Frontend expects 'user' field
+                                'user_pubkey': msg['pubkey'],
+                                'text': msg['body']
+                            } for msg in converted]
+                            yield f"data: {json.dumps({'messages': chat_messages})}\n\n"
                     except queue.Empty:
                         yield ": keepalive\n\n"
             finally:

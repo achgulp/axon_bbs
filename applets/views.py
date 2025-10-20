@@ -293,8 +293,8 @@ class UpdateStateView(views.APIView):
 
 class PostChatMessageView(views.APIView):
     """
-    Posts a chat message to the AxonChat MessageBoard (realtime board).
-    Replaces the old UpdateStateView for AxonChat applet.
+    Posts a chat message to the Realtime Event Board with subject='AxonChat'.
+    Uses the unified realtime board instead of a dedicated AxonChat board.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -307,26 +307,26 @@ class PostChatMessageView(views.APIView):
 
         try:
             from messaging.models import MessageBoard
-            # Get the AxonChat realtime board (ID=9 on both BBSes)
-            board = MessageBoard.objects.get(name='AxonChat', is_realtime=True)
+            # Use the unified Realtime Event Board (ID=8)
+            board = MessageBoard.objects.get(name='Realtime Event Board', is_realtime=True)
 
-            # Create message
+            # Create message with subject='AxonChat' to identify chat messages
             message = Message.objects.create(
                 board=board,
-                subject='Chat',  # Default subject for chat messages
+                subject='AxonChat',  # Subject identifies the applet
                 body=text,
                 author=user,
                 pubkey=user.pubkey
             )
 
-            logger.info(f"Chat message posted by {user.username} to board '{board.name}'")
+            logger.info(f"AxonChat message posted by {user.username} to Realtime Event Board")
             return Response({
                 "status": "message posted",
                 "message_id": str(message.id)
             }, status=status.HTTP_201_CREATED)
 
         except MessageBoard.DoesNotExist:
-            logger.error("AxonChat MessageBoard not found. Run setup_realtime_test_board command.")
+            logger.error("Realtime Event Board not found. Run setup_realtime_test_board command.")
             return Response({"error": "Chat board not configured."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
             logger.error(f"Error posting chat message for {user.username}: {e}", exc_info=True)
