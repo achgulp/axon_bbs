@@ -165,31 +165,34 @@ class RealtimeMessageService:
 
     def _run(self):
         """Background loop: poll for new local messages, sync with peers, broadcast to SSE clients"""
-        logger.info(f"Starting real-time sync loop for board '{self.board.name}', room_id: {self.board.federation_room_id}")
+        try:
+            logger.info(f"[RealtimeMessageService] Starting real-time sync loop for board '{self.board.name}', room_id: {self.board.federation_room_id}")
 
-        while not self.shutdown_event.wait(self.poll_interval):
-            try:
-                from messaging.models import Message
+            while not self.shutdown_event.wait(self.poll_interval):
+                try:
+                    from messaging.models import Message
 
-                # Check for new local messages since last sync
-                new_messages = Message.objects.filter(
-                    board=self.board,
-                    created_at__gt=self.last_sync_time
-                ).order_by('created_at')
+                    # Check for new local messages since last sync
+                    new_messages = Message.objects.filter(
+                        board=self.board,
+                        created_at__gt=self.last_sync_time
+                    ).order_by('created_at')
 
-                if new_messages.exists():
-                    logger.info(f"[RealtimeMessageService] Found {new_messages.count()} new messages on board '{self.board.name}'")
-                    logger.info(f"[RealtimeMessageService] Broadcasting to {len(self.subscriber_queues)} subscribers")
-                    self.last_sync_time = new_messages.last().created_at
+                    if new_messages.exists():
+                        logger.info(f"[RealtimeMessageService] Found {new_messages.count()} new messages on board '{self.board.name}'")
+                        logger.info(f"[RealtimeMessageService] Broadcasting to {len(self.subscriber_queues)} subscribers")
+                        self.last_sync_time = new_messages.last().created_at
 
-                    # Broadcast to local SSE subscribers
-                    self._broadcast_update(new_messages)
+                        # Broadcast to local SSE subscribers
+                        self._broadcast_update(new_messages)
 
-                # Synchronize with federated peers
-                self._synchronize_with_peers()
+                    # Synchronize with federated peers
+                    self._synchronize_with_peers()
 
-            except Exception as e:
-                logger.error(f"Error in RealtimeMessageService loop for board '{self.board.name}': {e}", exc_info=True)
+                except Exception as e:
+                    logger.error(f"Error in RealtimeMessageService loop for board '{self.board.name}': {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"FATAL: RealtimeMessageService thread crashed for board '{self.board.name}': {e}", exc_info=True)
 
     def _synchronize_with_peers(self):
         """
