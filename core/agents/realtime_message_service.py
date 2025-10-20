@@ -179,6 +179,7 @@ class RealtimeMessageService:
 
                 if new_messages.exists():
                     logger.info(f"[RealtimeMessageService] Found {new_messages.count()} new messages on board '{self.board.name}'")
+                    logger.info(f"[RealtimeMessageService] Broadcasting to {len(self.subscriber_queues)} subscribers")
                     self.last_sync_time = new_messages.last().created_at
 
                     # Broadcast to local SSE subscribers
