@@ -158,7 +158,7 @@ class Command(BaseCommand):
         message = Message.objects.create(
             board=board,
             author=user,
-            subject=f"{applet_name} v16",  # Increment version based on screenshot (v15 was latest)
+            subject=f"{applet_name} v17",  # v17: Major refactor to client-side polling (replaces SSE)
             body=message_body
         )
         message.attachments.add(attachment)

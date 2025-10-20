@@ -48,6 +48,8 @@ window.bbs = {
   saveData: function(newData) { return this._postMessage('saveData', newData); },
   // Advanced API
   getAppletInfo: function() { return this._postMessage('getAppletInfo'); },
+  postEvent: function(eventData) { return this._postMessage('postEvent', eventData); },
+  readEvents: function() { return this._postMessage('readEvents'); },
   fetch: function(url, options = {}) {
     return this._postMessage('fetch', { url, options }).then(response => response);
   }
@@ -328,7 +330,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         let currentMessages = [];
         let lastRenderedMessageCount = 0;
         let activeUsers = new Map(); // Map of user short ID -> { nickname, avatar, lastSeen }
-        let eventSource = null;
+        let processedMessageIds = new Set(); // Track which messages we've already processed
+        let pollingInterval = null;
 
         // Helper function to compute short user ID from pubkey
         async function computeShortId(pubkey) {
@@ -526,75 +529,85 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             }
         }
 
-        // Connect to SSE endpoint
-        function connectEventSource() {
-            const statusElement = document.getElementById('connection-status');
+        // Poll for new chat messages (replaces SSE)
+        async function pollForChatMessages() {
+            try {
+                // Read events from the message board
+                const events = await window.bbs.readEvents();
 
-            // Close existing connection
-            if (eventSource) {
-                debugLog('Closing existing SSE connection');
-                eventSource.close();
+                // Filter only AxonChat messages (by subject)
+                const chatEvents = events.filter(e => e.subject === 'AxonChat');
+
+                // Find new messages not yet processed
+                const newMessages = chatEvents.filter(e => !processedMessageIds.has(e.id));
+
+                if (newMessages.length > 0) {
+                    debugLog(`Poll: Found ${newMessages.length} new messages`);
+
+                    // Sort by timestamp (chronological order)
+                    newMessages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+                    // Process each new message
+                    for (const event of newMessages) {
+                        processedMessageIds.add(event.id);
+
+                        // Convert backend message format to frontend format
+                        const chatMessage = {
+                            id: event.id,
+                            timestamp: event.created_at,
+                            user: event.author_display || event.author_username || 'Anonymous',
+                            user_pubkey: event.pubkey,
+                            text: event.body
+                        };
+
+                        currentMessages.push(chatMessage);
+                    }
+
+                    // Re-render with new messages
+                    renderMessages(currentMessages);
+                }
+
+                // Update connection status
+                const statusElement = document.getElementById('connection-status');
+                if (statusElement) {
+                    statusElement.textContent = 'Connected';
+                    statusElement.className = 'connected';
+                }
+
+            } catch (error) {
+                debugLog(`Poll error: ${error.message}`);
+                console.error('AxonChat: Failed to poll for messages', error);
+
+                // Update connection status
+                const statusElement = document.getElementById('connection-status');
+                if (statusElement) {
+                    statusElement.textContent = 'Connection Error';
+                    statusElement.className = 'disconnected';
+                }
             }
+        }
 
+        // Start polling
+        function startPolling() {
+            debugLog('Starting message polling (2 second interval)');
+            const statusElement = document.getElementById('connection-status');
             statusElement.textContent = 'Connecting...';
             statusElement.className = 'disconnected';
 
-            // Get user's timezone from browser
-            const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            debugLog(`Detected browser timezone: ${userTimezone}`);
+            // Poll immediately
+            pollForChatMessages();
 
-            // Get JWT token from localStorage (same origin as parent)
-            const token = localStorage.getItem('access_token');
-            debugLog(`Token from localStorage: ${token ? 'FOUND (length=' + token.length + ')' : 'NOT FOUND'}`);
+            // Then poll every 2 seconds
+            pollingInterval = setInterval(pollForChatMessages, 2000);
+        }
 
-            // Build SSE URL with timezone (and optionally token)
-            const params = new URLSearchParams();
-            params.append('tz', userTimezone);
-            if (token) {
-                params.append('token', token);
+        // Stop polling
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+                debugLog('Stopped message polling');
             }
-            // NEW: Use /api/chat/events/ endpoint (realtime board-based)
-            const sseUrl = `/api/chat/events/?${params.toString()}`;
-            debugLog(`Creating SSE connection with timezone=${userTimezone}`);
-
-            // Create SSE connection
-            try {
-                eventSource = new EventSource(sseUrl);
-                debugLog('EventSource object created, waiting for connection...');
-            } catch (error) {
-                debugLog(`Failed to create EventSource: ${error.message}`);
-                return;
-            }
-
-            eventSource.onopen = () => {
-                debugLog('SSE connection opened successfully');
-                statusElement.textContent = 'Connected';
-                statusElement.className = 'connected';
-            };
-
-            eventSource.onmessage = (event) => {
-                debugLog(`SSE message received: ${event.data.substring(0, 100)}...`);
-                try {
-                    const newState = JSON.parse(event.data);
-                    if (newState && newState.messages) {
-                        currentMessages = newState.messages;
-                        renderMessages(currentMessages);
-                    } else {
-                        debugLog('Received state update with no messages');
-                    }
-                } catch (error) {
-                    debugLog(`Error parsing SSE data: ${error.message}`);
-                    console.error('AxonChat: Error parsing state update', error);
-                }
-            };
-
-            eventSource.onerror = (error) => {
-                debugLog(`SSE connection error - ReadyState: ${eventSource.readyState}`);
-                console.error('AxonChat: SSE connection error', error);
-                statusElement.textContent = 'Reconnecting...';
-                statusElement.className = 'disconnected';
-                // Browser will automatically reconnect
-            };
         }
 
         // Set up event listeners
@@ -609,17 +622,14 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         // Render initial user list (at least shows current user)
         renderUserList();
 
-        // NEW: No need to fetch initial state - SSE endpoint sends initial messages
-        // Connect to SSE for real-time updates (includes initial messages)
-        debugLog('Connecting to SSE stream for initial messages and updates...');
-        connectEventSource();
+        // Start polling for messages
+        debugLog('Starting polling for chat messages...');
+        startPolling();
 
         // Cleanup function for when applet is stopped
         window.addEventListener('beforeunload', () => {
-            if (eventSource) {
-                eventSource.close();
-                debugLog('EventSource connection closed on unload');
-            }
+            stopPolling();
+            debugLog('Stopped polling on unload');
         });
 
         debugLog('AxonChat initialization complete');
