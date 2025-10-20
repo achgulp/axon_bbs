@@ -158,7 +158,7 @@ class Command(BaseCommand):
         message = Message.objects.create(
             board=board,
             author=user,
-            subject=f"{applet_name} v17",  # v17: Major refactor to client-side polling (replaces SSE)
+            subject=f"{applet_name} v18",  # v18: Added server-side timezone conversion for Tor Browser
             body=message_body
         )
         message.attachments.add(attachment)
