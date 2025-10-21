@@ -154,6 +154,21 @@ class Command(BaseCommand):
 **FileAttachment ID:** {attachment.id}
 '''
 
+        # Create BitSync manifest for the message content itself (required for federation sync)
+        message_content_payload = {
+            "type": "message",
+            "subject": f"{applet_name} [{bitsync_manifest.get('content_hash', '')[:8]}]",
+            "body": message_body,
+            "data": base64.b64encode(message_body.encode('utf-8')).decode('ascii')
+        }
+
+        try:
+            message_content_hash, message_manifest = service_manager.bitsync_service.create_encrypted_content(message_content_payload)
+            self.stdout.write(self.style.SUCCESS(f'Created message BitSync manifest: {message_content_hash[:16]}...'))
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f'Failed to create message manifest: {e}'))
+            message_manifest = None
+
         # Create message
         # Use first 8 digits of content hash for unique identification
         hash_prefix = bitsync_manifest.get('content_hash', '')[:8]
@@ -161,7 +176,8 @@ class Command(BaseCommand):
             board=board,
             author=user,
             subject=f"{applet_name} [{hash_prefix}]",
-            body=message_body
+            body=message_body,
+            metadata_manifest=message_manifest  # Add manifest for federation sync
         )
         message.attachments.add(attachment)
 
