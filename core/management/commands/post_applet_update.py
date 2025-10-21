@@ -155,10 +155,12 @@ class Command(BaseCommand):
 '''
 
         # Create message
+        # Use first 8 digits of content hash for unique identification
+        hash_prefix = bitsync_manifest.get('content_hash', '')[:8]
         message = Message.objects.create(
             board=board,
             author=user,
-            subject=f"{applet_name} v18",  # v18: Added server-side timezone conversion for Tor Browser
+            subject=f"{applet_name} [{hash_prefix}]",
             body=message_body
         )
         message.attachments.add(attachment)
