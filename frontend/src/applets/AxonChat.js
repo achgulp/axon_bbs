@@ -60,6 +60,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 // --- Main Applet Execution ---
 (async function() {
+    const APPLET_VERSION = "v19.0";
     const appletContainer = document.getElementById('applet-root');
 
     // Debug console helper
@@ -76,7 +77,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     }
 
     try {
-        debugLog("Starting AxonChat initialization...");
+        debugLog(`AxonChat ${APPLET_VERSION} initializing...`);
 
         // Get applet info and user info
         debugLog("Fetching applet info...");
@@ -471,8 +472,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 const timestamp = document.createElement('span');
                 timestamp.className = 'timestamp';
                 // Use display_time from server (already converted to user's timezone)
-                // Falls back to timestamp if display_time not available
-                timestamp.textContent = msg.display_time || new Date(msg.timestamp).toLocaleTimeString();
+                // This field is always provided by the backend with proper timezone conversion
+                timestamp.textContent = msg.display_time;
 
                 const user = document.createElement('span');
                 user.className = 'user';
