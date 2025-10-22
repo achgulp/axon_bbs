@@ -400,3 +400,49 @@ Applied to both HostBBS and PiBBS for v19 deployment.
 - `33301b2` - Create Server Management Guide
 
 **Session Status**: ✅ Complete - v19 deployed, sync issues fixed, documentation updated
+
+---
+
+## October 21, 2025 (Evening) - Fixed Applet Manifest Pointer
+
+**Issue**: AxonChat v19 code in source file and BitSync chunks, but browser loaded old code
+
+### Root Cause:
+The AxonChat applet's `code_manifest` field was pointing to the WRONG FileAttachment:
+- Applet was using: `f54fad00186f172e...` (AxonChat_republish.js - old code)
+- v19b message had: `d134a9a1afb7240c...` (AxonChat.js - correct v19 code)
+
+### Investigation Process:
+1. Verified source file `/home/dukejer/axon_bbs/frontend/src/applets/AxonChat.js` contains v19 code ✓
+2. Checked git history - commit `f037cde` has v19 changes ✓
+3. Traced AppletRunner.js → fetches `/api/content/stream/{content_hash}/?for_verification`
+4. Found StreamContentView → uses `sync_service.get_manifest_by_content_hash()`
+5. Discovered applet.code_manifest pointing to wrong FileAttachment
+6. Found v19b message (ID: 2a172e9e...) with correct content_hash
+7. Manually updated applet to use v19b manifest
+
+### Fix Applied:
+```python
+applet = Applet.objects.get(name='AxonChat')
+v19b_attachment = FileAttachment.objects.get(id='7570ddea-5b61-4f51-907f-ec0036e90f6b')
+applet.code_manifest = v19b_attachment.metadata_manifest
+applet.save()
+```
+
+### Verification:
+```bash
+# Confirmed v19b chunks contain correct code:
+✓ APPLET_VERSION found: const APPLET_VERSION = "v19.0";
+✓ Debug message template: ${APPLET_VERSION} initializing
+```
+
+### Why post_applet_update Didn't Update Applet:
+The command detected v19b as already published (same filename + size) and exited early, so it never reached the applet update code (lines 200-221).
+
+### Current Status:
+- ✅ HostBBS: Running (PID 79708), AxonChat using v19b manifest (d134a9a1...)
+- ✅ PiBBS: Running (PIDs 45681/45682)
+- ✅ v19b message in Applet Library with correct code
+- ✅ Applet code_manifest updated to point to v19b
+
+**Next**: User should test in browser - should now see version number in console and correct EST timezone

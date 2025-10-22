@@ -235,9 +235,14 @@ LOGGING = {
             'level': 'INFO',
             'propagate': True,
         },
+        'django.server': {
+            'handlers': ['file'],  # Only log to file, not console
+            'level': 'WARNING',    # Only show warnings/errors in console
+            'propagate': False,
+        },
         'core.services': {
             'handlers': ['console', 'file'],
-            'level': 'INFO',
+            'level': 'WARNING',    # Reduce console noise from service startup
             'propagate': False,
         },
         'applets': {
