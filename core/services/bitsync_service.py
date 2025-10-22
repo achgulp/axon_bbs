@@ -43,7 +43,7 @@ class BitSyncService:
     def __init__(self):
         self.chunk_storage_path = os.path.join(settings.BASE_DIR, 'data', 'bitsync_chunks')
         os.makedirs(self.chunk_storage_path, exist_ok=True)
-        logger.info("BitSyncService initialized. Chunk storage is at: %s", self.chunk_storage_path)
+        logger.debug("BitSyncService initialized. Chunk storage is at: %s", self.chunk_storage_path)
 
     def are_all_chunks_local(self, manifest: dict) -> bool:
         if not manifest or 'chunk_hashes' not in manifest:

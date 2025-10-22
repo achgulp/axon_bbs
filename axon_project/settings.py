@@ -242,7 +242,12 @@ LOGGING = {
         },
         'core.services': {
             'handlers': ['console', 'file'],
-            'level': 'WARNING',    # Reduce console noise from service startup
+            'level': 'INFO',       # Show important operations (rekey, manifest generation)
+            'propagate': False,
+        },
+        'messaging.admin': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',       # Show admin actions like rekey operations
             'propagate': False,
         },
         'applets': {

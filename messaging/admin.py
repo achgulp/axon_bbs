@@ -21,6 +21,9 @@ from django.contrib import messages as admin_messages
 from .models import MessageBoard, Message, PrivateMessage
 from federation.models import FederatedAction
 import base64
+import logging
+
+logger = logging.getLogger(__name__)
 
 @admin.action(description='Federate Delete (broadcasts delete to peers)')
 def federate_delete_action(modeladmin, request, queryset):
@@ -53,13 +56,23 @@ def rekey_message_action(modeladmin, request, queryset):
 
     for message in queryset:
         try:
-            # Create message content payload
-            message_content = f"Subject: {message.subject}\n\n{message.body}"
+            # Build attachment hashes from the message's current attachments
+            attachment_hashes = []
+            if message.attachments.exists():
+                attachment_hashes = [
+                    att.metadata_manifest['content_hash']
+                    for att in message.attachments.all()
+                    if att.metadata_manifest
+                ]
+
+            # Create message content payload matching the standard format
             message_content_payload = {
                 "type": "message",
                 "subject": message.subject,
                 "body": message.body,
-                "data": base64.b64encode(message_content.encode('utf-8')).decode('ascii')
+                "board": message.board.name,
+                "pubkey": message.pubkey,
+                "attachment_hashes": attachment_hashes
             }
 
             # Create new BitSync manifest (re-encrypts with new keys)
@@ -72,6 +85,7 @@ def rekey_message_action(modeladmin, request, queryset):
             message.save()
 
             success_count += 1
+            logger.info(f"Rekeyed message '{message.subject}': {old_hash} → {new_hash}")
             admin_messages.success(
                 request,
                 f'Rekeyed "{message.subject}": {old_hash} → {new_hash}'
@@ -85,11 +99,13 @@ def rekey_message_action(modeladmin, request, queryset):
             )
 
     if success_count > 0:
+        logger.info(f"Rekey operation completed: {success_count} message(s) rekeyed successfully. New manifests will sync to peers on next poll.")
         admin_messages.success(
             request,
             f'Successfully rekeyed {success_count} message(s). New manifests will sync to peers on next poll.'
         )
     if error_count > 0:
+        logger.warning(f"Rekey operation had {error_count} failure(s).")
         admin_messages.warning(
             request,
             f'Failed to rekey {error_count} message(s).'

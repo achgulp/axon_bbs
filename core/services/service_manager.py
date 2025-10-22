@@ -49,15 +49,15 @@ class ServiceManager:
             self.sync_service.start()
         else:
             logger.warning("No local instance found. SyncService will not be started.")
-        
-        logger.info("Initializing and starting HighScoreService thread...")
+
+        logger.debug("Initializing and starting HighScoreService thread...")
         self.high_score_service = HighScoreService()
         self.high_score_service.start()
 
         self.start_all_game_agents()
         self.start_all_realtime_boards()
 
-        logger.info("All services initialized.")
+        logger.debug("All services initialized.")
 
     def _load_and_start_agent(self, agent_user):
         """
@@ -81,18 +81,18 @@ class ServiceManager:
                 logger.error(f"Invalid service path for agent '{username}': '{service_path}'. Path must be in the format 'app.module.ClassName'.")
                 return False
 
-            logger.info(f"Attempting to start agent: {class_name} from {module_name} for user '{username}'")
+            logger.debug(f"Attempting to start agent: {class_name} from {module_name} for user '{username}'")
             
             agent_module = importlib.import_module(module_name)
             AgentClass = getattr(agent_module, class_name)
             
             # Pass the agent's parameters to its constructor
             agent_instance = AgentClass(**agent_user.agent_parameters)
-            
+
             agent_instance.start()
             self.game_agents[username] = agent_instance
-            
-            logger.info(f"Successfully started agent for user '{username}'.")
+
+            logger.debug(f"Successfully started agent for user '{username}'.")
             return True
 
         except (ImportError, AttributeError):
@@ -113,12 +113,12 @@ class ServiceManager:
             return
 
         agent_users = User.objects.filter(is_agent=True, is_active=True)
-        
+
         if not agent_users.exists():
-            logger.info("No active game agents configured to run.")
+            logger.debug("No active game agents configured to run.")
             return
 
-        logger.info(f"Found {agent_users.count()} active game agent(s) to start...")
+        logger.debug(f"Found {agent_users.count()} active game agent(s) to start...")
         for agent_user in agent_users:
             self._load_and_start_agent(agent_user)
             
@@ -186,16 +186,16 @@ class ServiceManager:
         realtime_boards = MessageBoard.objects.filter(is_realtime=True)
 
         if not realtime_boards.exists():
-            logger.info("No real-time message boards configured.")
+            logger.debug("No real-time message boards configured.")
             return
 
-        logger.info(f"Found {realtime_boards.count()} real-time message board(s) to start...")
+        logger.debug(f"Found {realtime_boards.count()} real-time message board(s) to start...")
         for board in realtime_boards:
             try:
                 service = RealtimeMessageService(board_id=board.id)
                 service.start()
                 self.realtime_services[board.id] = service
-                logger.info(f"Started RealtimeMessageService for board '{board.name}' (id={board.id})")
+                logger.debug(f"Started RealtimeMessageService for board '{board.name}' (id={board.id})")
             except Exception as e:
                 logger.error(f"Failed to start RealtimeMessageService for board '{board.name}': {e}", exc_info=True)
 

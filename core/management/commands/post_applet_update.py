@@ -159,7 +159,9 @@ class Command(BaseCommand):
             "type": "message",
             "subject": f"{applet_name} [{bitsync_manifest.get('content_hash', '')[:8]}]",
             "body": message_body,
-            "data": base64.b64encode(message_body.encode('utf-8')).decode('ascii')
+            "board": board.name,
+            "pubkey": user.pubkey,
+            "attachment_hashes": [bitsync_manifest.get('content_hash')]
         }
 
         try:
