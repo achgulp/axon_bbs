@@ -60,7 +60,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 // --- Main Applet Execution ---
 (async function() {
-    const APPLET_VERSION = "v19.0";
+    const APPLET_VERSION = "v20";
     const appletContainer = document.getElementById('applet-root');
 
     // Debug console helper
@@ -77,8 +77,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     }
 
     try {
-        debugLog(`AxonChat ${APPLET_VERSION} initializing...`);
-
         // Get applet info and user info
         debugLog("Fetching applet info...");
         const appletInfo = await window.bbs.getAppletInfo();
@@ -326,6 +324,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         }
 
         debugLog("UI rendered successfully");
+        debugLog(`AxonChat ${APPLET_VERSION} initialized`);
 
         // State management
         let currentMessages = [];
