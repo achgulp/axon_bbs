@@ -60,7 +60,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 // --- Main Applet Execution ---
 (async function() {
-    const APPLET_VERSION = "v20";
+    const APPLET_VERSION = "v21";
     const appletContainer = document.getElementById('applet-root');
 
     // Debug console helper
@@ -84,7 +84,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         debugLog("Fetching user info...");
         const userInfo = await window.bbs.getUserInfo();
-        debugLog(`User info received: nickname=${userInfo.nickname}, pubkey=${userInfo.pubkey}, avatar=${userInfo.avatar_url}`);
+        const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        debugLog(`User info received: nickname=${userInfo.nickname}, pubkey=${userInfo.pubkey}, timezone=${detectedTimezone}`);
 
         const appletId = appletInfo.id;
 
@@ -375,11 +376,12 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     const userId = msg.user_pubkey || msg.user;
                     const nickname = msg.user;
 
-                    // Check if this might be the current user by comparing nickname
-                    const isCurrentUser = (userId === currentUserShortId || nickname === userInfo.nickname);
+                    // Check if this is the current user by comparing pubkey
+                    // Both should be 16-char hashes, so direct comparison should work
+                    const isCurrentUser = (userId === currentUserShortId);
 
                     if (isCurrentUser) {
-                        // Update current user's last seen time
+                        // Update current user's last seen time but don't add as duplicate
                         if (activeUsers.has(currentUserShortId)) {
                             activeUsers.get(currentUserShortId).lastSeen = timestamp;
                         }
@@ -543,6 +545,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
                 if (newMessages.length > 0) {
                     debugLog(`Poll: Found ${newMessages.length} new messages`);
+                    if (newMessages.length > 0) {
+                        debugLog(`First message time: ${newMessages[0].display_time} (UTC: ${newMessages[0].created_at})`);
+                    }
 
                     // Sort by timestamp (chronological order)
                     newMessages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -557,8 +562,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                             id: event.id,
                             timestamp: event.created_at,
                             display_time: event.display_time,  // Server-converted timezone
-                            user: event.author_display || event.author || event.author_nickname || 'Anonymous',
+                            user: event.author_nickname || event.author || 'Anonymous',
                             user_pubkey: event.pubkey,
+                            avatar_url: event.avatar_url,
                             text: event.body
                         };
 
