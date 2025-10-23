@@ -1,6 +1,0 @@
-1) Sort Message board in Alpha - Completed
-2) Message board restriction for users that are not high enough to see board.
-3) Moderation and Moderation Agent
-4) Sanitized message processing - Completed
-5) Avatars still not showing up on messages.
-6) Aliases Nick Names and Avatars sent through moderation events to other BBSes to be processed

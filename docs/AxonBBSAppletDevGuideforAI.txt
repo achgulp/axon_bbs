@@ -1,0 +1,1557 @@
+===============================================================================
+                    AXON BBS APPLET DEVELOPMENT GUIDE
+                    (Optimized for AI-Assisted Generation)
+===============================================================================
+
+VERSION: 2.0
+LAST UPDATED: 2025-10-23
+
+===============================================================================
+                         TABLE OF CONTENTS
+===============================================================================
+
+1. Project Overview & Philosophy
+2. Security Model & Why Single-File Applets Matter
+3. Core Principles (MANDATORY)
+4. System Environment & Globals
+5. The Complete window.bbs API Helper (Copy-Paste Ready)
+6. BBS API Reference (Corrected Signatures)
+7. Event System Structure
+8. Utility Functions & Patterns
+9. Applet Architectures & Templates
+10. Advanced Patterns
+11. Best Practices & Common Pitfalls
+
+===============================================================================
+1. PROJECT OVERVIEW & PHILOSOPHY
+===============================================================================
+
+AXON BBS is a modern, anonymous, federated bulletin board system that enables
+secure communication and application sharing across a decentralized network.
+
+KEY CONCEPTS:
+
+- **Federation**: Multiple BBS nodes communicate via the BitSync protocol,
+  sharing messages and applications without a central authority.
+
+- **Anonymity**: Users are identified by cryptographic public keys (displayed
+  as short hashes) rather than real names or email addresses.
+
+- **Content Addressing**: All content (messages, files, applets) is stored
+  and referenced by its SHA-256 hash, ensuring integrity.
+
+- **Applets**: Single-file JavaScript applications that run in sandboxed
+  iframes, providing everything from chat rooms to 3D games.
+
+APPLET USE CASES:
+
+- Real-time chat and collaboration tools
+- Viewers for specialized file formats
+- Interactive games and simulations
+- Data visualization dashboards
+- Productivity tools (calculators, converters, etc.)
+- Educational demonstrations
+- Art and creative applications
+
+===============================================================================
+2. SECURITY MODEL & WHY SINGLE-FILE APPLETS MATTER
+===============================================================================
+
+THREAT MODEL:
+
+In a federated system where anyone can publish content to any node, we must
+assume that malicious actors will attempt to:
+
+1. Steal user credentials or private keys
+2. Access the parent page's DOM or localStorage
+3. Make unauthorized network requests to external servers
+4. Execute code that wasn't verified by the user
+5. Persist tracking mechanisms across sessions
+
+SECURITY MEASURES:
+
+✓ SANDBOXED EXECUTION
+  - Applets run in <iframe sandbox="allow-scripts allow-same-origin">
+  - No direct DOM access to parent page
+  - No access to cookies or localStorage outside the iframe
+  - Cannot navigate parent window
+
+✓ INTEGRITY VERIFICATION
+  - All applet code is hashed with SHA-256 before storage
+  - AppletRunner verifies hash before execution
+  - Any tampering renders the applet invalid
+  - Users see the hash in window.BBS_APPLET_CHECKSUM
+
+✓ NO EXTERNAL NETWORK ACCESS
+  - XMLHttpRequest and fetch() are blocked by sandbox
+  - All BBS communication goes through postMessage API
+  - External resources must be embedded or packaged
+
+✓ SINGLE-FILE REQUIREMENT
+  - Prevents code-splitting attacks
+  - Makes auditing feasible (one file to review)
+  - Simplifies integrity checking
+  - All dependencies must be embedded or declared
+
+WHY THIS MATTERS FOR AI CODE GENERATION:
+
+When generating applets, you MUST adhere to these constraints. Any violation
+will result in a non-functional or rejected applet. The templates in this
+guide are designed to work within these security boundaries.
+
+===============================================================================
+3. CORE PRINCIPLES (MANDATORY)
+===============================================================================
+
+All generated applets MUST adhere to the following principles:
+
+1. SINGLE-FILE ARCHITECTURE
+   - The entire applet (logic, styles, and embedded assets) must be contained
+     within a single JavaScript file.
+   - NO external .css or .js files are permitted.
+   - All HTML and CSS must be programmatically created and injected.
+   - Exception: Shared libraries loaded via required_libraries parameter.
+
+2. SANDBOXED EXECUTION
+   - Applets run in a secure <iframe>.
+   - NO direct DOM access to the parent page.
+   - NO network requests (fetch, XMLHttpRequest) to external domains.
+   - NO access to browser localStorage or cookies outside the iframe.
+
+3. ASYNCHRONOUS API
+   - All communication with the host BBS is asynchronous via window.bbs.
+   - All API calls MUST use await or .then().
+   - API is implemented via postMessage for security.
+
+4. DOM ROOT
+   - The applet MUST render all UI inside <div id="applet-root"></div>.
+   - It must NOT write to document.body directly (styles are OK).
+
+5. ROBUST ERROR HANDLING
+   - The entire applet script MUST be wrapped in try...catch.
+   - Any unrecoverable error must be caught and displayed gracefully.
+   - Use console.error() for debugging, but show user-friendly messages.
+
+6. WINDOW.BBS HELPER REQUIRED
+   - Every applet MUST include the complete window.bbs helper at the top.
+   - This establishes the postMessage bridge to the parent page.
+   - See Section 5 for the complete implementation.
+
+===============================================================================
+4. SYSTEM ENVIRONMENT & GLOBALS
+===============================================================================
+
+When your applet runs, the following globals are available:
+
+WINDOW GLOBALS:
+
+  window.BBS_APPLET_CHECKSUM (String)
+    - The SHA-256 hash of the applet code
+    - Useful for debugging or displaying version info
+
+  window.BBS_DEBUG_MODE (Boolean)
+    - true if the applet is running in debug mode
+    - Use this to enable/disable debug consoles
+    - Set by SysOp in applet configuration
+
+DOM STRUCTURE:
+
+  The iframe contains:
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>Applet Name</title>
+      <!-- Shared libraries loaded here -->
+      <script src="blob:...three.min.js"></script>
+      <script src="blob:...JSZip.js"></script>
+    </head>
+    <body>
+      <div id="applet-root"></div>
+      <script>
+        window.BBS_APPLET_CHECKSUM = '...';
+        window.BBS_DEBUG_MODE = false;
+      </script>
+      <script src="blob:...your-applet.js"></script>
+    </body>
+  </html>
+
+SHARED LIBRARIES:
+
+  If your applet requires large libraries (THREE.js, JSZip, etc.), request
+  them via the applet's parameters:
+
+  {
+    "required_libraries": ["three.min.js", "JSZip.js"]
+  }
+
+  These are loaded BEFORE your applet code executes. You can then use them
+  directly (e.g., new THREE.Scene(), new JSZip()).
+
+IMPORTANT: Libraries are loaded as separate <script> tags, so they are
+available globally. Do NOT try to embed them in your applet code.
+
+===============================================================================
+5. THE COMPLETE WINDOW.BBS API HELPER (COPY-PASTE READY)
+===============================================================================
+
+EVERY APPLET MUST START WITH THIS CODE:
+
+Copy this exactly at the beginning of your applet (before the main execution):
+
+--- START OF MANDATORY API HELPER ---
+
+// --- Start of Applet API Helper (MANDATORY) ---
+window.bbs = {
+  _callbacks: {},
+  _requestId: 0,
+  _handleMessage: function(event) {
+    const { command, payload, requestId, error } = event.data;
+    if (command && command.startsWith('response_') && this._callbacks[requestId]) {
+      const { resolve, reject } = this._callbacks[requestId];
+      if (error) { reject(new Error(error)); } else { resolve(payload); }
+      delete this._callbacks[requestId];
+    }
+  },
+  _postMessage: function(command, payload = {}) {
+    return new Promise((resolve, reject) => {
+      const requestId = this._requestId++;
+      this._callbacks[requestId] = { resolve, reject };
+      if (window.parent !== window) {
+        window.parent.postMessage({ command, payload, requestId }, '*');
+      } else {
+        console.warn("BBS API: Not running in a frame. Call will be simulated.");
+        // Fallback for local testing
+        if (command === 'getUserInfo') {
+          resolve({ username: 'test_user', nickname: 'Test User', pubkey: 'abc123' });
+        } else if (command === 'getAppletInfo') {
+          resolve({ id: 'test_applet', name: 'Test Applet', parameters: {} });
+        } else {
+          resolve({});
+        }
+      }
+    });
+  },
+  // Standard API
+  getUserInfo: function() { return this._postMessage('getUserInfo'); },
+  getData: function() { return this._postMessage('getData'); },
+  saveData: function(newData) { return this._postMessage('saveData', newData); },
+  // Advanced API
+  getAppletInfo: function() { return this._postMessage('getAppletInfo'); },
+  getAttachmentContext: function() { return this._postMessage('getAttachmentContext'); },
+  getAttachmentBlob: function(hash) { return this._postMessage('getAttachmentBlob', { hash }); },
+  // Real-Time Event API (CORRECTED SIGNATURES)
+  postEvent: function(eventData) { return this._postMessage('postEvent', eventData); },
+  readEvents: function() { return this._postMessage('readEvents'); },
+  // HTTP Fetch API (for BBS endpoints only)
+  fetch: function(url, options = {}) {
+    return this._postMessage('fetch', { url, options }).then(response => response);
+  }
+};
+window.addEventListener('message', (event) => window.bbs._handleMessage(event));
+// --- End of Applet API Helper ---
+
+--- END OF MANDATORY API HELPER ---
+
+===============================================================================
+6. BBS API REFERENCE (CORRECTED SIGNATURES)
+===============================================================================
+
+6.1. STANDARD API (User Data & Profile)
+----------------------------------------
+
+await bbs.getUserInfo()
+
+  Purpose: Fetches the current user's profile.
+
+  Returns: Promise<Object>
+
+  Structure:
+  {
+    username: String,        // User's username
+    nickname: String,        // Display name
+    pubkey: String,          // Short hash (16 chars) of public key
+    avatar_url: String,      // URL to avatar image
+    // Pattern: /media/avatars/default_cow_{pubkey}.png
+  }
+
+  Example:
+    const user = await bbs.getUserInfo();
+    console.log(`Welcome, ${user.nickname}!`);
+
+---
+
+await bbs.getData()
+
+  Purpose: Retrieves the user's private saved data for this specific applet.
+
+  Returns: Promise<Object|null>
+    - Returns the last object saved by saveData()
+    - Returns null if no data exists
+
+  Example:
+    const savedState = await bbs.getData();
+    if (savedState) {
+      console.log('Loaded saved game:', savedState);
+    }
+
+---
+
+await bbs.saveData(data)
+
+  Purpose: Saves a JSON-serializable object as this applet's data for the
+           current user. Overwrites any existing data.
+
+  Parameters:
+    data (Object): The data to save. Must be JSON-serializable.
+
+  Returns: Promise<void>
+
+  Example:
+    await bbs.saveData({
+      level: 5,
+      score: 1000,
+      lastPlayed: new Date().toISOString()
+    });
+
+---
+
+6.2. CONTEXT & ATTACHMENT API (Hybrid Applets)
+-----------------------------------------------
+
+await bbs.getAppletInfo()
+
+  Purpose: Fetches the applet's own configuration, including parameters set
+           by the SysOp (like asset package hashes, settings, etc.).
+
+  Returns: Promise<Object>
+
+  Structure:
+  {
+    id: String,              // Unique applet ID
+    name: String,            // Applet name
+    parameters: Object,      // Admin-configured parameters
+    is_debug_mode: Boolean   // Whether debug mode is enabled
+  }
+
+  Example:
+    const info = await bbs.getAppletInfo();
+    const assetHash = info.parameters.asset_package_hash;
+    if (assetHash) {
+      // Load asset package
+    }
+
+---
+
+await bbs.getAttachmentContext()
+
+  Purpose: Gets the context of an attachment if the applet was launched to
+           view a specific file.
+
+  Returns: Promise<Object|null>
+
+  Structure:
+  {
+    content_hash: String,    // Hash of the attached file
+    filename: String,        // Original filename
+    size: Number             // File size in bytes
+  }
+
+  Example:
+    const attachment = await bbs.getAttachmentContext();
+    if (attachment) {
+      const blob = await bbs.getAttachmentBlob(attachment.content_hash);
+      // Process the blob
+    }
+
+---
+
+await bbs.getAttachmentBlob(hash)
+
+  Purpose: Securely downloads and decrypts a file attachment from the BBS
+           network using its BitSync hash.
+
+  Parameters:
+    hash (String): The content hash (obtained from getAppletInfo or
+                   getAttachmentContext)
+
+  Returns: Promise<Blob>
+
+  Example:
+    const blob = await bbs.getAttachmentBlob(assetHash);
+    const arrayBuffer = await blob.arrayBuffer();
+    // Process the data
+
+---
+
+6.3. REAL-TIME EVENT BUS API (Multi-User Apps)
+-----------------------------------------------
+
+IMPORTANT: The signatures here are DIFFERENT from what was previously
+documented. Use these EXACT signatures.
+
+await bbs.postEvent(eventData)
+
+  Purpose: Posts a real-time event to the shared event bus associated with
+           the applet's message board. All users viewing the same applet will
+           receive this event when they poll.
+
+  Parameters:
+    eventData (Object): MUST have the following structure:
+    {
+      subject: String,       // REQUIRED: Event type/filter (e.g., 'AxonChat')
+      body: String           // REQUIRED: JSON stringified payload
+    }
+
+  Returns: Promise<void>
+
+  Example:
+    await bbs.postEvent({
+      subject: 'AxonChat',
+      body: JSON.stringify({
+        text: 'Hello, world!',
+        timestamp: new Date().toISOString()
+      })
+    });
+
+  COMMON MISTAKE: Do NOT use bbs.postEvent('AxonChat', data). That is wrong.
+
+---
+
+await bbs.readEvents()
+
+  Purpose: Reads ALL events from the event bus for this applet. Returns all
+           events that have been posted since the applet was deployed.
+
+  Parameters: NONE
+
+  Returns: Promise<Array<Object>>
+
+  Event Object Structure:
+  {
+    id: Number,              // Unique event ID (monotonically increasing)
+    subject: String,         // Event type/filter
+    body: String,            // The JSON stringified payload
+    author_nickname: String, // Nickname of the user who posted
+    author_display: String,  // Display name (can be bot/agent identifier)
+    pubkey: String,          // Short hash of author's public key
+    avatar_url: String,      // Author's avatar URL
+    display_time: String,    // Human-readable timestamp (user's timezone)
+    created_at: String       // ISO 8601 UTC timestamp
+  }
+
+  Example:
+    const events = await bbs.readEvents();
+
+    // Filter by subject
+    const chatEvents = events.filter(e => e.subject === 'AxonChat');
+
+    // Parse the body
+    chatEvents.forEach(event => {
+      const message = JSON.parse(event.body);
+      console.log(`${event.author_nickname}: ${message.text}`);
+    });
+
+  BEST PRACTICE: Track processed event IDs to avoid re-processing:
+
+    let processedIds = new Set();
+
+    async function poll() {
+      const events = await bbs.readEvents();
+      const newEvents = events.filter(e => !processedIds.has(e.id));
+
+      newEvents.forEach(event => {
+        processedIds.add(event.id);
+        // Process event
+      });
+    }
+
+    setInterval(poll, 3000); // Poll every 3 seconds
+
+---
+
+6.4. HTTP FETCH API (BBS Endpoints Only)
+-----------------------------------------
+
+await bbs.fetch(url, options)
+
+  Purpose: Makes HTTP requests to BBS endpoints (like /api/chat/post/).
+           This is NOT a general-purpose fetch - it only works with the
+           BBS backend.
+
+  Parameters:
+    url (String): The API endpoint (e.g., '/api/chat/post/')
+    options (Object): Fetch options
+      - method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+      - headers: Object with headers
+      - body: String (JSON stringified) or Object
+
+  Returns: Promise<Object> - The parsed response data
+
+  Example:
+    const response = await bbs.fetch('/api/chat/post/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: 'Hello from fetch!'
+      })
+    });
+
+===============================================================================
+7. EVENT SYSTEM STRUCTURE
+===============================================================================
+
+When working with real-time events (chat, multiplayer games, etc.), understand
+the complete structure:
+
+EVENT POSTING:
+--------------
+
+  await bbs.postEvent({
+    subject: 'MyAppSubject',
+    body: JSON.stringify({ /* your data */ })
+  });
+
+  - Subject is used for filtering (like a topic or channel)
+  - Body MUST be a string (use JSON.stringify for objects)
+  - The backend adds metadata (author, timestamp, etc.)
+
+EVENT READING:
+--------------
+
+  const events = await bbs.readEvents();
+
+  Returns ALL events for this applet. You must filter and track yourself.
+
+EVENT STRUCTURE:
+----------------
+
+  Each event in the returned array has:
+
+  {
+    id: 123,                          // Unique, auto-incrementing
+    subject: 'AxonChat',              // Your subject from postEvent
+    body: '{"text":"Hello"}',         // Your stringified data
+    author_nickname: 'Alice',         // Who posted it
+    author_display: 'Alice',          // Display name (or bot name)
+    pubkey: 'abc123def456',           // 16-char hash of author's key
+    avatar_url: '/media/avatars/...',
+    display_time: '3:45 PM',          // Pre-formatted for user's timezone
+    created_at: '2025-10-23T15:45:00Z' // ISO 8601 UTC
+  }
+
+TIMEZONE HANDLING:
+------------------
+
+  The backend automatically converts timestamps to the user's timezone.
+
+  - created_at: Always UTC (for sorting/storage)
+  - display_time: User's local time (for display)
+
+  The user's timezone is detected automatically via:
+    Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  You typically want to display display_time to the user.
+
+BOT/AGENT DETECTION:
+--------------------
+
+  You can identify bot-generated events by checking author_display:
+
+  if (event.author_display === 'overlord_agent') {
+    // This is a bot/agent event
+  }
+
+POLLING BEST PRACTICES:
+-----------------------
+
+  1. Poll every 2-5 seconds (not faster - respect the server)
+  2. Track processed IDs with a Set to avoid duplicates
+  3. Sort events by created_at if order matters
+  4. Filter by subject immediately
+  5. Handle parsing errors gracefully (body might be invalid JSON)
+
+  Example:
+
+    let processedIds = new Set();
+
+    async function pollForEvents() {
+      try {
+        const events = await bbs.readEvents();
+        const myEvents = events.filter(e =>
+          e.subject === 'MySubject' && !processedIds.has(e.id)
+        );
+
+        // Sort chronologically
+        myEvents.sort((a, b) =>
+          new Date(a.created_at) - new Date(b.created_at)
+        );
+
+        for (const event of myEvents) {
+          processedIds.add(event.id);
+          try {
+            const data = JSON.parse(event.body);
+            handleEvent(event, data);
+          } catch (e) {
+            console.error('Failed to parse event body:', e);
+          }
+        }
+      } catch (e) {
+        console.error('Polling error:', e);
+      }
+    }
+
+    setInterval(pollForEvents, 3000);
+
+===============================================================================
+8. UTILITY FUNCTIONS & PATTERNS
+===============================================================================
+
+8.1. DEBUG CONSOLE PATTERN
+---------------------------
+
+If BBS_DEBUG_MODE is enabled, show a draggable debug console:
+
+function debugLog(message) {
+  if (window.BBS_DEBUG_MODE !== true) return;
+  const debugDialog = document.getElementById('debug-dialog');
+  if (!debugDialog) return;
+  const logEntry = document.createElement('div');
+  const timestamp = new Date().toLocaleTimeString();
+  logEntry.textContent = `[${timestamp}] ${message}`;
+  debugDialog.appendChild(logEntry);
+  debugDialog.scrollTop = debugDialog.scrollHeight;
+}
+
+HTML:
+<div id="debug-dialog" style="display: none; position: absolute; bottom: 10px;
+     right: 10px; width: 350px; height: 250px; background-color: rgba(0,0,0,0.9);
+     border: 1px solid #4a5568; border-radius: 5px; color: #9AE6B4;
+     font-family: monospace; font-size: 12px; overflow-y: scroll;
+     padding-top: 25px; z-index: 1000;">
+  <div id="debug-header" style="position: absolute; top: 0; left: 0; right: 0;
+       background-color: #4a5568; color: white; font-weight: bold; padding: 3px;
+       cursor: move; user-select: none; text-align: center;">
+    DEBUG CONSOLE
+  </div>
+</div>
+
+Enable and make draggable:
+if (window.BBS_DEBUG_MODE === true) {
+  const debugDialog = document.getElementById('debug-dialog');
+  debugDialog.style.display = 'block';
+
+  const debugHeader = document.getElementById('debug-header');
+  let isDragging = false, offsetX, offsetY;
+
+  debugHeader.onmousedown = (e) => {
+    isDragging = true;
+    offsetX = e.clientX - debugDialog.offsetLeft;
+    offsetY = e.clientY - debugDialog.offsetTop;
+  };
+
+  document.onmousemove = (e) => {
+    if (isDragging) {
+      debugDialog.style.left = `${e.clientX - offsetX}px`;
+      debugDialog.style.top = `${e.clientY - offsetY}px`;
+      debugDialog.style.bottom = 'auto';
+      debugDialog.style.right = 'auto';
+    }
+  };
+
+  document.onmouseup = () => { isDragging = false; };
+}
+
+---
+
+8.2. COMPUTE SHORT ID FROM PUBKEY
+----------------------------------
+
+To generate a short user ID from a public key (for deduplication, etc.):
+
+async function computeShortId(pubkey) {
+  if (!pubkey) return null;
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pubkey);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex.substring(0, 16); // 16-character hex string
+}
+
+Usage:
+const shortId = await computeShortId(userInfo.pubkey);
+console.log(shortId); // e.g., "a3b4c5d6e7f8g9h0"
+
+---
+
+8.3. BASE64 TO ARRAYBUFFER
+---------------------------
+
+For embedding binary data (models, textures) as Base64:
+
+function base64ToArrayBuffer(base64) {
+  const binary_string = window.atob(base64);
+  const len = binary_string.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary_string.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+Usage:
+const MODEL_BASE64 = 'Z2xURgIAAAAU...'; // Truncated for brevity
+const arrayBuffer = base64ToArrayBuffer(MODEL_BASE64);
+// Use with THREE.GLTFLoader, etc.
+
+---
+
+8.4. LOAD EXTERNAL LIBRARY DYNAMICALLY
+---------------------------------------
+
+If you need to load a library from CDN (when required_libraries doesn't work):
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = url;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureThreeJsIsLoaded() {
+  if (typeof THREE !== 'undefined') return;
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+}
+
+Usage:
+await ensureThreeJsIsLoaded();
+const scene = new THREE.Scene();
+
+---
+
+8.5. PROGRESS CALLBACK PATTERN
+-------------------------------
+
+For long-running operations (like loading assets), use a callback to update UI:
+
+async function loadAssets(progressCallback) {
+  progressCallback({ status: 'Starting download...', percent: 0 });
+
+  // Step 1
+  await someOperation();
+  progressCallback({ status: 'Downloading...', percent: 25 });
+
+  // Step 2
+  await anotherOperation();
+  progressCallback({ status: 'Processing...', percent: 50 });
+
+  // Step 3
+  await finalOperation();
+  progressCallback({ status: 'Complete!', percent: 100 });
+}
+
+Usage:
+const progressbar = document.getElementById('progressbar');
+const statusText = document.getElementById('status');
+
+await loadAssets((progress) => {
+  statusText.textContent = progress.status;
+  progressbar.style.width = `${progress.percent}%`;
+});
+
+===============================================================================
+9. APPLET ARCHITECTURES & TEMPLATES
+===============================================================================
+
+Choose one of the following architectures based on your applet's needs.
+
+9.1. ARCHITECTURE 1: SIMPLE APPLET (ALL-IN-ONE)
+------------------------------------------------
+
+Use Case: Small apps, tools, UI-based applets (like chat), or simple viewers.
+
+Rule: All assets (images, small files) MUST be Base64-encoded and embedded
+      directly in the script.
+
+Template:
+
+/*
+ * Axon BBS Applet: Simple Template
+ * All logic, styles, and assets are in this one file.
+ */
+
+// --- Start of Applet API Helper (MANDATORY) ---
+window.bbs = {
+  _callbacks: {},
+  _requestId: 0,
+  _handleMessage: function(event) {
+    const { command, payload, requestId, error } = event.data;
+    if (command && command.startsWith('response_') && this._callbacks[requestId]) {
+      const { resolve, reject } = this._callbacks[requestId];
+      if (error) { reject(new Error(error)); } else { resolve(payload); }
+      delete this._callbacks[requestId];
+    }
+  },
+  _postMessage: function(command, payload = {}) {
+    return new Promise((resolve, reject) => {
+      const requestId = this._requestId++;
+      this._callbacks[requestId] = { resolve, reject };
+      if (window.parent !== window) {
+        window.parent.postMessage({ command, payload, requestId }, '*');
+      } else {
+        console.warn("BBS API: Not running in a frame.");
+        resolve({});
+      }
+    });
+  },
+  getUserInfo: function() { return this._postMessage('getUserInfo'); },
+  getData: function() { return this._postMessage('getData'); },
+  saveData: function(newData) { return this._postMessage('saveData', newData); },
+  getAppletInfo: function() { return this._postMessage('getAppletInfo'); },
+  getAttachmentBlob: function(hash) { return this._postMessage('getAttachmentBlob', { hash }); },
+  postEvent: function(eventData) { return this._postMessage('postEvent', eventData); },
+  readEvents: function() { return this._postMessage('readEvents'); },
+  fetch: function(url, options = {}) {
+    return this._postMessage('fetch', { url, options });
+  }
+};
+window.addEventListener('message', (event) => window.bbs._handleMessage(event));
+// --- End of Applet API Helper ---
+
+(async function() {
+    try {
+        const root = document.getElementById('applet-root');
+        if (!root) {
+            throw new Error("Applet root not found.");
+        }
+
+        // --- 1. STYLES (Inject as <style> tag) ---
+        const styles = `
+            .simple-app-container {
+                padding: 15px;
+                background: #f4f4f4;
+                border-radius: 8px;
+                color: #333;
+                font-family: sans-serif;
+            }
+            .simple-app-header {
+                font-size: 24px;
+                color: #000;
+            }
+            .simple-app-img {
+                width: 50px;
+                height: 50px;
+                border: 2px solid #ccc;
+            }
+        `;
+        const styleSheet = document.createElement("style");
+        styleSheet.type = "text/css";
+        styleSheet.innerText = styles;
+        document.head.appendChild(styleSheet);
+
+        // --- 2. ASSETS (Base64 Encoded) ---
+        // Example: 1x1 red pixel PNG
+        const base64Logo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+
+        // --- 3. GET DATA (Async API call) ---
+        const userInfo = await window.bbs.getUserInfo();
+        const savedData = await window.bbs.getData();
+
+        // --- 4. RENDER UI ---
+        root.innerHTML = `
+            <div class="simple-app-container">
+                <h1 class="simple-app-header">Hello, ${userInfo.nickname}!</h1>
+                <p>Your User ID: ${userInfo.pubkey}</p>
+                <p>Saved data:</p>
+                <pre>${JSON.stringify(savedData, null, 2) || 'No data saved.'}</pre>
+                <img src="${base64Logo}" alt="Logo" class="simple-app-img" />
+                <button id="save-btn">Save Timestamp</button>
+            </div>
+        `;
+
+        // --- 5. ADD LOGIC ---
+        document.getElementById('save-btn').onclick = async () => {
+            try {
+                await window.bbs.saveData({
+                    last_visit: new Date().toISOString()
+                });
+                alert('Data saved!'); // Use custom modal in production
+                window.location.reload();
+            } catch (err) {
+                console.error("Save error:", err);
+                root.innerText = `Failed to save data: ${err.message}`;
+            }
+        };
+
+    } catch (err) {
+        // --- CRITICAL: Top-level error handling ---
+        console.error("Applet failed to load:", err);
+        const root = document.getElementById('applet-root');
+        if (root) {
+            root.innerHTML = `<div style="color: red; padding: 20px;">
+                <strong>Applet Error:</strong><br/>
+                ${err.message}
+            </div>`;
+        }
+    }
+})();
+
+---
+
+9.2. ARCHITECTURE 2: HYBRID APPLET (LOGIC + ASSETS)
+----------------------------------------------------
+
+Use Case: Large apps, games (like HexGL), or apps with large dependencies
+          (e.g., THREE.js assets, fonts, textures).
+
+Rule: The applet script is a loader. It downloads and unpacks an asset
+      package (.zip) at runtime.
+
+Requirements:
+  - Use required_libraries: ["JSZip.js"] in applet parameters
+  - OR embed JSZip source directly (not recommended - too large)
+
+Template:
+
+/*
+ * Axon BBS Applet: Hybrid Loader Template
+ * This script loads and runs a large application from a .zip asset package.
+ */
+
+// --- Include the window.bbs helper here (see Architecture 1) ---
+// [... window.bbs implementation ...]
+
+(async function() {
+    const root = document.getElementById('applet-root');
+    if (!root) {
+        throw new Error("Applet root not found.");
+    }
+
+    // Helper function to show loading progress
+    function showProgress(message, percent) {
+        root.innerHTML = `<div style="padding: 20px; font-family: sans-serif; text-align: center;">
+            <strong>Loading...</strong><br/>
+            ${message}<br/>
+            <div style="width: 100%; max-width: 400px; height: 20px; border: 2px solid #ccc; margin: 10px auto;">
+                <div style="width: ${percent}%; height: 100%; background-color: #4CAF50;"></div>
+            </div>
+        </div>`;
+    }
+
+    try {
+        showProgress("Fetching applet configuration...", 5);
+
+        // --- 1. Get Asset Package Hash ---
+        const info = await window.bbs.getAppletInfo();
+        const assetHash = info.parameters.asset_package_hash;
+
+        if (!assetHash) {
+            throw new Error("Asset package hash not found in applet configuration. Please contact the SysOp.");
+        }
+
+        // --- 2. Download Asset Package (.zip) ---
+        showProgress(`Downloading assets (Hash: ${assetHash.substring(0, 8)}...)`, 15);
+        const assetBlob = await window.bbs.getAttachmentBlob(assetHash);
+
+        // --- 3. Unzip Assets in Memory ---
+        showProgress("Decompressing assets...", 40);
+
+        if (typeof JSZip === 'undefined') {
+            throw new Error("JSZip library is not loaded. Add 'JSZip.js' to required_libraries.");
+        }
+
+        const zip = await JSZip.loadAsync(assetBlob);
+        const assetUrls = {};
+
+        const allFiles = Object.keys(zip.files);
+        const totalFiles = allFiles.filter(name => !zip.files[name].dir).length;
+        let filesProcessed = 0;
+
+        for (let i = 0; i < allFiles.length; i++) {
+            const filename = allFiles[i];
+            if (zip.files[filename].dir) continue; // Skip directories
+
+            const fileBlob = await zip.files[filename].async("blob");
+            assetUrls[filename] = URL.createObjectURL(fileBlob);
+
+            filesProcessed++;
+            const progress = 40 + Math.round((filesProcessed / totalFiles) * 50);
+            showProgress(`Loading: ${filename}`, progress);
+        }
+
+        // --- 4. Bootstrap Main Application ---
+        showProgress("Starting application...", 95);
+
+        // Option A: Load a main script from the zip
+        const mainScriptUrl = assetUrls['app.js'];
+        if (mainScriptUrl) {
+            // Make assets available globally
+            window.ASSET_URLS = assetUrls;
+
+            const script = document.createElement('script');
+            script.src = mainScriptUrl;
+            script.onload = () => {
+                console.log("Main application script loaded successfully.");
+            };
+            script.onerror = () => {
+                throw new Error("Failed to execute main app script.");
+            };
+            document.body.appendChild(script);
+        } else {
+            // Option B: Initialize app directly
+            initializeApp(assetUrls);
+        }
+
+    } catch (err) {
+        console.error("Hybrid applet failed to load:", err);
+        root.innerHTML = `<div style="color: red; padding: 20px;">
+            <strong>Applet Error:</strong><br/>
+            ${err.message}
+        </div>`;
+    }
+})();
+
+function initializeApp(assets) {
+    // Your application logic here
+    // Access assets via: assets['filename.png']
+
+    const root = document.getElementById('applet-root');
+    root.innerHTML = `
+        <div style="padding: 20px;">
+            <h1>App Loaded!</h1>
+            <p>Assets loaded: ${Object.keys(assets).length}</p>
+        </div>
+    `;
+}
+
+---
+
+9.3. ARCHITECTURE 3: REAL-TIME APPLET (CHAT / MULTIPLAYER)
+-----------------------------------------------------------
+
+Use Case: Chat rooms, multi-user games, collaborative tools.
+
+Rule: MUST use the Simple Applet Architecture (all-in-one).
+Rule: MUST use bbs.postEvent and bbs.readEvents in a polling loop.
+
+Template:
+
+/*
+ * Axon BBS Applet: Real-Time Chat Template
+ * Uses the Event Bus API (postEvent/readEvents).
+ */
+
+// --- Include the window.bbs helper here (see Architecture 1) ---
+// [... window.bbs implementation ...]
+
+(async function() {
+    try {
+        const root = document.getElementById('applet-root');
+        if (!root) throw new Error("Applet root not found.");
+
+        const APP_SUBJECT = 'MyChatApp'; // Unique subject for this chat
+        let processedEventIds = new Set();
+        const userInfo = await window.bbs.getUserInfo();
+
+        // --- 1. RENDER STATIC UI ---
+        const styles = `
+            #chat-container {
+                display: flex;
+                flex-direction: column;
+                height: 100vh;
+                font-family: sans-serif;
+            }
+            #chat-messages {
+                flex: 1;
+                overflow-y: scroll;
+                padding: 10px;
+                border: 1px solid #ccc;
+            }
+            .chat-message {
+                margin-bottom: 10px;
+                padding: 5px;
+                background: #f0f0f0;
+                border-radius: 5px;
+            }
+            .chat-message .user {
+                font-weight: bold;
+                color: #007bff;
+            }
+            .chat-message .timestamp {
+                color: #999;
+                font-size: 0.8em;
+            }
+            #chat-input-area {
+                display: flex;
+                padding: 10px;
+                border-top: 1px solid #ccc;
+            }
+            #chat-input {
+                flex: 1;
+                padding: 5px;
+                font-size: 1em;
+            }
+            #send-btn {
+                padding: 5px 15px;
+                margin-left: 10px;
+                font-size: 1em;
+            }
+        `;
+        const styleSheet = document.createElement('style');
+        styleSheet.innerText = styles;
+        document.head.appendChild(styleSheet);
+
+        root.innerHTML = `
+            <div id="chat-container">
+                <div id="chat-messages"></div>
+                <div id="chat-input-area">
+                    <input type="text" id="chat-input" placeholder="Type a message..." />
+                    <button id="send-btn">Send</button>
+                </div>
+            </div>
+        `;
+
+        const messagesDiv = document.getElementById('chat-messages');
+        const input = document.getElementById('chat-input');
+
+        // --- 2. SEND MESSAGE LOGIC ---
+        async function sendMessage() {
+            const message = input.value.trim();
+            if (!message) return;
+            input.value = '';
+
+            try {
+                await window.bbs.postEvent({
+                    subject: APP_SUBJECT,
+                    body: JSON.stringify({
+                        text: message,
+                        timestamp: new Date().toISOString()
+                    })
+                });
+            } catch (err) {
+                console.error("Failed to send message:", err);
+                alert("Failed to send message. Please try again.");
+            }
+        }
+
+        document.getElementById('send-btn').onclick = sendMessage;
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // --- 3. RENDER MESSAGES ---
+        function renderMessages(messages) {
+            messages.forEach(event => {
+                const msgData = JSON.parse(event.body);
+                const msgEl = document.createElement('div');
+                msgEl.className = 'chat-message';
+                msgEl.innerHTML = `
+                    <span class="timestamp">${event.display_time}</span>
+                    <span class="user">${event.author_nickname}</span>
+                    <div>${msgData.text}</div>
+                `;
+                messagesDiv.appendChild(msgEl);
+            });
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // --- 4. POLL LOOP FOR NEW MESSAGES ---
+        async function pollForEvents() {
+            try {
+                const events = await window.bbs.readEvents();
+
+                // Filter by subject and exclude already processed
+                const newMessages = events.filter(e =>
+                    e.subject === APP_SUBJECT && !processedEventIds.has(e.id)
+                );
+
+                if (newMessages.length > 0) {
+                    // Sort chronologically
+                    newMessages.sort((a, b) =>
+                        new Date(a.created_at) - new Date(b.created_at)
+                    );
+
+                    // Mark as processed
+                    newMessages.forEach(e => processedEventIds.add(e.id));
+
+                    // Render
+                    renderMessages(newMessages);
+                }
+            } catch (err) {
+                console.error("Poll error:", err);
+            }
+        }
+
+        // --- 5. START POLLING ---
+        pollForEvents(); // Initial poll
+        setInterval(pollForEvents, 3000); // Poll every 3 seconds
+
+    } catch (err) {
+        console.error("Chat applet failed to load:", err);
+        const root = document.getElementById('applet-root');
+        if (root) {
+            root.innerHTML = `<div style="color: red; padding: 20px;">
+                <strong>Applet Error:</strong><br/>
+                ${err.message}
+            </div>`;
+        }
+    }
+})();
+
+===============================================================================
+10. ADVANCED PATTERNS
+===============================================================================
+
+10.1. THREE.JS INTEGRATION
+---------------------------
+
+For 3D applications (games, visualizations):
+
+STEP 1: Add THREE.js to required_libraries
+  In applet parameters:
+  {
+    "required_libraries": ["three.min.js"]
+  }
+
+STEP 2: Verify THREE.js is loaded
+  if (typeof THREE === 'undefined') {
+    throw new Error("THREE.js is not loaded.");
+  }
+
+STEP 3: Create a basic scene
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.getElementById('applet-root').appendChild(renderer.domElement);
+
+  const geometry = new THREE.BoxGeometry();
+  const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+  const cube = new THREE.Mesh(geometry, material);
+  scene.add(cube);
+
+  camera.position.z = 5;
+
+  function animate() {
+    requestAnimationFrame(animate);
+    cube.rotation.x += 0.01;
+    cube.rotation.y += 0.01;
+    renderer.render(scene, camera);
+  }
+
+  animate();
+
+STEP 4: Handle window resize
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+LOADING MODELS FROM ASSET PACKAGE:
+  If you have .gltf or .glb models in your asset package:
+
+  const loader = new THREE.GLTFLoader();
+  const modelBlob = await bbs.getAttachmentBlob(modelHash);
+  const modelUrl = URL.createObjectURL(modelBlob);
+
+  loader.load(modelUrl, (gltf) => {
+    scene.add(gltf.scene);
+  }, undefined, (error) => {
+    console.error('Error loading model:', error);
+  });
+
+---
+
+10.2. CANVAS 2D GRAPHICS
+-------------------------
+
+For custom 2D rendering (maps, gauges, charts):
+
+HTML:
+  <canvas id="my-canvas" width="800" height="600"></canvas>
+
+JAVASCRIPT:
+  const canvas = document.getElementById('my-canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Draw a rectangle
+  ctx.fillStyle = '#00ff00';
+  ctx.fillRect(10, 10, 100, 100);
+
+  // Draw a circle
+  ctx.beginPath();
+  ctx.arc(200, 200, 50, 0, Math.PI * 2);
+  ctx.fillStyle = '#ff0000';
+  ctx.fill();
+
+  // Draw text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '20px Arial';
+  ctx.fillText('Hello, Axon BBS!', 50, 50);
+
+ANIMATED GAUGE EXAMPLE:
+  function drawGauge(value, max) {
+    const canvas = document.getElementById('gauge-canvas');
+    const ctx = canvas.getContext('2d');
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const radius = 80;
+    const percent = value / max;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Background arc
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, Math.PI, 2 * Math.PI);
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 10;
+    ctx.stroke();
+
+    // Foreground arc (value)
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, Math.PI, Math.PI + (percent * Math.PI));
+    ctx.strokeStyle = `hsl(${(1 - percent) * 120}, 80%, 50%)`;
+    ctx.lineWidth = 10;
+    ctx.stroke();
+
+    // Value text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '30px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(Math.round(value), centerX, centerY + 10);
+  }
+
+  drawGauge(75, 100); // 75 out of 100
+
+---
+
+10.3. DYNAMIC CSS FROM ASSETS
+------------------------------
+
+If your asset package includes fonts or background images:
+
+async function loadAssets() {
+  const info = await bbs.getAppletInfo();
+  const assetHash = info.parameters.asset_package_hash;
+  const blob = await bbs.getAttachmentBlob(assetHash);
+  const zip = await JSZip.loadAsync(blob);
+
+  const assets = {};
+  for (const filename in zip.files) {
+    if (zip.files[filename].dir) continue;
+    const fileBlob = await zip.files[filename].async("blob");
+    assets[filename] = URL.createObjectURL(fileBlob);
+  }
+
+  // Inject CSS with asset URLs
+  const cssContent = `
+    @font-face {
+      font-family: 'CustomFont';
+      src: url('${assets['font.woff']}') format('woff');
+    }
+    body {
+      background-image: url('${assets['background.png']}');
+      font-family: 'CustomFont', sans-serif;
+    }
+  `;
+
+  const styleTag = document.createElement('style');
+  styleTag.appendChild(document.createTextNode(cssContent));
+  document.head.appendChild(styleTag);
+
+  return assets;
+}
+
+---
+
+10.4. EMBEDDING BASE64 MODELS
+------------------------------
+
+For small 3D models or images, embed them as Base64:
+
+// Example: GLTF model as Base64
+const DRONE_MODEL_BASE64 = 'Z2xURgIAAAAUAgAA+FwAAEFRU0gBAAAAART/...'; // Truncated
+
+function base64ToArrayBuffer(base64) {
+  const binary_string = window.atob(base64);
+  const len = binary_string.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary_string.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+// Use with THREE.GLTFLoader
+const loader = new THREE.GLTFLoader();
+const modelData = base64ToArrayBuffer(DRONE_MODEL_BASE64);
+
+loader.parse(modelData, '', (gltf) => {
+  scene.add(gltf.scene);
+}, (error) => {
+  console.error('Error loading model:', error);
+});
+
+---
+
+10.5. CUSTOM MODAL DIALOGS
+---------------------------
+
+Instead of alert(), use custom modals:
+
+HTML:
+  <div id="custom-modal" style="display: none; position: fixed; top: 0; left: 0;
+       width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999;
+       align-items: center; justify-content: center;">
+    <div style="background: #fff; padding: 20px; border-radius: 8px; max-width: 400px;">
+      <p id="modal-message"></p>
+      <button id="modal-ok">OK</button>
+    </div>
+  </div>
+
+JAVASCRIPT:
+  function showModal(message) {
+    const modal = document.getElementById('custom-modal');
+    const messageEl = document.getElementById('modal-message');
+    messageEl.textContent = message;
+    modal.style.display = 'flex';
+  }
+
+  document.getElementById('modal-ok').onclick = () => {
+    document.getElementById('custom-modal').style.display = 'none';
+  };
+
+  // Usage
+  showModal('Your data has been saved!');
+
+CONFIRM DIALOG:
+  function showConfirm(message, onConfirm) {
+    const modal = document.getElementById('confirm-modal');
+    const messageEl = document.getElementById('confirm-message');
+    messageEl.textContent = message;
+    modal.style.display = 'flex';
+
+    document.getElementById('confirm-yes').onclick = () => {
+      modal.style.display = 'none';
+      onConfirm();
+    };
+
+    document.getElementById('confirm-no').onclick = () => {
+      modal.style.display = 'none';
+    };
+  }
+
+  // Usage
+  showConfirm('Are you sure you want to delete this?', () => {
+    console.log('User confirmed');
+  });
+
+===============================================================================
+11. BEST PRACTICES & COMMON PITFALLS
+===============================================================================
+
+DO:
+---
+✓ Always include the complete window.bbs helper at the start
+✓ Wrap everything in try...catch
+✓ Use await for all bbs API calls
+✓ Track processed event IDs with a Set
+✓ Poll events every 2-5 seconds (not faster)
+✓ Display user-friendly error messages
+✓ Use debugLog() for diagnostics when BBS_DEBUG_MODE is true
+✓ Embed small assets as Base64
+✓ Use required_libraries for large dependencies
+✓ Validate data before rendering (check for null/undefined)
+✓ Sort events by created_at before processing
+✓ Use display_time for user-facing timestamps
+
+DON'T:
+------
+✗ Don't write to document.body (use #applet-root)
+✗ Don't use alert() in production (use custom modals)
+✗ Don't assume data exists (always check for null)
+✗ Don't poll faster than 2 seconds
+✗ Don't forget to stringify body in postEvent
+✗ Don't use old API signatures (subject, lastId)
+✗ Don't embed large libraries (>500KB) - use required_libraries
+✗ Don't access parent window directly
+✗ Don't make external network requests
+✗ Don't use localStorage (it's sandboxed anyway)
+✗ Don't parse event.body without try...catch
+✗ Don't forget to filter events by subject
+
+COMMON MISTAKES:
+----------------
+
+1. WRONG: bbs.postEvent('AxonChat', data)
+   RIGHT: bbs.postEvent({ subject: 'AxonChat', body: JSON.stringify(data) })
+
+2. WRONG: bbs.readEvents('AxonChat', lastId)
+   RIGHT: bbs.readEvents() then filter by subject
+
+3. WRONG: const msg = event.payload;
+   RIGHT: const msg = JSON.parse(event.body);
+
+4. WRONG: Writing directly to document.body
+   RIGHT: const root = document.getElementById('applet-root');
+
+5. WRONG: Using fetch() directly
+   RIGHT: Using bbs.fetch() for BBS endpoints
+
+6. WRONG: Assuming userInfo.nickname exists
+   RIGHT: userInfo.nickname || userInfo.username || 'Unknown'
+
+7. WRONG: Not tracking processed event IDs
+   RIGHT: let processedIds = new Set(); processedIds.add(event.id);
+
+8. WRONG: Displaying created_at directly
+   RIGHT: Display event.display_time (pre-formatted for user's timezone)
+
+DEBUGGING TIPS:
+---------------
+
+1. Enable debug mode in applet config to see debug console
+2. Use debugLog() liberally during development
+3. Check browser console for postMessage errors
+4. Verify window.bbs is defined before calling APIs
+5. Log the full event object to understand structure
+6. Test with multiple users/browsers for real-time features
+7. Check that required_libraries are actually loading
+
+PERFORMANCE TIPS:
+-----------------
+
+1. Minimize DOM manipulation (batch updates)
+2. Use requestAnimationFrame for animations
+3. Debounce user input events
+4. Lazy-load assets when possible
+5. Reuse canvas contexts (don't recreate)
+6. Use CSS for simple animations (not JS)
+7. Limit polling frequency to 2-5 seconds
+8. Clean up event listeners on unmount
+
+===============================================================================
+                              END OF GUIDE
+===============================================================================
+
+For questions, issues, or contributions, please refer to the Axon BBS
+documentation or contact your SysOp.
+
+This guide is designed to enable AI-assisted generation of secure, functional
+applets on the first attempt. Follow the templates and patterns exactly for
+best results.
+
+VERSION HISTORY:
+- v2.0 (2025-10-23): Complete rewrite with corrected API signatures, real
+                     working examples, utility functions, and comprehensive
+                     coverage of all patterns used in production applets.
+- v1.0 (2025-10-22): Initial version with basic templates.
+
+===============================================================================
