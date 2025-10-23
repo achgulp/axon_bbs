@@ -250,6 +250,11 @@ LOGGING = {
             'level': 'INFO',       # Show admin actions like rekey operations
             'propagate': False,
         },
+        'core.admin': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',       # Show admin actions like rekey operations
+            'propagate': False,
+        },
         'applets': {
             'handlers': ['console', 'file'],
             'level': 'WARNING',

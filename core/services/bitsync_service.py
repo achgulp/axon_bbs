@@ -48,16 +48,82 @@ class BitSyncService:
     def are_all_chunks_local(self, manifest: dict) -> bool:
         if not manifest or 'chunk_hashes' not in manifest:
             return False
-        
+
         content_hash = manifest.get('content_hash')
         num_chunks = len(manifest.get('chunk_hashes', []))
-        
+
         for i in range(num_chunks):
             chunk_path = self.get_chunk_path(content_hash, i)
             if not os.path.exists(chunk_path):
                 return False
-        
+
         return True
+
+    def get_manifest_cache_path(self, content_hash: str) -> str:
+        """Returns the path where a manifest is cached alongside its chunks."""
+        return os.path.join(self.chunk_storage_path, content_hash, '.manifest')
+
+    def save_manifest_cache(self, manifest: dict):
+        """Saves a manifest to disk alongside its chunks for rekey detection."""
+        content_hash = manifest.get('content_hash')
+        if not content_hash:
+            return
+
+        manifest_path = self.get_manifest_cache_path(content_hash)
+        os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
+
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f)
+
+    def load_manifest_cache(self, content_hash: str) -> dict | None:
+        """Loads a cached manifest from disk."""
+        manifest_path = self.get_manifest_cache_path(content_hash)
+
+        if not os.path.exists(manifest_path):
+            return None
+
+        try:
+            with open(manifest_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load cached manifest for {content_hash[:10]}: {e}")
+            return None
+
+    def detect_and_clear_rekeyed_chunks(self, new_manifest: dict) -> bool:
+        """
+        Detects if content has been rekeyed by comparing encryption IVs.
+        If a rekey is detected, clears the old cached chunks.
+
+        Returns True if chunks were cleared, False otherwise.
+        """
+        content_hash = new_manifest.get('content_hash')
+        if not content_hash:
+            logger.debug(f"detect_and_clear_rekeyed_chunks: No content_hash in manifest")
+            return False
+
+        # Load the cached manifest
+        cached_manifest = self.load_manifest_cache(content_hash)
+        if not cached_manifest:
+            logger.debug(f"detect_and_clear_rekeyed_chunks: No cached manifest found for {content_hash[:10]}...")
+            return False
+
+        # Compare encryption IVs - different IV means content was rekeyed
+        cached_iv = cached_manifest.get('encryption_iv')
+        new_iv = new_manifest.get('encryption_iv')
+
+        logger.debug(f"detect_and_clear_rekeyed_chunks for {content_hash[:10]}...: cached_iv={cached_iv[:20] if cached_iv else None}... new_iv={new_iv[:20] if new_iv else None}...")
+
+        if cached_iv != new_iv:
+            # Rekey detected! Clear the old chunks
+            chunk_dir = os.path.join(self.chunk_storage_path, content_hash)
+            if os.path.exists(chunk_dir):
+                import shutil
+                shutil.rmtree(chunk_dir)
+                logger.info(f"Rekey detected for {content_hash[:10]}... (IV changed). Cleared stale cached chunks.")
+                return True
+
+        logger.debug(f"detect_and_clear_rekeyed_chunks: IVs match, no rekey detected for {content_hash[:10]}...")
+        return False
 
     def _load_local_private_key(self):
         try:

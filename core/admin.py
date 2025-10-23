@@ -231,11 +231,66 @@ class TrustedInstanceAdmin(admin.ModelAdmin):
             traceback.print_exc()
     clone_full_bbs.short_description = "Clone full BBS from peer (config + applets)"
 
+@admin.action(description='Rekey selected file attachments')
+def rekey_file_attachments(modeladmin, request, queryset):
+    """Re-encrypts file attachments with new keys for federation sync"""
+    import logging
+    logger = logging.getLogger('core.admin')
+
+    if not service_manager.bitsync_service:
+        from core.services.bitsync_service import BitSyncService
+        service_manager.bitsync_service = BitSyncService()
+
+    if not service_manager.sync_service:
+        from core.services.sync_service import SyncService
+        service_manager.sync_service = SyncService()
+
+    success_count = 0
+    error_count = 0
+
+    for attachment in queryset:
+        try:
+            if not attachment.metadata_manifest:
+                logger.warning(f"Skipping {attachment.filename}: No manifest")
+                continue
+
+            # Decrypt existing content
+            decrypted_content = service_manager.sync_service.get_decrypted_content(attachment.metadata_manifest)
+
+            if not decrypted_content:
+                logger.error(f"Failed to decrypt {attachment.filename}")
+                error_count += 1
+                continue
+
+            # Parse the JSON
+            file_data = json.loads(decrypted_content)
+
+            # Create new manifest with same content
+            old_hash = attachment.metadata_manifest.get('content_hash', 'N/A')[:8]
+            content_hash, new_manifest = service_manager.bitsync_service.create_encrypted_content(file_data)
+            new_hash = content_hash[:8]
+
+            # Update attachment
+            attachment.metadata_manifest = new_manifest
+            attachment.save()
+
+            success_count += 1
+            logger.info(f"Rekeyed attachment '{attachment.filename}': {old_hash} → {new_hash}")
+
+        except Exception as e:
+            logger.error(f"Failed to rekey {attachment.filename}: {e}")
+            error_count += 1
+
+    if success_count > 0:
+        modeladmin.message_user(request, f"Successfully rekeyed {success_count} attachment(s)", messages.SUCCESS)
+    if error_count > 0:
+        modeladmin.message_user(request, f"Failed to rekey {error_count} attachment(s)", messages.ERROR)
+
 @admin.register(FileAttachment)
 class FileAttachmentAdmin(admin.ModelAdmin):
     list_display = ('filename', 'content_type', 'size', 'author')
     search_fields = ['filename']
-    actions = [federate_delete_action]
+    actions = [federate_delete_action, rekey_file_attachments]
 
 @admin.register(SharedLibrary)
 class SharedLibraryAdmin(admin.ModelAdmin):

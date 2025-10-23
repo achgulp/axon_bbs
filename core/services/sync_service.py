@@ -205,39 +205,54 @@ class SyncService:
                     # Get the current manifest from the database
                     if existing_message:
                         current_manifest = existing_message.metadata_manifest
+                        existing_obj = existing_message
                     elif existing_file:
                         current_manifest = existing_file.metadata_manifest
+                        existing_obj = existing_file
                     elif existing_pm:
                         current_manifest = existing_pm.metadata_manifest
+                        existing_obj = existing_pm
                     else:  # existing_applet
                         current_manifest = existing_applet.code_manifest
+                        existing_obj = existing_applet
 
-                    # Check if the incoming manifest has any new encryption keys
-                    current_keys = set(current_manifest.get('encrypted_aes_keys', {}).keys())
-                    incoming_keys = set(manifest.get('encrypted_aes_keys', {}).keys())
+                    # Check if content was rekeyed (different IV = different encryption)
+                    current_iv = current_manifest.get('encryption_iv')
+                    incoming_iv = manifest.get('encryption_iv')
 
-                    # Only update if there are new keys we don't have
-                    if not incoming_keys.issubset(current_keys):
-                        # New keys detected - merge them in
-                        updated_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
+                    if current_iv != incoming_iv:
+                        # Content was rekeyed! Delete the existing record and re-download
+                        logger.info(f"Rekey detected for {content_hash[:10]}... (IV changed). Deleting existing record and re-downloading.")
+                        existing_obj.delete()
+                        # Clear cached chunks will be handled by detect_and_clear_rekeyed_chunks in _download_content
+                        self._schedule_download(manifest)
+                    else:
+                        # Check if the incoming manifest has any new encryption keys
+                        current_keys = set(current_manifest.get('encrypted_aes_keys', {}).keys())
+                        incoming_keys = set(manifest.get('encrypted_aes_keys', {}).keys())
 
-                        if existing_message:
-                            existing_message.metadata_manifest = updated_manifest
-                            existing_message.save()
-                            logger.info(f"Updated manifest for existing message {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
-                        elif existing_file:
-                            existing_file.metadata_manifest = updated_manifest
-                            existing_file.save()
-                            logger.info(f"Updated manifest for existing file {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
-                        elif existing_pm:
-                            existing_pm.metadata_manifest = updated_manifest
-                            existing_pm.save()
-                            logger.info(f"Updated manifest for existing PM {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
-                        elif existing_applet:
-                            existing_applet.code_manifest = updated_manifest
-                            existing_applet.save()
-                            logger.info(f"Updated manifest for existing applet {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
-                    # else: No new keys, skip update
+                        # Only update if there are new keys we don't have
+                        if not incoming_keys.issubset(current_keys):
+                            # New keys detected - merge them in
+                            updated_manifest = service_manager.bitsync_service.rekey_manifest_for_new_peers(manifest)
+
+                            if existing_message:
+                                existing_message.metadata_manifest = updated_manifest
+                                existing_message.save()
+                                logger.info(f"Updated manifest for existing message {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
+                            elif existing_file:
+                                existing_file.metadata_manifest = updated_manifest
+                                existing_file.save()
+                                logger.info(f"Updated manifest for existing file {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
+                            elif existing_pm:
+                                existing_pm.metadata_manifest = updated_manifest
+                                existing_pm.save()
+                                logger.info(f"Updated manifest for existing PM {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
+                            elif existing_applet:
+                                existing_applet.code_manifest = updated_manifest
+                                existing_applet.save()
+                                logger.info(f"Updated manifest for existing applet {content_hash[:10]} (added {len(incoming_keys - current_keys)} new key(s))")
+                        # else: No new keys, skip update
                 except Exception as e:
                     logger.error(f"Failed to update manifest for {content_hash[:10]}: {e}")
             else:
@@ -501,6 +516,10 @@ class SyncService:
         num_chunks = len(chunk_hashes)
         item_name = manifest.get('filename', content_hash[:16])
         from .service_manager import service_manager
+
+        # Check if content was rekeyed and clear stale chunks if needed
+        service_manager.bitsync_service.detect_and_clear_rekeyed_chunks(manifest)
+
         if service_manager.bitsync_service.are_all_chunks_local(manifest):
             local_chunks_data = b""
             for i in range(num_chunks):
@@ -511,6 +530,8 @@ class SyncService:
                 except FileNotFoundError:
                     break
             else:
+                # Save manifest cache for future rekey detection
+                service_manager.bitsync_service.save_manifest_cache(manifest)
                 return local_chunks_data
 
         seeders = self._find_seeders(content_hash)
@@ -549,6 +570,8 @@ class SyncService:
         
         if len(downloaded_chunks) == num_chunks:
             logger.info(f"Download complete for '{item_name}'.")
+            # Save manifest cache for future rekey detection
+            service_manager.bitsync_service.save_manifest_cache(manifest)
             return b"".join(downloaded_chunks[i] for i in range(num_chunks))
         else:
             logger.error(f"Download for '{item_name}' is incomplete. Will retry on next sync cycle.")
