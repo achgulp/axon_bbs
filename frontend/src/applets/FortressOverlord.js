@@ -38,7 +38,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 (async function() {
 try {
-    const APPLET_VERSION = "v15.0 - Version Display";
+    const APPLET_VERSION = "v16.0 - Debug Tracing";
 
     function debugLog(msg) {
         if (!window.BBS_DEBUG_MODE) return;
@@ -393,6 +393,8 @@ try {
     };
 
     const Game = ({player, opponent, onGameOver}) => {
+        debugLog(">>> Game component MOUNTED - Player: " + player.nickname + " vs " + opponent.nickname);
+
         const initWS = useMemo(() => ({
             fortresses: [
                 {id: 'f0', ownerId: 0, position: {x:0, y:0, z: MAP_SIZE.depth/2-2}, health: FORTRESS_HEALTH, maxHealth: FORTRESS_HEALTH},
@@ -500,11 +502,12 @@ try {
         }, [player, onGameOver]);
 
         useEffect(() => {
-            debugLog("Starting game");
+            debugLog(">>> Game useEffect: Starting game polling and AI");
             pollId.current = gameSvc.startPolling(handleEvt, 500);
             resId.current = setInterval(() => setWorldState(p => ({...p, resources: p.resources.map(r => r + RESOURCE_GEN_RATE)})), 1000);
             if (opponent.isAI) aiId.current = setInterval(aiTick, 2000);
             return () => {
+                debugLog(">>> Game useEffect CLEANUP: Stopping game polling");
                 if (pollId.current) gameSvc.stopPolling(pollId.current);
                 if (resId.current) clearInterval(resId.current);
                 if (aiId.current) clearInterval(aiId.current);
@@ -518,6 +521,8 @@ try {
     };
 
     const Lobby = ({onStartGame, userInfo}) => {
+        debugLog(">>> Lobby component MOUNTED");
+
         const [status, setStatus] = useState('Looking for game...');
         const [waiting, setWaiting] = useState(false);
         const [countdown, setCountdown] = useState(30);
@@ -560,8 +565,10 @@ try {
         }, [userInfo, startGame]);
 
         useEffect(() => {
+            debugLog(">>> Lobby useEffect: Starting matchmaking");
             pollId.current = gameSvc.startPolling(handleEvt);
             return () => {
+                debugLog(">>> Lobby useEffect CLEANUP: Unmounting");
                 if (pollId.current) gameSvc.stopPolling(pollId.current);
                 cleanup();
             };
@@ -624,26 +631,29 @@ try {
         }, []);
 
         const handleStart = useCallback((self, opp) => {
+            debugLog(">>> App.handleStart CALLED - appGameStartedRef: " + appGameStartedRef.current);
             if (appGameStartedRef.current) {
-                debugLog("App: Game already started - ignoring duplicate call");
+                debugLog(">>> App: BLOCKED - Game already started!");
                 return;
             }
             appGameStartedRef.current = true;
-            debugLog("App: Starting game");
+            debugLog(">>> App: Starting game - setting state to GAME");
 
             if (!audioStarted) {
+                debugLog(">>> App: Audio not started, starting audio first");
                 window.Tone.start().then(() => {
                     setAudioStarted(true);
                     setPlayer(self);
                     setOpponent(opp);
                     setGState(GameState.Game);
-                    debugLog("Game started w/audio");
+                    debugLog(">>> App: State set to GAME (with audio)");
                 });
             } else {
+                debugLog(">>> App: Audio already started, setting state immediately");
                 setPlayer(self);
                 setOpponent(opp);
                 setGState(GameState.Game);
-                debugLog("Game started");
+                debugLog(">>> App: State set to GAME");
             }
         }, [audioStarted]);
 
