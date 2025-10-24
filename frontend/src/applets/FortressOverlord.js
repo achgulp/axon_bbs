@@ -38,7 +38,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 (async function() {
 try {
-    const APPLET_VERSION = "v13.0 - Event Loop Fix";
+    const APPLET_VERSION = "v14.0 - Multi-Start Protection";
 
     function debugLog(msg) {
         if (!window.BBS_DEBUG_MODE) return;
@@ -519,29 +519,39 @@ try {
         const aiTO = useRef(null);
         const cdInt = useRef(null);
         const waitingRef = useRef(false);
+        const gameStartedRef = useRef(false);
 
         const cleanup = useCallback(() => {
             if (aiTO.current) { clearTimeout(aiTO.current); aiTO.current = null; }
             if (cdInt.current) { clearInterval(cdInt.current); cdInt.current = null; }
         }, []);
 
+        const startGame = useCallback((self, opponent, role) => {
+            if (gameStartedRef.current) {
+                debugLog("Game already started - ignoring duplicate start request");
+                return;
+            }
+            gameStartedRef.current = true;
+            cleanup();
+            onStartGame(self, opponent);
+            debugLog("Started as " + role);
+        }, [onStartGame, cleanup]);
+
         const handleEvt = useCallback((evt) => {
+            if (gameStartedRef.current) return;
             if (evt.sender.pubkey === userInfo.pubkey) return;
+
             if (evt.type === GameEventType.JoinGame && !waitingRef.current) {
-                cleanup();
                 setStatus('Game found! Starting...');
                 const self = {...userInfo, id: 1, color: PLAYER_COLORS[1]};
                 gameSvc.postEvent({type: GameEventType.StartGame, payload: {opponent: self}}, userInfo);
-                onStartGame(self, evt.sender);
-                debugLog("Joined as P1");
+                startGame(self, evt.sender, "P1");
             } else if (evt.type === GameEventType.StartGame && waitingRef.current && evt.payload.opponent.pubkey === userInfo.pubkey) {
-                cleanup();
                 setStatus('Game started!');
                 const self = {...userInfo, id: 0, color: PLAYER_COLORS[0]};
-                onStartGame(self, evt.sender);
-                debugLog("Started as P0");
+                startGame(self, evt.sender, "P0");
             }
-        }, [onStartGame, userInfo, cleanup]);
+        }, [userInfo, startGame]);
 
         useEffect(() => {
             pollId.current = gameSvc.startPolling(handleEvt);
@@ -559,11 +569,13 @@ try {
             gameSvc.postEvent({type: GameEventType.JoinGame, payload: {}}, userInfo);
             debugLog("Posted join - countdown starting");
             aiTO.current = setTimeout(() => {
-                cleanup();
+                if (gameStartedRef.current) {
+                    debugLog("Game already started - canceling AI timeout");
+                    return;
+                }
                 setStatus('No players. Starting vs AI.');
                 const self = {...userInfo, id: 0, color: PLAYER_COLORS[0]};
-                onStartGame(self, AI_USER);
-                debugLog("Starting AI game");
+                startGame(self, AI_USER, "P0 vs AI");
             }, 30000);
             cdInt.current = setInterval(() => {
                 setCountdown(p => {
@@ -593,6 +605,7 @@ try {
         const [userInfo, setUserInfo] = useState(null);
         const [player, setPlayer] = useState(null);
         const [opponent, setOpponent] = useState(null);
+        const appGameStartedRef = useRef(false);
 
         useEffect(() => {
             (async () => {
@@ -605,6 +618,13 @@ try {
         }, []);
 
         const handleStart = useCallback((self, opp) => {
+            if (appGameStartedRef.current) {
+                debugLog("App: Game already started - ignoring duplicate call");
+                return;
+            }
+            appGameStartedRef.current = true;
+            debugLog("App: Starting game");
+
             if (!audioStarted) {
                 window.Tone.start().then(() => {
                     setAudioStarted(true);
@@ -625,7 +645,8 @@ try {
             setGState(GameState.Lobby);
             setPlayer(null);
             setOpponent(null);
-            debugLog("Back to lobby");
+            appGameStartedRef.current = false;
+            debugLog("Back to lobby - game can start again");
         }, []);
 
         const renderContent = () => {
