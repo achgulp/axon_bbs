@@ -38,7 +38,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 (async function() {
 try {
-    const APPLET_VERSION = "v17.0 - Stable Callbacks";
+    const APPLET_VERSION = "v18.0 - Final Callback Fix";
 
     function debugLog(msg) {
         if (!window.BBS_DEBUG_MODE) return;
@@ -648,6 +648,9 @@ try {
             })();
         }, []);
 
+        const audioStartedRef = useRef(audioStarted);
+        audioStartedRef.current = audioStarted;
+
         const handleStart = useCallback((self, opp) => {
             debugLog(">>> App.handleStart CALLED - appGameStartedRef: " + appGameStartedRef.current);
             if (appGameStartedRef.current) {
@@ -657,7 +660,7 @@ try {
             appGameStartedRef.current = true;
             debugLog(">>> App: Starting game - setting state to GAME");
 
-            if (!audioStarted) {
+            if (!audioStartedRef.current) {
                 debugLog(">>> App: Audio not started, starting audio first");
                 window.Tone.start().then(() => {
                     setAudioStarted(true);
@@ -673,7 +676,7 @@ try {
                 setGState(GameState.Game);
                 debugLog(">>> App: State set to GAME");
             }
-        }, [audioStarted]);
+        }, []);
 
         const handleOver = useCallback(() => {
             setGState(GameState.Lobby);
