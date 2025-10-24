@@ -38,7 +38,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 (async function() {
 try {
-    const APPLET_VERSION = "v16.0 - Debug Tracing";
+    const APPLET_VERSION = "v17.0 - Stable Callbacks";
 
     function debugLog(msg) {
         if (!window.BBS_DEBUG_MODE) return;
@@ -427,10 +427,15 @@ try {
             }
         }, [player, worldState.resources]);
 
+        const opponentRef = useRef(opponent);
+        const worldStateRef = useRef(worldState);
+        opponentRef.current = opponent;
+        worldStateRef.current = worldState;
+
         const aiTick = useCallback(() => {
-            if (!opponent.isAI) return;
-            const aiId = 1 - player.id;
-            const aiRes = worldState.resources[aiId];
+            if (!opponentRef.current.isAI) return;
+            const aiId = 1 - playerRef.current.id;
+            const aiRes = worldStateRef.current.resources[aiId];
             const canT = aiRes >= UNIT_STATS.TANK.cost;
             const canD = aiRes >= UNIT_STATS.DRONE.cost;
             if (canT || canD) {
@@ -442,12 +447,17 @@ try {
                     gameSvc.postEvent({type: GameEventType.BuildUnit, payload: {unitId: uid, unitType: ut, ownerId: aiId, position: {x, y:0, z}}}, AI_USER);
                 }
             }
-            const idle = worldState.units.filter(u => u.ownerId === aiId && !u.targetId);
-            const eFort = worldState.fortresses.find(f => f.ownerId === player.id);
+            const idle = worldStateRef.current.units.filter(u => u.ownerId === aiId && !u.targetId);
+            const eFort = worldStateRef.current.fortresses.find(f => f.ownerId === playerRef.current.id);
             if (idle.length > 0 && eFort) {
                 idle.forEach(u => gameSvc.postEvent({type: GameEventType.MoveUnit, payload: {unitId: u.id, targetId: eFort.id}}, AI_USER));
             }
-        }, [opponent.isAI, player.id, worldState.resources, worldState.units, worldState.fortresses]);
+        }, []);
+
+        const playerRef = useRef(player);
+        const onGameOverRef = useRef(onGameOver);
+        playerRef.current = player;
+        onGameOverRef.current = onGameOver;
 
         const handleEvt = useCallback((evt) => {
             setWorldState(p => {
@@ -461,7 +471,7 @@ try {
                         const st = UNIT_STATS[unitType];
                         if (!nu.some(u => u.id === unitId)) {
                             nu.push({id: unitId, ownerId, type: unitType, position, targetId: null, health: st.health, maxHealth: st.health, lastAttack: 0});
-                            if (ownerId !== player.id) nr = nr.map((r,i) => i === ownerId ? r-st.cost : r);
+                            if (ownerId !== playerRef.current.id) nr = nr.map((r,i) => i === ownerId ? r-st.cost : r);
                         }
                         break;
                     case GameEventType.MoveUnit:
@@ -483,36 +493,39 @@ try {
                                 debugLog('Fortress HP: ' + tf.health);
                                 if (tf.health <= 0) {
                                     const win = nf.find(f => f.id !== targetId)?.ownerId;
-                                    if (win !== undefined && evt.sender.pubkey === player.pubkey) {
-                                        gameSvc.postEvent({type: GameEventType.GameOver, payload: {winnerId: win}}, player);
+                                    if (win !== undefined && evt.sender.pubkey === playerRef.current.pubkey) {
+                                        gameSvc.postEvent({type: GameEventType.GameOver, payload: {winnerId: win}}, playerRef.current);
                                     }
                                 }
                             }
                         }
                         break;
                     case GameEventType.GameOver:
-                        const msg = evt.payload.winnerId === player.id ? "You Won!" : "You Lost.";
+                        const msg = evt.payload.winnerId === playerRef.current.id ? "You Won!" : "You Lost.";
                         debugLog('Game Over: ' + msg);
                         alert(msg);
-                        onGameOver();
+                        onGameOverRef.current();
                         break;
                 }
                 return {...p, units: nu, fortresses: nf, resources: nr};
             });
-        }, [player, onGameOver]);
+        }, []);
 
         useEffect(() => {
             debugLog(">>> Game useEffect: Starting game polling and AI");
             pollId.current = gameSvc.startPolling(handleEvt, 500);
             resId.current = setInterval(() => setWorldState(p => ({...p, resources: p.resources.map(r => r + RESOURCE_GEN_RATE)})), 1000);
-            if (opponent.isAI) aiId.current = setInterval(aiTick, 2000);
+            if (opponentRef.current.isAI) {
+                aiId.current = setInterval(aiTick, 2000);
+                debugLog(">>> AI opponent detected - started AI tick interval");
+            }
             return () => {
                 debugLog(">>> Game useEffect CLEANUP: Stopping game polling");
                 if (pollId.current) gameSvc.stopPolling(pollId.current);
                 if (resId.current) clearInterval(resId.current);
                 if (aiId.current) clearInterval(aiId.current);
             };
-        }, [handleEvt, aiTick, opponent.isAI]);
+        }, [handleEvt, aiTick]);
 
         return React.createElement('div', {className: 'relative w-full h-full'},
             React.createElement(GameBoard, {worldState, setWorldState, player, selectedUnit, onUnitSelect: handleUnitSel}),
@@ -537,6 +550,11 @@ try {
             if (cdInt.current) { clearInterval(cdInt.current); cdInt.current = null; }
         }, []);
 
+        const onStartGameRef = useRef(onStartGame);
+        const userInfoRef = useRef(userInfo);
+        onStartGameRef.current = onStartGame;
+        userInfoRef.current = userInfo;
+
         const startGame = useCallback((self, opponent, role) => {
             if (gameStartedRef.current) {
                 debugLog("Game already started - ignoring duplicate start request");
@@ -544,25 +562,25 @@ try {
             }
             gameStartedRef.current = true;
             cleanup();
-            onStartGame(self, opponent);
+            onStartGameRef.current(self, opponent);
             debugLog("Started as " + role);
-        }, [onStartGame, cleanup]);
+        }, [cleanup]);
 
         const handleEvt = useCallback((evt) => {
             if (gameStartedRef.current) return;
-            if (evt.sender.pubkey === userInfo.pubkey) return;
+            if (evt.sender.pubkey === userInfoRef.current.pubkey) return;
 
             if (evt.type === GameEventType.JoinGame && !waitingRef.current) {
                 setStatus('Game found! Starting...');
-                const self = {...userInfo, id: 1, color: PLAYER_COLORS[1]};
-                gameSvc.postEvent({type: GameEventType.StartGame, payload: {opponent: self}}, userInfo);
+                const self = {...userInfoRef.current, id: 1, color: PLAYER_COLORS[1]};
+                gameSvc.postEvent({type: GameEventType.StartGame, payload: {opponent: self}}, userInfoRef.current);
                 startGame(self, evt.sender, "P1");
-            } else if (evt.type === GameEventType.StartGame && waitingRef.current && evt.payload.opponent.pubkey === userInfo.pubkey) {
+            } else if (evt.type === GameEventType.StartGame && waitingRef.current && evt.payload.opponent.pubkey === userInfoRef.current.pubkey) {
                 setStatus('Game started!');
-                const self = {...userInfo, id: 0, color: PLAYER_COLORS[0]};
+                const self = {...userInfoRef.current, id: 0, color: PLAYER_COLORS[0]};
                 startGame(self, evt.sender, "P0");
             }
-        }, [userInfo, startGame]);
+        }, [startGame]);
 
         useEffect(() => {
             debugLog(">>> Lobby useEffect: Starting matchmaking");
@@ -579,7 +597,7 @@ try {
             setWaiting(true);
             waitingRef.current = true;
             setCountdown(30);
-            gameSvc.postEvent({type: GameEventType.JoinGame, payload: {}}, userInfo);
+            gameSvc.postEvent({type: GameEventType.JoinGame, payload: {}}, userInfoRef.current);
             debugLog("Posted join - countdown starting");
             aiTO.current = setTimeout(() => {
                 if (gameStartedRef.current) {
@@ -587,7 +605,7 @@ try {
                     return;
                 }
                 setStatus('No players. Starting vs AI.');
-                const self = {...userInfo, id: 0, color: PLAYER_COLORS[0]};
+                const self = {...userInfoRef.current, id: 0, color: PLAYER_COLORS[0]};
                 startGame(self, AI_USER, "P0 vs AI");
             }, 30000);
             cdInt.current = setInterval(() => {
