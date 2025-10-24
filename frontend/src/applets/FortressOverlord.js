@@ -38,7 +38,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 (async function() {
 try {
-    const APPLET_VERSION = "v18.0 - Final Callback Fix";
+    const APPLET_VERSION = "v19.0 - GameBoard Stability";
 
     function debugLog(msg) {
         if (!window.BBS_DEBUG_MODE) return;
@@ -248,6 +248,17 @@ try {
     const GameBoard = ({worldState, setWorldState, player, selectedUnit, onUnitSelect}) => {
         const mountRef = useRef(null);
         const gameRef = useRef(null);
+        const selectedUnitRef = useRef(selectedUnit);
+        const playerRef = useRef(player);
+        const worldStateRef = useRef(worldState);
+        const onUnitSelectRef = useRef(onUnitSelect);
+        const setWorldStateRef = useRef(setWorldState);
+
+        selectedUnitRef.current = selectedUnit;
+        playerRef.current = player;
+        worldStateRef.current = worldState;
+        onUnitSelectRef.current = onUnitSelect;
+        setWorldStateRef.current = setWorldState;
 
         const handleClick = useCallback((event) => {
             if (!gameRef.current) return;
@@ -257,31 +268,31 @@ try {
             raycaster.setFromCamera(mouse, camera);
             const ints = raycaster.intersectObjects(scene.children, true);
 
-            if (selectedUnit) {
+            if (selectedUnitRef.current) {
                 const gnd = ints.find(i => i.object.name === 'ground');
                 if (gnd) {
                     const tgt = ints.find(i => i.object.userData.type === 'unit' || i.object.userData.type === 'fortress');
                     let tgtId = null;
-                    if (tgt && tgt.object.userData.ownerId !== player.id) tgtId = tgt.object.userData.id;
-                    setWorldState(prev => ({...prev, units: prev.units.map(u => u.id === selectedUnit.id ? {...u, targetId: tgtId} : u)}));
-                    gameSvc.postEvent({type: GameEventType.MoveUnit, payload: {unitId: selectedUnit.id, targetId: tgtId}}, player);
-                    onUnitSelect(null);
-                    debugLog('Unit moved: ' + selectedUnit.id);
+                    if (tgt && tgt.object.userData.ownerId !== playerRef.current.id) tgtId = tgt.object.userData.id;
+                    setWorldStateRef.current(prev => ({...prev, units: prev.units.map(u => u.id === selectedUnitRef.current.id ? {...u, targetId: tgtId} : u)}));
+                    gameSvc.postEvent({type: GameEventType.MoveUnit, payload: {unitId: selectedUnitRef.current.id, targetId: tgtId}}, playerRef.current);
+                    onUnitSelectRef.current(null);
+                    debugLog('Unit moved: ' + selectedUnitRef.current.id);
                     return;
                 }
             }
 
             const uInt = ints.find(i => i.object.userData.type === 'unit');
             if (uInt) {
-                const u = worldState.units.find(u => u.id === uInt.object.userData.id);
-                if (u) { onUnitSelect(u); debugLog('Unit selected: ' + u.id); return; }
+                const u = worldStateRef.current.units.find(u => u.id === uInt.object.userData.id);
+                if (u) { onUnitSelectRef.current(u); debugLog('Unit selected: ' + u.id); return; }
             }
-            onUnitSelect(null);
-        }, [onUnitSelect, selectedUnit, player, worldState.units, setWorldState]);
+            onUnitSelectRef.current(null);
+        }, []);
 
         useEffect(() => {
             if (!mountRef.current) return;
-            debugLog("Initializing Three.js");
+            debugLog(">>> GameBoard: Initializing Three.js (should only happen ONCE)");
 
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1a2e40);
@@ -317,7 +328,7 @@ try {
 
             const animate = () => {
                 if (!gameRef.current) return;
-                setWorldState(prev => {
+                setWorldStateRef.current(prev => {
                     const ns = {...prev, units: [...prev.units], fortresses: [...prev.fortresses]};
                     const dt = 1/60;
                     ns.units.forEach(u => {
@@ -334,8 +345,8 @@ try {
                                     const dir = tPos.clone().sub(uPos).normalize();
                                     u.position.x += dir.x * ust.speed * dt;
                                     u.position.z += dir.z * ust.speed * dt;
-                                } else if (u.ownerId === player.id) {
-                                    gameSvc.postEvent({type: GameEventType.UnitAttack, payload: {attackerId: u.id, targetId: t.id, damage: ust.damage}}, player);
+                                } else if (u.ownerId === playerRef.current.id) {
+                                    gameSvc.postEvent({type: GameEventType.UnitAttack, payload: {attackerId: u.id, targetId: t.id, damage: ust.damage}}, playerRef.current);
                                 }
                             } else u.targetId = null;
                         }
@@ -349,9 +360,10 @@ try {
 
             const cm = mountRef.current;
             return () => {
+                debugLog(">>> GameBoard: CLEANUP - Three.js destroyed (should not happen during game!)");
                 if (cm) { cm.removeChild(rend.domElement); cm.removeEventListener('pointerdown', handleClick); }
             };
-        }, [handleClick, player, setWorldState]);
+        }, [handleClick]);
 
         useEffect(() => {
             if (!gameRef.current) return;
@@ -411,21 +423,21 @@ try {
         const aiId = useRef(null);
 
         const handleUnitSel = useCallback((u) => {
-            setSelectedUnit(u && u.ownerId === player.id ? u : null);
-        }, [player.id]);
+            setSelectedUnit(u && u.ownerId === playerRef.current.id ? u : null);
+        }, []);
 
         const handleBuild = useCallback((ut) => {
             const cost = UNIT_STATS[ut].cost;
-            if (worldState.resources[player.id] >= cost) {
-                const uid = player.id + '-' + ut + '-' + Date.now();
-                const z = player.id === 0 ? MAP_SIZE.depth/2-5 : -MAP_SIZE.depth/2+5;
+            if (worldStateRef.current.resources[playerRef.current.id] >= cost) {
+                const uid = playerRef.current.id + '-' + ut + '-' + Date.now();
+                const z = playerRef.current.id === 0 ? MAP_SIZE.depth/2-5 : -MAP_SIZE.depth/2+5;
                 const x = (Math.random()-0.5) * (MAP_SIZE.width-4);
-                gameSvc.postEvent({type: GameEventType.BuildUnit, payload: {unitId: uid, unitType: ut, ownerId: player.id, position: {x, y:0, z}}}, player);
-                setWorldState(p => ({...p, resources: p.resources.map((r,i) => i === player.id ? r-cost : r)}));
+                gameSvc.postEvent({type: GameEventType.BuildUnit, payload: {unitId: uid, unitType: ut, ownerId: playerRef.current.id, position: {x, y:0, z}}}, playerRef.current);
+                setWorldState(p => ({...p, resources: p.resources.map((r,i) => i === playerRef.current.id ? r-cost : r)}));
                 sndSvc.play('build');
                 debugLog('Built: ' + ut);
             }
-        }, [player, worldState.resources]);
+        }, []);
 
         const opponentRef = useRef(opponent);
         const worldStateRef = useRef(worldState);
