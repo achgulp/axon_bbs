@@ -38,7 +38,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 (async function() {
 try {
-    const APPLET_VERSION = "v12.0 - Countdown Fix";
+    const APPLET_VERSION = "v13.0 - Event Loop Fix";
 
     function debugLog(msg) {
         if (!window.BBS_DEBUG_MODE) return;
@@ -155,7 +155,11 @@ try {
             poll();
             return setInterval(poll, interval);
         },
-        stopPolling(id) { clearInterval(id); procEventIds.clear(); }
+        stopPolling(id) {
+            if (id) clearInterval(id);
+            // DO NOT clear procEventIds - we need to remember processed events!
+            debugLog('Stopped polling (keeping event history)');
+        }
     };
 
     debugLog("CHECKPOINT 5: Game service ready");
