@@ -38,7 +38,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 (async function() {
 try {
-    const APPLET_VERSION = "v14.0 - Multi-Start Protection";
+    const APPLET_VERSION = "v15.0 - Version Display";
 
     function debugLog(msg) {
         if (!window.BBS_DEBUG_MODE) return;
@@ -60,6 +60,12 @@ try {
         dp.id = 'debug-panel';
         dp.style.cssText = 'position:fixed;bottom:0;right:0;width:400px;max-height:200px;background:rgba(0,0,0,0.9);border:1px solid #32cd32;overflow-y:auto;padding:10px;z-index:9999;font-size:0.7rem;color:#32cd32;font-family:monospace;';
         document.body.appendChild(dp);
+
+        // Show version prominently at top
+        const versionDiv = document.createElement('div');
+        versionDiv.textContent = '=== FORTRESS OVERLORD ' + APPLET_VERSION + ' ===';
+        versionDiv.style.cssText = 'font-size:0.8rem;color:#ffff00;font-weight:bold;margin-bottom:5px;border-bottom:1px solid #32cd32;padding-bottom:3px;';
+        dp.appendChild(versionDiv);
     }
 
     debugLog("CHECKPOINT 1: Initializing Fortress Overlord " + APPLET_VERSION);
