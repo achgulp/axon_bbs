@@ -1,0 +1,11 @@
+To build Debian packages of the main game, use CPack.
+
+Standard CPack configuration options can be used to configure a single .deb, split .debs by components, etc.
+
+See: https://cmake.org/cmake/help/latest/cpack_gen/deb.html
+
+--------
+
+For the videos, download the sequences.wz you want from
+http://wz2100.net/download, put it into pkg/dpkg/video, then run
+"dpkg-buildpackage -uc -b" from that folder.

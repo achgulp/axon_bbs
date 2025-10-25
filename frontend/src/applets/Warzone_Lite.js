@@ -1,0 +1,595 @@
+// Warzone Lite v1.0 - Real-Time Strategy for Axon BBS
+// Copyright (C) 2025 - Licensed under GPL v3
+//
+// A JavaScript-native RTS game inspired by Warzone 2100
+// Features multi-level terrain and multi-altitude air combat
+//
+// Full path: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+
+// --- Start of Applet API Helper (MANDATORY) ---
+window.bbs = {
+  _callbacks: {},
+  _requestId: 0,
+  _handleMessage: function(event) {
+    const { command, payload, requestId, error } = event.data;
+    if (command && command.startsWith('response_') && this._callbacks[requestId]) {
+      const { resolve, reject } = this._callbacks[requestId];
+      if (error) { reject(new Error(error)); } else { resolve(payload); }
+      delete this._callbacks[requestId];
+    }
+  },
+  _postMessage: function(command, payload = {}) {
+    return new Promise((resolve, reject) => {
+      const requestId = this._requestId++;
+      this._callbacks[requestId] = { resolve, reject };
+      if (window.parent !== window) {
+        window.parent.postMessage({ command, payload, requestId }, '*');
+      } else {
+        console.warn("BBS API: Not running in a frame.");
+        if (command === 'getUserInfo') {
+          resolve({ username: 'test', nickname: 'Test', pubkey: 'test123' });
+        } else if (command === 'getAppletInfo') {
+          resolve({ id: 'test', name: 'Warzone Lite', parameters: {} });
+        } else {
+          resolve({});
+        }
+      }
+    });
+  },
+  getUserInfo: function() { return this._postMessage('getUserInfo'); },
+  getData: function() { return this._postMessage('getData'); },
+  saveData: function(newData) { return this._postMessage('saveData', newData); },
+  getAppletInfo: function() { return this._postMessage('getAppletInfo'); },
+  postEvent: function(eventData) { return this._postMessage('postEvent', eventData); },
+  readEvents: function() { return this._postMessage('readEvents'); },
+  getAttachmentBlob: function(hash) { return this._postMessage('getAttachmentBlob', { hash }); }
+};
+window.addEventListener('message', (event) => window.bbs._handleMessage(event));
+// --- End of Applet API Helper ---
+
+// --- Main Applet Execution ---
+(async function() {
+  try {
+    const APPLET_VERSION = 'v1.0 - Initial Development';
+    console.log(`Warzone Lite ${APPLET_VERSION}: Starting...`);
+
+    // ═══════════════════════════════════════════════════════
+    // STEP 1: Load External Libraries
+    // ═══════════════════════════════════════════════════════
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.crossOrigin = 'anonymous';
+        script.onload = () => {
+          console.log(`Loaded: ${src.split('/').pop()}`);
+          resolve();
+        };
+        script.onerror = () => reject(new Error(`Failed to load: ${src}`));
+        document.head.appendChild(script);
+      });
+    }
+
+    console.log('Loading Three.js...');
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+
+    if (!window.THREE) {
+      throw new Error('Three.js failed to load');
+    }
+
+    console.log('Three.js loaded successfully');
+
+    // ═══════════════════════════════════════════════════════
+    // STEP 2: Get User and Applet Info
+    // ═══════════════════════════════════════════════════════
+
+    const userInfo = await window.bbs.getUserInfo();
+    const appletInfo = await window.bbs.getAppletInfo();
+
+    console.log('User:', userInfo.nickname);
+    console.log('Applet ID:', appletInfo.id);
+
+    // ═══════════════════════════════════════════════════════
+    // STEP 3: Initialize Game Container
+    // ═══════════════════════════════════════════════════════
+
+    const appletContainer = document.getElementById('applet-root');
+    if (!appletContainer) {
+      throw new Error('Applet root element not found');
+    }
+
+    // Clear and setup container
+    appletContainer.innerHTML = '';
+    appletContainer.style.margin = '0';
+    appletContainer.style.padding = '0';
+    appletContainer.style.width = '100%';
+    appletContainer.style.height = '100vh';
+    appletContainer.style.overflow = 'hidden';
+    appletContainer.style.backgroundColor = '#1a2e40';
+
+    // Create mount point for Three.js
+    const mountPoint = document.createElement('div');
+    mountPoint.id = 'game-mount';
+    mountPoint.style.width = '100%';
+    mountPoint.style.height = '100%';
+    appletContainer.appendChild(mountPoint);
+
+    console.log('Container initialized');
+
+    // ═══════════════════════════════════════════════════════
+    // STEP 4: Three.js Scene Setup
+    // ═══════════════════════════════════════════════════════
+
+    console.log('Setting up Three.js scene...');
+
+    // Scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a2e40);
+    scene.fog = new THREE.Fog(0x1a2e40, 50, 150);
+
+    // Camera (Orthographic for RTS view)
+    const aspect = window.innerWidth / window.innerHeight;
+    const viewSize = 40;
+    const camera = new THREE.OrthographicCamera(
+      -viewSize * aspect,
+      viewSize * aspect,
+      viewSize,
+      -viewSize,
+      1,
+      1000
+    );
+
+    // Position camera at 45° angle
+    camera.position.set(30, 40, 30);
+    camera.lookAt(0, 0, 0);
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    mountPoint.appendChild(renderer.domElement);
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(-50, 80, -50);
+    directionalLight.castShadow = true;
+    directionalLight.shadow.camera.left = -100;
+    directionalLight.shadow.camera.right = 100;
+    directionalLight.shadow.camera.top = 100;
+    directionalLight.shadow.camera.bottom = -100;
+    scene.add(directionalLight);
+
+    console.log('Three.js scene setup complete');
+
+    // ═══════════════════════════════════════════════════════
+    // STEP 5: Create Test Geometry
+    // ═══════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════
+// STEP 5: Terrain System
+// ═══════════════════════════════════════════════════════
+
+console.log('Generating terrain...');
+
+const TerrainSystem = {
+  size: { width: 64, depth: 80 },
+  heightLevels: 8,
+  heightMap: null,
+  mesh: null,
+
+  // Simple 2D noise function
+  noise2D(x, y) {
+    const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+    return (n - Math.floor(n)) * 2 - 1;  // -1 to 1
+  },
+
+  // Generate Perlin-like noise
+  generatePerlinNoise(width, height, scale) {
+    const noise = [];
+    for (let z = 0; z < height; z++) {
+      noise[z] = [];
+      for (let x = 0; x < width; x++) {
+        let value = 0;
+        let amplitude = 1;
+        let frequency = 1 / scale;
+
+        // Multiple octaves for natural look
+        for (let octave = 0; octave < 3; octave++) {
+          value += this.noise2D(x * frequency, z * frequency) * amplitude;
+          frequency *= 2;
+          amplitude *= 0.5;
+        }
+
+        noise[z][x] = (value + 1) / 2;  // Normalize to 0-1
+      }
+    }
+    return noise;
+  },
+
+  // Generate strategic heightmap
+  generateHeightMap() {
+    const map = [];
+    const noise = this.generatePerlinNoise(this.size.width, this.size.depth, 4);
+
+    for (let z = 0; z < this.size.depth; z++) {
+      map[z] = [];
+      for (let x = 0; x < this.size.width; x++) {
+        // Base height from noise
+        let height = Math.floor(noise[z][x] * 3);
+
+        // Strategic features:
+
+        // 1. Center plateau (high ground objective)
+        const centerX = this.size.width / 2;
+        const centerZ = this.size.depth / 2;
+        const distFromCenter = Math.sqrt(
+          Math.pow(x - centerX, 2) +
+          Math.pow(z - centerZ, 2)
+        );
+
+        if (distFromCenter < 8) {
+          height = 5;  // Plateau
+        } else if (distFromCenter < 10) {
+          height = 3;  // Slopes
+        }
+
+        // 2. Flat starting zones in corners
+        const inTopLeft = (x < 10 && z < 10);
+        const inTopRight = (x > 54 && z < 10);
+        const inBottomLeft = (x < 10 && z > 70);
+        const inBottomRight = (x > 54 && z > 70);
+
+        if (inTopLeft || inTopRight || inBottomLeft || inBottomRight) {
+          height = 1;  // Flat for bases
+        }
+
+        // 3. Valley choke point
+        if (x === 32 && z > 20 && z < 60) {
+          height = 0;  // Low valley
+        }
+
+        // Clamp to valid range
+        map[z][x] = Math.max(0, Math.min(this.heightLevels, height));
+      }
+    }
+
+    return map;
+  },
+
+  // Create terrain mesh
+  generate() {
+    // Create plane geometry with subdivisions
+    const geometry = new THREE.PlaneGeometry(
+      this.size.width,
+      this.size.depth,
+      this.size.width - 1,
+      this.size.depth - 1
+    );
+
+    // Rotate to horizontal
+    geometry.rotateX(-Math.PI / 2);
+
+    // Generate heightmap
+    this.heightMap = this.generateHeightMap();
+
+    // Apply heights to vertices
+    const positions = geometry.attributes.position;
+    for (let i = 0; i < positions.count; i++) {
+      const x = Math.floor(i % this.size.width);
+      const z = Math.floor(i / this.size.width);
+      const height = this.heightMap[z] ? this.heightMap[z][x] : 0;
+
+      // Y is "up" in Three.js
+      positions.setY(i, height);
+    }
+
+    // Recompute normals for lighting
+    geometry.computeVertexNormals();
+
+    // Create material with height-based coloring
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x6B8E23,  // Olive green base
+      roughness: 0.8,
+      metalness: 0.2,
+      vertexColors: false
+    });
+
+    // Create mesh
+    this.mesh = new THREE.Mesh(geometry, material);
+    this.mesh.receiveShadow = true;
+    this.mesh.name = 'terrain';
+
+    return this.mesh;
+  },
+
+  // Get height at world position
+  getHeightAt(x, z) {
+    const tileX = Math.floor(x + this.size.width / 2);
+    const tileZ = Math.floor(z + this.size.depth / 2);
+
+    if (tileX < 0 || tileX >= this.size.width ||
+        tileZ < 0 || tileZ >= this.size.depth) {
+      return 0;
+    }
+
+    return this.heightMap[tileZ][tileX];
+  }
+};
+
+// Generate and add terrain to scene
+const terrain = TerrainSystem.generate();
+scene.add(terrain);
+
+console.log('Terrain generated with',
+  TerrainSystem.size.width * TerrainSystem.size.depth, 'vertices');
+
+// Test cube (to verify rendering works)
+const cubeGeo = new THREE.BoxGeometry(2, 2, 2);
+const cubeMat = new THREE.MeshPhongMaterial({ color: 0x007bff });
+const cube = new THREE.Mesh(cubeGeo, cubeMat);
+cube.position.set(0, 1, 0);
+cube.castShadow = true;
+scene.add(cube);
+
+// Update test cube to sit on terrain
+const cubeHeight = TerrainSystem.getHeightAt(0, 0);
+cube.position.y = cubeHeight + 1;
+
+console.log('Test cube placed at height:', cubeHeight);
+
+// ═══════════════════════════════════════════════════════
+// UNIT SYSTEM
+// ═══════════════════════════════════════════════════════
+
+console.log('Initializing unit system...');
+
+// Unit statistics
+const UNIT_STATS = {
+  TANK: {
+    cost: 150,
+    health: 100,
+    damage: 15,
+    range: 3,
+    speed: 2.5,
+    type: 'ground'
+  },
+  ARTILLERY: {
+    cost: 200,
+    health: 80,
+    damage: 30,
+    range: 8,
+    speed: 1.5,
+    type: 'ground'
+  },
+  SCOUT: {
+    cost: 75,
+    health: 50,
+    damage: 8,
+    range: 2,
+    speed: 4,
+    type: 'ground'
+  }
+};
+
+// Player colors
+const PLAYER_COLORS = [0x007bff, 0xff4136, 0x2ecc40, 0xffdc00];
+
+const UnitSystem = {
+  units: [],
+  nextUnitId: 0,
+
+  // Create a new unit
+  createUnit(type, x, z, ownerId) {
+    const stats = UNIT_STATS[type];
+    if (!stats) {
+      console.error('Unknown unit type:', type);
+      return null;
+    }
+
+    const unit = {
+      id: `unit_${this.nextUnitId++}`,
+      type: type,
+      ownerId: ownerId,
+      health: stats.health,
+      maxHealth: stats.health,
+      position: { x, y: 0, z },
+      rotation: 0,
+      mesh: null,
+      targetPosition: null,
+      isMoving: false
+    };
+
+    // Create 3D mesh
+    unit.mesh = this.createMesh(type, ownerId);
+
+    // Position on terrain
+    this.updateUnitHeight(unit);
+
+    // Add to scene and tracking array
+    scene.add(unit.mesh);
+    this.units.push(unit);
+
+    console.log(`Created ${type} unit #${unit.id} for player ${ownerId}`);
+
+    return unit;
+  },
+
+  // Create 3D mesh for unit
+  createMesh(type, ownerId) {
+    let geometry;
+
+    switch (type) {
+      case 'TANK':
+        geometry = new THREE.BoxGeometry(1.5, 0.8, 2);
+        break;
+      case 'ARTILLERY':
+        geometry = new THREE.CylinderGeometry(0.5, 0.8, 2, 8);
+        break;
+      case 'SCOUT':
+        geometry = new THREE.BoxGeometry(1, 0.4, 1.5);
+        break;
+      default:
+        geometry = new THREE.BoxGeometry(1, 1, 1);
+    }
+
+    const material = new THREE.MeshPhongMaterial({
+      color: PLAYER_COLORS[ownerId],
+      emissive: 0x222222,
+      specular: 0x333333
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.userData = { unitId: null };  // Will be set when unit is created
+
+    return mesh;
+  },
+
+  // Update unit's Y position to match terrain
+  updateUnitHeight(unit) {
+    const terrainHeight = TerrainSystem.getHeightAt(
+      unit.position.x - TerrainSystem.size.width / 2,
+      unit.position.z - TerrainSystem.size.depth / 2
+    );
+
+    // Ground units sit on terrain
+    const heightOffset = 0.5;  // Half their height
+    unit.position.y = terrainHeight + heightOffset;
+
+    // Update mesh position
+    unit.mesh.position.set(
+      unit.position.x,
+      unit.position.y,
+      unit.position.z
+    );
+
+    unit.mesh.rotation.y = unit.rotation;
+  },
+
+  // Move unit toward target
+  moveUnit(unit, targetX, targetZ) {
+    unit.targetPosition = { x: targetX, z: targetZ };
+    unit.isMoving = true;
+  },
+
+  // Update all units (called every frame)
+  update(deltaTime) {
+    this.units.forEach(unit => {
+      if (unit.isMoving && unit.targetPosition) {
+        const stats = UNIT_STATS[unit.type];
+        const speed = stats.speed * deltaTime;
+
+        const dx = unit.targetPosition.x - unit.position.x;
+        const dz = unit.targetPosition.z - unit.position.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+
+        if (distance < speed) {
+          // Reached target
+          unit.position.x = unit.targetPosition.x;
+          unit.position.z = unit.targetPosition.z;
+          unit.isMoving = false;
+          unit.targetPosition = null;
+        } else {
+          // Move toward target
+          const moveX = (dx / distance) * speed;
+          const moveZ = (dz / distance) * speed;
+
+          unit.position.x += moveX;
+          unit.position.z += moveZ;
+
+          // Update rotation to face direction
+          unit.rotation = Math.atan2(dx, dz);
+        }
+
+        // Update height to follow terrain
+        this.updateUnitHeight(unit);
+      }
+    });
+  },
+
+  // Get unit by ID
+  getUnitById(id) {
+    return this.units.find(u => u.id === id);
+  },
+
+  // Remove unit
+  removeUnit(unit) {
+    scene.remove(unit.mesh);
+    const index = this.units.indexOf(unit);
+    if (index > -1) {
+      this.units.splice(index, 1);
+    }
+  }
+};
+
+// Create test units
+const testTank = UnitSystem.createUnit('TANK', -10, -10, 0);
+const testArtillery = UnitSystem.createUnit('ARTILLERY', 10, -10, 1);
+const testScout = UnitSystem.createUnit('SCOUT', 0, 10, 0);
+
+// Make one unit move (for testing)
+UnitSystem.moveUnit(testScout, 10, 10);
+
+console.log('Unit system initialized with', UnitSystem.units.length, 'test units');
+
+    // ═══════════════════════════════════════════════════════
+    // STEP 6: Animation Loop
+    // ═══════════════════════════════════════════════════════
+    
+    let animationFrameId;
+    let lastTime = Date.now();
+    
+    function animate() {
+      animationFrameId = requestAnimationFrame(animate);
+    
+      // Calculate delta time
+      const now = Date.now();
+      const deltaTime = (now - lastTime) / 1000;  // Convert to seconds
+      lastTime = now;
+    
+      // Update units
+      UnitSystem.update(deltaTime);
+    
+      // Render
+      renderer.render(scene, camera);
+    }
+    // ═══════════════════════════════════════════════════════
+    // STEP 7: Window Resize Handler
+    // ═══════════════════════════════════════════════════════
+
+    function onWindowResize() {
+      const aspect = window.innerWidth / window.innerHeight;
+      camera.left = -viewSize * aspect;
+      camera.right = viewSize * aspect;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    window.addEventListener('resize', onWindowResize);
+
+    // ═══════════════════════════════════════════════════════
+    // STEP 8: Start Game
+    // ═══════════════════════════════════════════════════════
+
+    console.log('Starting animation loop...');
+    animate();
+
+    console.log(`Warzone Lite ${APPLET_VERSION}: Initialization complete!`);
+
+  } catch (error) {
+    console.error('Warzone Lite: Fatal error:', error);
+    document.getElementById('applet-root').innerHTML = `
+      <div style="color: #ef4444; padding: 20px; font-family: monospace;">
+        <h1>Warzone Lite - Error</h1>
+        <p><strong>Error:</strong> ${error.message}</p>
+        <p><strong>Stack:</strong></p>
+        <pre style="background: #000; padding: 10px; overflow: auto;">${error.stack}</pre>
+      </div>
+    `;
+  }
+})();
