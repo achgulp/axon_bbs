@@ -86,9 +86,9 @@
 
 ---
 
-## 🐛 Known Issues
+## 🐛 Known Issues / BACKLOG
 
-### BACKLOG: Track Texture Bug (Lines 760-787)
+### CRITICAL: Track Texture Bug (Lines 760-787)
 **Problem:** Track textures render on only 1 of 3 units
 - Bodies: ✅ 100% success (shared texture)
 - Weapons: ✅ 100% success (shared texture)
@@ -110,6 +110,31 @@
 3. Fix UV coordinates for mirrored geometry
 4. Investigate Three.js texture wrap modes
 5. Use separate propulsion texture atlases for left/right
+
+---
+
+### HIGH: Air Unit Visual Issues (v3.0.2)
+**Discovered:** End of session, browser test
+
+**Problem 1: Air Units Too Large**
+- VTOL: 1.2×3 (too big, appears oversized)
+- Fighter: 0.8×4 (too big, dominates view)
+- Bomber: 4×1×3 (way too big, massive)
+- **Recommendation:** Reduce to ~0.8×2, 0.6×2.5, 2.5×0.6×2
+
+**Problem 2: Texture Distortion on Simple Geometry**
+- Applied body texture atlas to cone/box primitives
+- Textures stretched/distorted badly
+- UV coordinates not mapped correctly for primitives
+- **Recommendation:** Remove textures, use solid player colors OR use proper PIE models with UVs
+
+**Problem 3: Bomber Clipping into Terrain**
+- Bomber (altitude 5) appears embedded in hillside
+- May be altitude calculation issue or camera angle
+- **Investigation Needed:** Check `AltitudeSystem.getYPosition()` at line 1181
+
+**Status:** Partial fix attempted at end of session (reverted to smaller sizes, removed textures)
+**Not Published:** Changes not committed/pushed due to token limit
 
 ---
 
@@ -168,11 +193,22 @@ Contains detailed templates for:
 
 ## 🚀 Next Steps (Week 3+)
 
+### IMMEDIATE (Start of Next Session)
+1. **Fix air unit sizes** - Current v3.0.2 has oversized units
+   - Revert to reasonable sizes (0.8×2, 0.6×2.5, 2.5×0.6×2)
+   - Test visibility vs playability balance
+2. **Remove texture distortion** - Don't apply textures to primitive geometry
+   - Use solid player colors for now
+   - OR extract proper PIE models with UV maps
+3. **Fix bomber terrain clipping** - Investigate altitude positioning
+4. **Test and publish v3.0.3** with these fixes
+
 ### Week 3: Asset Extraction & Texturing (Planned)
-- Extract VTOL-specific PIE models
-- Apply proper aircraft textures
-- Fix ground unit track textures (critical)
-- Add team color masks (TCMASK)
+- Extract VTOL-specific PIE models from Warzone 2100 assets
+- Apply proper aircraft textures with correct UV mapping
+- Fix ground unit track textures (CRITICAL)
+- Add team color masks (TCMASK) for player colors
+- Improve visual distinction between unit types
 
 ### Week 4: Multiplayer & Federation (Planned)
 - BBS event system for real-time sync

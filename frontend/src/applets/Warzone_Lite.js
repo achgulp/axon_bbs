@@ -859,43 +859,32 @@ const UnitSystem = {
           break;
 
         case 'VTOL':
-          // Diamond/wedge shape for VTOL (larger, more visible)
-          geometry = new THREE.ConeGeometry(1.2, 3, 4);
+          // Diamond/wedge shape for VTOL
+          geometry = new THREE.ConeGeometry(0.8, 2, 4);
           geometry.rotateX(Math.PI / 2);  // Point forward
           break;
 
         case 'FIGHTER':
-          // Sleek arrow shape for fighter (larger, more visible)
-          geometry = new THREE.ConeGeometry(0.8, 4, 3);
+          // Sleek arrow shape for fighter
+          geometry = new THREE.ConeGeometry(0.6, 2.5, 3);
           geometry.rotateX(Math.PI / 2);  // Point forward
           break;
 
         case 'BOMBER':
-          // Wide box for bomber (larger, more visible)
-          geometry = new THREE.BoxGeometry(4, 1, 3);
+          // Wide box for bomber
+          geometry = new THREE.BoxGeometry(2.5, 0.6, 2);
           break;
         default:
           geometry = new THREE.BoxGeometry(2, 2, 2);
       }
 
-      // Create material - use textures for air units, player colors for ground
+      // Create material with player colors (no textures for simple geometry)
       const material = new THREE.MeshPhongMaterial({
-        color: (type === 'VTOL' || type === 'FIGHTER' || type === 'BOMBER') ? 0xffffff : PLAYER_COLORS[ownerId],
-        emissive: 0x000000,
+        color: PLAYER_COLORS[ownerId],
+        emissive: 0x222222,
         specular: 0x444444,
-        shininess: 20
+        shininess: 30
       });
-
-      // Apply textures to air units
-      if (type === 'VTOL' || type === 'FIGHTER' || type === 'BOMBER') {
-        if (textures.bodies) {
-          material.map = textures.bodies;
-          material.needsUpdate = true;
-        }
-      } else {
-        material.emissive.setHex(0x222222);
-        material.specular.setHex(0x333333);
-      }
 
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
