@@ -50,7 +50,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- Main Applet Execution ---
 (async function() {
   try {
-    const APPLET_VERSION = 'v3.0.0 - Week 2: Air Units & Altitude System';
+    const APPLET_VERSION = 'v3.0.1 - Week 2: Air Units (Fixed Initialization)';
 
     // ═══════════════════════════════════════════════════════
     // Debug Console (enabled when BBS_DEBUG_MODE is set)
@@ -1219,11 +1219,6 @@ const testBomber = UnitSystem.createUnit('BOMBER', 0, -5, 2);
 
 debugLog('✅ Unit system initialized with ' + UnitSystem.units.length + ' units (ground + air)');
 
-// Test air unit movement with altitude changes
-UnitSystem.moveUnit(testFighter, 15, 15, 10);  // Move to high altitude
-
-
-
 // ═══════════════════════════════════════════════════════
 // COMBAT SYSTEM
 // ═══════════════════════════════════════════════════════
@@ -1680,6 +1675,10 @@ const PathfindingSystem = {
 };
 
 debugLog('✅ Pathfinding system initialized');
+
+// Test air unit movement with altitude changes (after PathfindingSystem is ready)
+UnitSystem.moveUnit(testFighter, 15, 15, 10);  // Move to high altitude
+UnitSystem.moveUnit(testVTOL, -15, -15, 2);    // Move to low altitude
 
     // ═══════════════════════════════════════════════════════
     // STEP 6: Selection System
