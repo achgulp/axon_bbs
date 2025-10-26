@@ -50,8 +50,45 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- Main Applet Execution ---
 (async function() {
   try {
-    const APPLET_VERSION = 'v1.0 - Initial Development';
-    console.log(`Warzone Lite ${APPLET_VERSION}: Starting...`);
+    const APPLET_VERSION = 'v2.0.9 - Shared Texture Fix';
+
+    // ═══════════════════════════════════════════════════════
+    // Debug Console (enabled when BBS_DEBUG_MODE is set)
+    // ═══════════════════════════════════════════════════════
+
+    function debugLog(msg) {
+      if (!window.BBS_DEBUG_MODE) return;
+      const ts = new Date().toISOString().split('T')[1].slice(0, -1);
+      const log = '[WZ ' + ts + '] ' + msg;
+      console.log(log);
+      const panel = document.getElementById('debug-panel');
+      if (panel) {
+        const e = document.createElement('div');
+        e.textContent = log;
+        e.style.cssText = 'font-size:0.7rem;color:#32cd32;margin:2px 0;font-family:monospace;';
+        panel.appendChild(e);
+        panel.scrollTop = panel.scrollHeight;
+      }
+    }
+
+    // Create debug panel if debug mode is enabled
+    if (window.BBS_DEBUG_MODE) {
+      const dp = document.createElement('div');
+      dp.id = 'debug-panel';
+      dp.style.cssText = 'position:fixed;bottom:0;right:0;width:400px;max-height:200px;background:rgba(0,0,0,0.9);border:1px solid #32cd32;overflow-y:auto;padding:10px;z-index:9999;font-size:0.7rem;color:#32cd32;font-family:monospace;';
+      document.body.appendChild(dp);
+
+      // Show version prominently at top
+      const versionDiv = document.createElement('div');
+      versionDiv.textContent = '=== WARZONE LITE ' + APPLET_VERSION + ' ===';
+      versionDiv.style.cssText = 'font-size:0.8rem;color:#ffff00;font-weight:bold;margin-bottom:5px;border-bottom:1px solid #32cd32;padding-bottom:3px;';
+      dp.appendChild(versionDiv);
+    }
+
+    console.log('═══════════════════════════════════════════════════');
+    console.log(`🎮 Warzone Lite ${APPLET_VERSION}`);
+    console.log('═══════════════════════════════════════════════════');
+    debugLog('Starting applet...');
 
     // ═══════════════════════════════════════════════════════
     // STEP 1: Load External Libraries
@@ -71,14 +108,221 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
       });
     }
 
-    console.log('Loading Three.js...');
+    debugLog('Loading Three.js...');
     await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
 
     if (!window.THREE) {
       throw new Error('Three.js failed to load');
     }
 
-    console.log('Three.js loaded successfully');
+    debugLog('✅ Three.js loaded successfully');
+
+    // ═══════════════════════════════════════════════════════
+    // STEP 1.5: Load Warzone 2100 Texture Atlas
+    // ═══════════════════════════════════════════════════════
+
+    // ═══════════════════════════════════════════════════════
+    // PIE Model Loader (Warzone 2100 Format)
+    // ═══════════════════════════════════════════════════════
+
+    function parsePIE(pieText) {
+      const lines = pieText.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+      let version = 2;
+      let textureSize = 256;
+      const points = [];
+      const polygons = [];
+      const connectors = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const parts = line.split(/\s+/);
+
+        if (parts[0] === 'PIE') {
+          version = parseInt(parts[1]);
+        } else if (parts[0] === 'TEXTURE' && parts.length >= 4) {
+          textureSize = parseInt(parts[3]);
+        } else if (parts[0] === 'POINTS') {
+          const numPoints = parseInt(parts[1]);
+          for (let j = 0; j < numPoints && i + j + 1 < lines.length; j++) {
+            const pointLine = lines[i + j + 1].split(/\s+/);
+            if (pointLine.length >= 3) {
+              points.push([
+                parseFloat(pointLine[0]),
+                parseFloat(pointLine[1]),
+                parseFloat(pointLine[2])
+              ]);
+            }
+          }
+          i += numPoints;
+        } else if (parts[0] === 'POLYGONS') {
+          const numPolygons = parseInt(parts[1]);
+          for (let j = 0; j < numPolygons && i + j + 1 < lines.length; j++) {
+            const polyLine = lines[i + j + 1].split(/\s+/);
+            if (polyLine.length >= 10) {
+              const vertCount = parseInt(polyLine[1]);
+              const indices = [];
+              const uvs = [];
+
+              for (let k = 0; k < vertCount; k++) {
+                indices.push(parseInt(polyLine[2 + k]));
+              }
+
+              for (let k = 0; k < vertCount; k++) {
+                const uvStart = 2 + vertCount + k * 2;
+                uvs.push([
+                  parseFloat(polyLine[uvStart]) / textureSize,
+                  1.0 - (parseFloat(polyLine[uvStart + 1]) / textureSize)
+                ]);
+              }
+
+              polygons.push({ indices, uvs });
+            }
+          }
+          i += numPolygons;
+        } else if (parts[0] === 'CONNECTORS') {
+          const numConnectors = parseInt(parts[1]);
+          for (let j = 0; j < numConnectors && i + j + 1 < lines.length; j++) {
+            const connLine = lines[i + j + 1].split(/\s+/);
+            if (connLine.length >= 3) {
+              // Connector format: x z y (note: z and y are swapped in connector coordinates)
+              connectors.push([
+                parseFloat(connLine[0]),
+                parseFloat(connLine[1]),
+                parseFloat(connLine[2])
+              ]);
+            }
+          }
+          i += numConnectors;
+        }
+      }
+
+      return { points, polygons, connectors };
+    }
+
+    async function loadPIEModel(url) {
+      const response = await fetch(url);
+      const pieText = await response.text();
+      return parsePIE(pieText);
+    }
+
+    function createGeometryFromPIE(pieData) {
+      const geometry = new THREE.BufferGeometry();
+      const vertices = [];
+      const uvs = [];
+      const indices = [];
+
+      let vertexIndex = 0;
+      for (const poly of pieData.polygons) {
+        for (let i = 0; i < poly.indices.length; i++) {
+          const pointIdx = poly.indices[i];
+          const point = pieData.points[pointIdx];
+          vertices.push(point[0] / 128, point[1] / 128, point[2] / 128);
+          uvs.push(poly.uvs[i][0], poly.uvs[i][1]);
+        }
+
+        if (poly.indices.length === 3) {
+          indices.push(vertexIndex, vertexIndex + 1, vertexIndex + 2);
+          vertexIndex += 3;
+        } else if (poly.indices.length === 4) {
+          indices.push(vertexIndex, vertexIndex + 1, vertexIndex + 2);
+          indices.push(vertexIndex, vertexIndex + 2, vertexIndex + 3);
+          vertexIndex += 4;
+        }
+      }
+
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+
+      return geometry;
+    }
+
+    debugLog('Loading Warzone 2100 assets...');
+
+    const textureLoader = new THREE.TextureLoader();
+    let textures = {
+      bodies: null,
+      propulsion: null,
+      weapons: null
+    };
+    let pieModels = {
+      bodies: {},
+      propulsion: {},
+      weapons: {}
+    };
+
+    // Helper function to load texture
+    function loadTexture(url) {
+      return new Promise((resolve) => {
+        textureLoader.load(
+          url,
+          (texture) => {
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.colorSpace = THREE.SRGBColorSpace;  // Proper color space for textures
+            texture.needsUpdate = true;  // Force GPU upload
+            debugLog('  Loaded: ' + url.split('/').pop());
+            resolve(texture);
+          },
+          undefined,
+          (err) => {
+            console.warn('Texture load failed:', url, err);
+            resolve(null);
+          }
+        );
+      });
+    }
+
+    // Load textures and PIE models in parallel
+    await Promise.all([
+      // Load texture atlases
+      (async () => {
+        textures.bodies = await loadTexture('/static/warzone_textures/page-14-droid-hubs.png');
+        textures.propulsion = await loadTexture('/static/warzone_textures/page-16-droid-drives.png');
+        textures.weapons = await loadTexture('/static/warzone_textures/page-17-droid-weapons.png');
+      })(),
+      // Load body PIE models
+      (async () => {
+        try {
+          pieModels.bodies.SCOUT = await loadPIEModel('/static/warzone_models/body_light.pie');
+          pieModels.bodies.TANK = await loadPIEModel('/static/warzone_models/body_medium.pie');
+          pieModels.bodies.ARTILLERY = await loadPIEModel('/static/warzone_models/body_heavy.pie');
+        } catch (err) {
+          console.warn('Body PIE model load failed:', err);
+        }
+      })(),
+      // Load propulsion PIE models
+      (async () => {
+        try {
+          pieModels.propulsion.SCOUT = await loadPIEModel('/static/warzone_models/prop_tracks_light.pie');
+          pieModels.propulsion.TANK = await loadPIEModel('/static/warzone_models/prop_tracks_medium.pie');
+          pieModels.propulsion.ARTILLERY = await loadPIEModel('/static/warzone_models/prop_tracks_heavy.pie');
+        } catch (err) {
+          console.warn('Propulsion PIE model load failed:', err);
+        }
+      })(),
+      // Load weapon PIE models
+      (async () => {
+        try {
+          pieModels.weapons.SCOUT = await loadPIEModel('/static/warzone_models/weapon_cannon.pie');
+          pieModels.weapons.TANK = await loadPIEModel('/static/warzone_models/weapon_cannon.pie');
+          pieModels.weapons.ARTILLERY = await loadPIEModel('/static/warzone_models/weapon_mortar.pie');
+        } catch (err) {
+          console.warn('Weapon PIE model load failed:', err);
+        }
+      })()
+    ]);
+
+    const textureCount = (textures.bodies ? 1 : 0) + (textures.propulsion ? 1 : 0) + (textures.weapons ? 1 : 0);
+    debugLog(textureCount === 3 ? '✅ Textures loaded (3)' : `⚠️  Textures partial (${textureCount}/3)`);
+    debugLog('  Bodies: ' + (textures.bodies ? 'OK' : 'FAIL'));
+    debugLog('  Propulsion: ' + (textures.propulsion ? 'OK' : 'FAIL'));
+    debugLog('  Weapons: ' + (textures.weapons ? 'OK' : 'FAIL'));
+    const modelCount = Object.keys(pieModels.bodies).length + Object.keys(pieModels.propulsion).length + Object.keys(pieModels.weapons).length;
+    debugLog(modelCount === 9 ? '✅ PIE models loaded (9)' : `⚠️  PIE models partial (${modelCount}/9)`);
 
     // ═══════════════════════════════════════════════════════
     // STEP 2: Get User and Applet Info
@@ -87,8 +331,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     const userInfo = await window.bbs.getUserInfo();
     const appletInfo = await window.bbs.getAppletInfo();
 
-    console.log('User:', userInfo.nickname);
-    console.log('Applet ID:', appletInfo.id);
+    debugLog('User: ' + userInfo.nickname);
+    debugLog('Applet ID: ' + appletInfo.id);
 
     // ═══════════════════════════════════════════════════════
     // STEP 3: Initialize Game Container
@@ -113,24 +357,27 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     mountPoint.id = 'game-mount';
     mountPoint.style.width = '100%';
     mountPoint.style.height = '100%';
+    mountPoint.tabIndex = 0;  // Allow keyboard focus
+    mountPoint.style.outline = 'none';  // Remove focus outline for cleaner look
     appletContainer.appendChild(mountPoint);
+    mountPoint.focus();  // Auto-focus for immediate keyboard control
 
-    console.log('Container initialized');
+    debugLog('✅ Container initialized');
 
     // ═══════════════════════════════════════════════════════
     // STEP 4: Three.js Scene Setup
     // ═══════════════════════════════════════════════════════
 
-    console.log('Setting up Three.js scene...');
+    debugLog('Setting up Three.js scene...');
 
     // Scene
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a2e40);
     scene.fog = new THREE.Fog(0x1a2e40, 50, 150);
 
-    // Camera (Orthographic for RTS view)
+    // Camera (Orthographic for RTS view with zoom/pan controls)
     const aspect = window.innerWidth / window.innerHeight;
-    const viewSize = 40;
+    let viewSize = 20;  // Start more zoomed in (was 40)
     const camera = new THREE.OrthographicCamera(
       -viewSize * aspect,
       viewSize * aspect,
@@ -140,9 +387,24 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
       1000
     );
 
-    // Position camera at 45° angle
-    camera.position.set(30, 40, 30);
-    camera.lookAt(0, 0, 0);
+    // Camera control state
+    const cameraTarget = new THREE.Vector3(0, 0, 0);
+    const cameraOffset = new THREE.Vector3(30, 40, 30);
+
+    function updateCamera() {
+      camera.position.copy(cameraTarget).add(cameraOffset);
+      camera.lookAt(cameraTarget);
+
+      // Update orthographic frustum for zoom
+      const aspect = window.innerWidth / window.innerHeight;
+      camera.left = -viewSize * aspect;
+      camera.right = viewSize * aspect;
+      camera.top = viewSize;
+      camera.bottom = -viewSize;
+      camera.updateProjectionMatrix();
+    }
+
+    updateCamera();
 
     // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -164,7 +426,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     directionalLight.shadow.camera.bottom = -100;
     scene.add(directionalLight);
 
-    console.log('Three.js scene setup complete');
+    debugLog('✅ Three.js scene setup complete');
 
     // ═══════════════════════════════════════════════════════
     // STEP 5: Create Test Geometry
@@ -174,7 +436,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // STEP 5: Terrain System
 // ═══════════════════════════════════════════════════════
 
-console.log('Generating terrain...');
+debugLog('Generating terrain...');
 
 const TerrainSystem = {
   size: { width: 64, depth: 80 },
@@ -214,13 +476,13 @@ const TerrainSystem = {
   // Generate strategic heightmap
   generateHeightMap() {
     const map = [];
-    const noise = this.generatePerlinNoise(this.size.width, this.size.depth, 4);
+    const noise = this.generatePerlinNoise(this.size.width, this.size.depth, 16);  // Even larger scale = much smoother
 
     for (let z = 0; z < this.size.depth; z++) {
       map[z] = [];
       for (let x = 0; x < this.size.width; x++) {
-        // Base height from noise
-        let height = Math.floor(noise[z][x] * 3);
+        // Base height from noise (very flat terrain)
+        let height = Math.floor(noise[z][x] * 1.5);  // Reduced from 2 to 1.5 for flatter terrain
 
         // Strategic features:
 
@@ -233,9 +495,9 @@ const TerrainSystem = {
         );
 
         if (distFromCenter < 8) {
-          height = 5;  // Plateau
+          height = 3;  // Lower plateau (was 5)
         } else if (distFromCenter < 10) {
-          height = 3;  // Slopes
+          height = 2;  // Gentler slopes (was 3)
         }
 
         // 2. Flat starting zones in corners
@@ -325,28 +587,17 @@ const TerrainSystem = {
 const terrain = TerrainSystem.generate();
 scene.add(terrain);
 
-console.log('Terrain generated with',
-  TerrainSystem.size.width * TerrainSystem.size.depth, 'vertices');
+debugLog('✅ Terrain generated with ' +
+  (TerrainSystem.size.width * TerrainSystem.size.depth) + ' vertices ' +
+  '(' + TerrainSystem.size.width + 'x' + TerrainSystem.size.depth + ')');
 
-// Test cube (to verify rendering works)
-const cubeGeo = new THREE.BoxGeometry(2, 2, 2);
-const cubeMat = new THREE.MeshPhongMaterial({ color: 0x007bff });
-const cube = new THREE.Mesh(cubeGeo, cubeMat);
-cube.position.set(0, 1, 0);
-cube.castShadow = true;
-scene.add(cube);
 
-// Update test cube to sit on terrain
-const cubeHeight = TerrainSystem.getHeightAt(0, 0);
-cube.position.y = cubeHeight + 1;
-
-console.log('Test cube placed at height:', cubeHeight);
 
 // ═══════════════════════════════════════════════════════
 // UNIT SYSTEM
 // ═══════════════════════════════════════════════════════
 
-console.log('Initializing unit system...');
+debugLog('Initializing unit system...');
 
 // Unit statistics
 const UNIT_STATS = {
@@ -400,6 +651,10 @@ const UnitSystem = {
       position: { x, y: 0, z },
       rotation: 0,
       mesh: null,
+      hitbox: null,  // Invisible larger collision box for easier selection
+      selectionRing: null,  // Visual selection indicator
+      path: [],  // Array of waypoints
+      currentWaypoint: 0,
       targetPosition: null,
       isMoving: false
     };
@@ -407,58 +662,227 @@ const UnitSystem = {
     // Create 3D mesh
     unit.mesh = this.createMesh(type, ownerId);
 
+    // Create invisible hitbox for easier selection
+    unit.hitbox = this.createHitbox(type);
+    unit.hitbox.userData.unitId = unit.id;  // Link hitbox to unit
+
+    // Create selection ring with player color
+    unit.selectionRing = this.createSelectionRing(ownerId);
+
     // Position on terrain
     this.updateUnitHeight(unit);
 
     // Add to scene and tracking array
     scene.add(unit.mesh);
+    scene.add(unit.hitbox);
+    scene.add(unit.selectionRing);
     this.units.push(unit);
 
-    console.log(`Created ${type} unit #${unit.id} for player ${ownerId}`);
+    debugLog('Created ' + type + ' unit #' + unit.id + ' for player ' + ownerId + ' at (' + x.toFixed(1) + ', ' + z.toFixed(1) + ')');
 
     return unit;
   },
 
-  // Create 3D mesh for unit
+  // Create 3D mesh for unit using PIE models (assembles body + propulsion + weapon)
   createMesh(type, ownerId) {
+    const droidGroup = new THREE.Group();
+    droidGroup.userData = { unitId: null };
+
+    // Check if we have PIE models for this type
+    const hasBody = pieModels.bodies[type];
+    const hasProp = pieModels.propulsion[type];
+    const hasWeapon = pieModels.weapons[type];
+
+    if (hasBody && hasProp && hasWeapon) {
+      // COMPONENT ASSEMBLY: Build droid from body + propulsion + weapon
+
+      // 1. Create PROPULSION meshes (WZ2100 tracks are modeled for one side only - need to mirror)
+      // Create FRESH geometry for each track (don't clone - cloning may not copy attributes properly)
+
+      // Right track (original)
+      const propGeometryRight = createGeometryFromPIE(pieModels.propulsion[type]);
+      const propMaterialRight = new THREE.MeshPhongMaterial({
+        color: 0xffffff,
+        emissive: 0x000000,
+        specular: 0x444444,
+        shininess: 20
+      });
+      if (textures.propulsion) {
+        propMaterialRight.map = textures.propulsion;  // Shared texture (no clone)
+        propMaterialRight.needsUpdate = true;
+      }
+      const propMeshRight = new THREE.Mesh(propGeometryRight, propMaterialRight);
+      propMeshRight.castShadow = true;
+      propMeshRight.receiveShadow = true;
+      propMeshRight.position.set(0, 0, 0);
+      droidGroup.add(propMeshRight);
+
+      // Left track (mirrored copy) - create FRESH geometry, don't clone
+      const propGeometryLeft = createGeometryFromPIE(pieModels.propulsion[type]);
+      const propMaterialLeft = new THREE.MeshPhongMaterial({
+        color: 0xffffff,
+        emissive: 0x000000,
+        specular: 0x444444,
+        shininess: 20
+      });
+      if (textures.propulsion) {
+        propMaterialLeft.map = textures.propulsion;  // Shared texture (no clone)
+        propMaterialLeft.needsUpdate = true;
+      }
+      const propMeshLeft = new THREE.Mesh(propGeometryLeft, propMaterialLeft);
+      propMeshLeft.castShadow = true;
+      propMeshLeft.receiveShadow = true;
+      propMeshLeft.position.set(0, 0, 0);
+      propMeshLeft.scale.x = -1;  // Mirror along X axis for left side
+      droidGroup.add(propMeshLeft);
+
+      // 2. Create BODY mesh (sitting on top of propulsion)
+      const bodyGeometry = createGeometryFromPIE(pieModels.bodies[type]);
+      const bodyMaterial = new THREE.MeshPhongMaterial({
+        color: 0xffffff,
+        emissive: 0x000000,
+        specular: 0x444444,
+        shininess: 20
+      });
+      if (textures.bodies) {
+        bodyMaterial.map = textures.bodies;
+        bodyMaterial.needsUpdate = true;
+      }
+      const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+      bodyMesh.castShadow = true;
+      bodyMesh.receiveShadow = true;
+      // Position body above propulsion (WZ2100 droids have body on top of tracks)
+      bodyMesh.position.set(0, 0.2, 0);  // Raised to sit on tracks
+      droidGroup.add(bodyMesh);
+
+      // 3. Create WEAPON/TURRET mesh (positioned using body connector #0)
+      const weaponGeometry = createGeometryFromPIE(pieModels.weapons[type]);
+      const weaponMaterial = new THREE.MeshPhongMaterial({
+        color: 0xffffff,
+        emissive: 0x000000,
+        specular: 0x444444,
+        shininess: 20
+      });
+      if (textures.weapons) {
+        weaponMaterial.map = textures.weapons;
+        weaponMaterial.needsUpdate = true;
+      }
+      const weaponMesh = new THREE.Mesh(weaponGeometry, weaponMaterial);
+      weaponMesh.castShadow = true;
+      weaponMesh.receiveShadow = true;
+
+      // Rotate turret 180° to face forward (WZ2100 PIE models face backwards by default)
+      weaponMesh.rotation.y = Math.PI;
+
+      // Position weapon using connector #0 from body (turret mount point)
+      // Connector format from PIE: x z y (z is up in PIE connector coordinates)
+      if (pieModels.bodies[type].connectors && pieModels.bodies[type].connectors.length > 0) {
+        const conn = pieModels.bodies[type].connectors[0];
+        // Convert PIE connector coords (x, z, y) to Three.js (x, y, z) with scaling
+        // Add body Y offset since weapon is relative to body
+        weaponMesh.position.set(
+          conn[0] / 128,
+          conn[2] / 128 + 0.2,  // Add body height offset
+          conn[1] / 128
+        );
+      } else {
+        // Fallback position if no connector
+        weaponMesh.position.set(0, 0.5, 0);  // Adjusted for body height
+      }
+      droidGroup.add(weaponMesh);
+
+      // Scale entire droid assembly for visibility
+      droidGroup.scale.set(4, 4, 4);
+
+    } else {
+      // FALLBACK: Use primitive geometry if PIE models didn't load
+      let geometry;
+      switch (type) {
+        case 'TANK':
+          geometry = new THREE.BoxGeometry(3, 1.5, 4);
+          break;
+        case 'ARTILLERY':
+          geometry = new THREE.CylinderGeometry(1.5, 2, 3, 8);
+          break;
+        case 'SCOUT':
+          geometry = new THREE.BoxGeometry(2, 0.8, 3);
+          break;
+        default:
+          geometry = new THREE.BoxGeometry(2, 2, 2);
+      }
+
+      const material = new THREE.MeshPhongMaterial({
+        color: PLAYER_COLORS[ownerId],
+        emissive: 0x222222,
+        specular: 0x444444,
+        shininess: 20
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.scale.set(4, 4, 4);
+      droidGroup.add(mesh);
+    }
+
+    return droidGroup;
+  },
+
+  // Create invisible larger hitbox for easier selection
+  createHitbox(type) {
     let geometry;
 
     switch (type) {
       case 'TANK':
-        geometry = new THREE.BoxGeometry(1.5, 0.8, 2);
+        geometry = new THREE.BoxGeometry(5, 3, 6);  // Larger than visible mesh
         break;
       case 'ARTILLERY':
-        geometry = new THREE.CylinderGeometry(0.5, 0.8, 2, 8);
+        geometry = new THREE.CylinderGeometry(3, 3, 5, 8);  // Much larger for easier clicking
         break;
       case 'SCOUT':
-        geometry = new THREE.BoxGeometry(1, 0.4, 1.5);
+        geometry = new THREE.BoxGeometry(4, 2, 5);
         break;
       default:
-        geometry = new THREE.BoxGeometry(1, 1, 1);
+        geometry = new THREE.BoxGeometry(4, 4, 4);
     }
 
-    const material = new THREE.MeshPhongMaterial({
-      color: PLAYER_COLORS[ownerId],
-      emissive: 0x222222,
-      specular: 0x333333
+    const material = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,  // Completely invisible
+      visible: true
     });
 
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.userData = { unitId: null };  // Will be set when unit is created
+    const hitbox = new THREE.Mesh(geometry, material);
+    hitbox.userData = { isHitbox: true };
 
-    return mesh;
+    return hitbox;
+  },
+
+  // Create selection ring indicator with player color
+  createSelectionRing(ownerId = 0) {
+    const geometry = new THREE.RingGeometry(2, 2.5, 32);
+    const material = new THREE.MeshBasicMaterial({
+      color: PLAYER_COLORS[ownerId],  // Use player color for team identification
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.8
+    });
+    const ring = new THREE.Mesh(geometry, material);
+    ring.rotation.x = -Math.PI / 2;  // Lay flat on ground
+    ring.visible = false;  // Hidden by default
+    return ring;
   },
 
   // Update unit's Y position to match terrain
   updateUnitHeight(unit) {
     const terrainHeight = TerrainSystem.getHeightAt(
-      unit.position.x - TerrainSystem.size.width / 2,
-      unit.position.z - TerrainSystem.size.depth / 2
+      unit.position.x,
+      unit.position.z
     );
 
-    // Ground units sit on terrain
-    const heightOffset = 0.5;  // Half their height
+    // Ground units sit on terrain (increased offset to prevent z-fighting/clipping)
+    const stats = UNIT_STATS[unit.type];
+    const heightOffset = unit.type === 'ARTILLERY' ? 2.0 : 1.0;  // Increased from 1.5/0.75 to prevent clipping
     unit.position.y = terrainHeight + heightOffset;
 
     // Update mesh position
@@ -469,12 +893,48 @@ const UnitSystem = {
     );
 
     unit.mesh.rotation.y = unit.rotation;
+
+    // Update hitbox position (same as mesh)
+    if (unit.hitbox) {
+      unit.hitbox.position.set(
+        unit.position.x,
+        unit.position.y,
+        unit.position.z
+      );
+      unit.hitbox.rotation.y = unit.rotation;
+    }
+
+    // Update selection ring position (on ground, above terrain to prevent z-fighting)
+    if (unit.selectionRing) {
+      unit.selectionRing.position.set(
+        unit.position.x,
+        terrainHeight + 0.2,  // Increased from 0.1 to prevent z-fighting
+        unit.position.z
+      );
+    }
   },
 
-  // Move unit toward target
+  // Move unit toward target using pathfinding
   moveUnit(unit, targetX, targetZ) {
-    unit.targetPosition = { x: targetX, z: targetZ };
-    unit.isMoving = true;
+    const path = PathfindingSystem.findPath(
+      unit.position.x,
+      unit.position.z,
+      targetX,
+      targetZ
+    );
+
+    if (path && path.length > 1) {
+      unit.path = path;
+      unit.currentWaypoint = 1;  // Skip first waypoint (current position)
+      unit.targetPosition = unit.path[unit.currentWaypoint];
+      unit.isMoving = true;
+      debugLog('Unit ' + unit.id + ' starting path with ' + path.length + ' waypoints');
+    } else {
+      debugLog('⚠️ Unit ' + unit.id + ' no path found, moving direct');
+      unit.path = [];
+      unit.targetPosition = { x: targetX, z: targetZ };
+      unit.isMoving = true;
+    }
   },
 
   // Update all units (called every frame)
@@ -489,13 +949,24 @@ const UnitSystem = {
         const distance = Math.sqrt(dx * dx + dz * dz);
 
         if (distance < speed) {
-          // Reached target
+          // Reached current waypoint
           unit.position.x = unit.targetPosition.x;
           unit.position.z = unit.targetPosition.z;
-          unit.isMoving = false;
-          unit.targetPosition = null;
+
+          // Check if there are more waypoints
+          if (unit.path.length > 0 && unit.currentWaypoint < unit.path.length - 1) {
+            // Move to next waypoint
+            unit.currentWaypoint++;
+            unit.targetPosition = unit.path[unit.currentWaypoint];
+          } else {
+            // Reached final destination
+            unit.isMoving = false;
+            unit.targetPosition = null;
+            unit.path = [];
+            unit.currentWaypoint = 0;
+          }
         } else {
-          // Move toward target
+          // Move toward current waypoint
           const moveX = (dx / distance) * speed;
           const moveZ = (dz / distance) * speed;
 
@@ -520,6 +991,8 @@ const UnitSystem = {
   // Remove unit
   removeUnit(unit) {
     scene.remove(unit.mesh);
+    if (unit.hitbox) scene.remove(unit.hitbox);
+    if (unit.selectionRing) scene.remove(unit.selectionRing);
     const index = this.units.indexOf(unit);
     if (index > -1) {
       this.units.splice(index, 1);
@@ -532,13 +1005,416 @@ const testTank = UnitSystem.createUnit('TANK', -10, -10, 0);
 const testArtillery = UnitSystem.createUnit('ARTILLERY', 10, -10, 1);
 const testScout = UnitSystem.createUnit('SCOUT', 0, 10, 0);
 
-// Make one unit move (for testing)
-UnitSystem.moveUnit(testScout, 10, 10);
+debugLog('✅ Unit system initialized with ' + UnitSystem.units.length + ' test units');
 
-console.log('Unit system initialized with', UnitSystem.units.length, 'test units');
+// ═══════════════════════════════════════════════════════
+// A* PATHFINDING SYSTEM
+// ═══════════════════════════════════════════════════════
+
+debugLog('Initializing pathfinding system...');
+
+const PathfindingSystem = {
+  // Convert world coordinates to grid coordinates
+  worldToGrid(x, z) {
+    const gridX = Math.floor(x + TerrainSystem.size.width / 2);
+    const gridZ = Math.floor(z + TerrainSystem.size.depth / 2);
+    return { x: gridX, z: gridZ };
+  },
+
+  // Convert grid coordinates to world coordinates
+  gridToWorld(gridX, gridZ) {
+    const x = gridX - TerrainSystem.size.width / 2;
+    const z = gridZ - TerrainSystem.size.depth / 2;
+    return { x, z };
+  },
+
+  // Check if grid position is valid
+  isValidPosition(gridX, gridZ) {
+    return gridX >= 0 && gridX < TerrainSystem.size.width &&
+           gridZ >= 0 && gridZ < TerrainSystem.size.depth;
+  },
+
+  // Calculate movement cost between two grid positions
+  getMovementCost(fromX, fromZ, toX, toZ) {
+    if (!this.isValidPosition(toX, toZ)) return Infinity;
+
+    const fromHeight = TerrainSystem.heightMap[fromZ][fromX];
+    const toHeight = TerrainSystem.heightMap[toZ][toX];
+
+    // Base movement cost
+    const isDiagonal = (fromX !== toX && fromZ !== toZ);
+    let cost = isDiagonal ? 1.414 : 1.0;  // √2 for diagonal
+
+    // Height change cost (climbing is expensive)
+    const heightDiff = toHeight - fromHeight;
+    if (heightDiff > 0) {
+      cost += heightDiff * 2;  // Going uphill costs more
+    } else if (heightDiff < 0) {
+      cost += Math.abs(heightDiff) * 0.5;  // Going downhill costs less
+    }
+
+    return cost;
+  },
+
+  // Heuristic: Manhattan distance
+  heuristic(gridX, gridZ, goalX, goalZ) {
+    return Math.abs(gridX - goalX) + Math.abs(gridZ - goalZ);
+  },
+
+  // A* pathfinding algorithm
+  findPath(startX, startZ, goalX, goalZ) {
+    const startGrid = this.worldToGrid(startX, startZ);
+    const goalGrid = this.worldToGrid(goalX, goalZ);
+
+    // Validate positions
+    if (!this.isValidPosition(startGrid.x, startGrid.z) ||
+        !this.isValidPosition(goalGrid.x, goalGrid.z)) {
+      console.warn('Pathfinding: Invalid start or goal position');
+      return null;
+    }
+
+    // Node structure: { x, z, g, h, f, parent }
+    const openList = [];
+    const closedList = new Set();
+    const startNode = {
+      x: startGrid.x,
+      z: startGrid.z,
+      g: 0,
+      h: this.heuristic(startGrid.x, startGrid.z, goalGrid.x, goalGrid.z),
+      f: 0,
+      parent: null
+    };
+    startNode.f = startNode.g + startNode.h;
+    openList.push(startNode);
+
+    // 8-directional movement (including diagonals)
+    const directions = [
+      { dx: 0, dz: -1 },  // North
+      { dx: 1, dz: -1 },  // Northeast
+      { dx: 1, dz: 0 },   // East
+      { dx: 1, dz: 1 },   // Southeast
+      { dx: 0, dz: 1 },   // South
+      { dx: -1, dz: 1 },  // Southwest
+      { dx: -1, dz: 0 },  // West
+      { dx: -1, dz: -1 }  // Northwest
+    ];
+
+    let iterations = 0;
+    const maxIterations = 2000;  // Prevent infinite loops
+
+    while (openList.length > 0 && iterations < maxIterations) {
+      iterations++;
+
+      // Find node with lowest f score
+      let currentIndex = 0;
+      for (let i = 1; i < openList.length; i++) {
+        if (openList[i].f < openList[currentIndex].f) {
+          currentIndex = i;
+        }
+      }
+
+      const current = openList[currentIndex];
+
+      // Check if we reached the goal
+      if (current.x === goalGrid.x && current.z === goalGrid.z) {
+        // Reconstruct path
+        const path = [];
+        let node = current;
+        while (node !== null) {
+          const world = this.gridToWorld(node.x, node.z);
+          path.unshift({ x: world.x, z: world.z });
+          node = node.parent;
+        }
+        debugLog('✅ Found path with ' + path.length + ' waypoints (' + iterations + ' iterations)');
+        return path;
+      }
+
+      // Move current from open to closed
+      openList.splice(currentIndex, 1);
+      closedList.add(`${current.x},${current.z}`);
+
+      // Check all neighbors
+      for (const dir of directions) {
+        const neighborX = current.x + dir.dx;
+        const neighborZ = current.z + dir.dz;
+        const neighborKey = `${neighborX},${neighborZ}`;
+
+        // Skip if already evaluated or invalid
+        if (closedList.has(neighborKey) || !this.isValidPosition(neighborX, neighborZ)) {
+          continue;
+        }
+
+        // Calculate cost to neighbor
+        const movementCost = this.getMovementCost(current.x, current.z, neighborX, neighborZ);
+        const gScore = current.g + movementCost;
+
+        // Check if neighbor is in open list
+        let neighborNode = openList.find(n => n.x === neighborX && n.z === neighborZ);
+
+        if (!neighborNode) {
+          // New node
+          neighborNode = {
+            x: neighborX,
+            z: neighborZ,
+            g: gScore,
+            h: this.heuristic(neighborX, neighborZ, goalGrid.x, goalGrid.z),
+            f: 0,
+            parent: current
+          };
+          neighborNode.f = neighborNode.g + neighborNode.h;
+          openList.push(neighborNode);
+        } else if (gScore < neighborNode.g) {
+          // Better path found
+          neighborNode.g = gScore;
+          neighborNode.f = neighborNode.g + neighborNode.h;
+          neighborNode.parent = current;
+        }
+      }
+    }
+
+    debugLog('⚠️ No path found or max iterations reached');
+    return null;
+  }
+};
+
+debugLog('✅ Pathfinding system initialized');
 
     // ═══════════════════════════════════════════════════════
-    // STEP 6: Animation Loop
+    // STEP 6: Selection System
+    // ═══════════════════════════════════════════════════════
+
+    debugLog('Initializing selection system...');
+
+    const SelectionSystem = {
+      raycaster: new THREE.Raycaster(),
+      mouse: new THREE.Vector2(),
+      startPoint: new THREE.Vector2(),
+      endPoint: new THREE.Vector2(),
+      isDragging: false,
+      selectionBox: null,
+      selectedUnits: [],
+
+      // Initialize raycaster
+      init() {
+        // Set raycaster threshold for better picking
+        this.raycaster.params.Points = { threshold: 0.5 };
+        this.raycaster.params.Line = { threshold: 0.5 };
+
+        this.setupSelectionBox();
+        this.attachEventListeners();
+      },
+
+      setupSelectionBox() {
+        // Create selection box visual
+        const geometry = new THREE.PlaneGeometry(1, 1);
+        const material = new THREE.MeshBasicMaterial({
+          color: 0x00ff00,
+          transparent: true,
+          opacity: 0.2,
+          side: THREE.DoubleSide
+        });
+        this.selectionBox = new THREE.Mesh(geometry, material);
+        this.selectionBox.rotation.x = -Math.PI / 2; // Lay flat on ground
+        this.selectionBox.visible = false;
+        scene.add(this.selectionBox);
+      },
+
+      attachEventListeners() {
+        mountPoint.addEventListener('mousedown', this.onMouseDown.bind(this), false);
+        mountPoint.addEventListener('mousemove', this.onMouseMove.bind(this), false);
+        mountPoint.addEventListener('mouseup', this.onMouseUp.bind(this), false);
+        mountPoint.addEventListener('contextmenu', this.onRightClick.bind(this), false);
+
+        // Camera controls
+        mountPoint.addEventListener('wheel', (e) => {
+          e.preventDefault();
+          const zoomSpeed = 0.1;
+          const delta = e.deltaY > 0 ? 1 : -1;
+          viewSize = Math.max(5, Math.min(50, viewSize + delta * zoomSpeed * viewSize));
+          updateCamera();
+        }, { passive: false });
+
+        // Keyboard pan controls (WASD or Arrow keys)
+        mountPoint.addEventListener('keydown', (e) => {
+          const panSpeed = 2;
+          switch(e.key.toLowerCase()) {
+            case 'w':
+            case 'arrowup':
+              cameraTarget.z -= panSpeed;
+              updateCamera();
+              e.preventDefault();
+              break;
+            case 's':
+            case 'arrowdown':
+              cameraTarget.z += panSpeed;
+              updateCamera();
+              e.preventDefault();
+              break;
+            case 'a':
+            case 'arrowleft':
+              cameraTarget.x -= panSpeed;
+              updateCamera();
+              e.preventDefault();
+              break;
+            case 'd':
+            case 'arrowright':
+              cameraTarget.x += panSpeed;
+              updateCamera();
+              e.preventDefault();
+              break;
+          }
+        });
+      },
+
+      onMouseDown(event) {
+        event.preventDefault();
+        debugLog('Mouse down at ' + event.clientX + ', ' + event.clientY);
+        this.isDragging = true;
+        this.startPoint.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.startPoint.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        this.endPoint.copy(this.startPoint); // Initialize endPoint
+        this.selectionBox.visible = false; // Hide until drag is significant
+      },
+
+      onMouseMove(event) {
+        event.preventDefault();
+        if (!this.isDragging) return;
+
+        this.endPoint.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.endPoint.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        // Update selection box visual
+        const minX = Math.min(this.startPoint.x, this.endPoint.x);
+        const maxX = Math.max(this.startPoint.x, this.endPoint.x);
+        const minY = Math.min(this.startPoint.y, this.endPoint.y);
+        const maxY = Math.max(this.startPoint.y, this.endPoint.y);
+
+        const width = maxX - minX;
+        const height = maxY - minY;
+
+        if (width > 0.01 || height > 0.01) { // Only show if drag is significant
+          this.selectionBox.visible = true;
+
+          // Convert normalized device coordinates to world coordinates for the box
+          this.raycaster.setFromCamera(this.startPoint, camera);
+          const intersectsStart = this.raycaster.intersectObject(terrain);
+          this.raycaster.setFromCamera(this.endPoint, camera);
+          const intersectsEnd = this.raycaster.intersectObject(terrain);
+
+          if (intersectsStart.length > 0 && intersectsEnd.length > 0) {
+            const startWorld = intersectsStart[0].point;
+            const endWorld = intersectsEnd[0].point;
+
+            const boxWidth = Math.abs(endWorld.x - startWorld.x);
+            const boxDepth = Math.abs(endWorld.z - startWorld.z);
+            const boxCenterX = (startWorld.x + endWorld.x) / 2;
+            const boxCenterZ = (startWorld.z + endWorld.z) / 2;
+
+            this.selectionBox.scale.set(boxWidth, boxDepth, 1);
+            this.selectionBox.position.set(boxCenterX, TerrainSystem.getHeightAt(boxCenterX, boxCenterZ) + 0.1, boxCenterZ);
+          }
+        } else {
+          this.selectionBox.visible = false;
+        }
+      },
+
+      onMouseUp(event) {
+        event.preventDefault();
+        debugLog('Mouse up at ' + event.clientX + ', ' + event.clientY);
+        this.isDragging = false;
+        this.selectionBox.visible = false;
+
+        const rect = mountPoint.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
+
+        this.mouse.x = (mouseX / rect.width) * 2 - 1;
+        this.mouse.y = -(mouseY / rect.height) * 2 + 1;
+
+        this.raycaster.setFromCamera(this.mouse, camera);
+
+        // Check for unit selection - use hitboxes for easier clicking
+        const selectableObjects = UnitSystem.units.map(unit => unit.hitbox);
+
+        const intersects = this.raycaster.intersectObjects(selectableObjects, true);
+
+        if (intersects.length > 0) {
+          // Find unit by hitbox
+          const clickedHitbox = intersects[0].object;
+          const unitId = clickedHitbox.userData.unitId;
+          const unit = UnitSystem.units.find(u => u.id === unitId);
+          if (unit) {
+            this.selectUnit(unit);
+          }
+        } else {
+          // If no unit clicked, deselect all
+          this.deselectAllUnits();
+        }
+      },
+
+      selectUnit(unit) {
+        this.deselectAllUnits(); // For single selection
+        this.selectedUnits.push(unit);
+
+        // Show visual feedback
+        if (unit.selectionRing) {
+          unit.selectionRing.visible = true;
+        }
+
+        debugLog('✅ UNIT SELECTED: ' + unit.id + ' (' + unit.type + ') at (' + unit.position.x.toFixed(1) + ', ' + unit.position.z.toFixed(1) + ')');
+      },
+
+      deselectAllUnits() {
+        // Hide selection rings for all units
+        this.selectedUnits.forEach(unit => {
+          if (unit.selectionRing) {
+            unit.selectionRing.visible = false;
+          }
+        });
+        this.selectedUnits = [];
+      },
+
+      onRightClick(event) {
+        event.preventDefault();
+
+        // Only move if units are selected
+        if (this.selectedUnits.length === 0) {
+          return;
+        }
+
+        const rect = mountPoint.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
+
+        this.mouse.x = (mouseX / rect.width) * 2 - 1;
+        this.mouse.y = -(mouseY / rect.height) * 2 + 1;
+
+        this.raycaster.setFromCamera(this.mouse, camera);
+
+        // Raycast to terrain to get destination
+        const intersects = this.raycaster.intersectObject(terrain);
+
+        if (intersects.length > 0) {
+          const destination = intersects[0].point;
+          debugLog('✅ MOVE COMMAND: ' + this.selectedUnits.length + ' unit(s) to (' + destination.x.toFixed(1) + ', ' + destination.z.toFixed(1) + ')');
+
+          // Command all selected units to move
+          this.selectedUnits.forEach(unit => {
+            UnitSystem.moveUnit(unit, destination.x, destination.z);
+          });
+        }
+      },
+
+      update(deltaTime) {
+        // Update selection logic if needed (e.g., flashing selected units)
+      }
+    };
+
+    SelectionSystem.init();
+    debugLog('✅ Selection system initialized');
+
+    // ═══════════════════════════════════════════════════════
+    // STEP 7: Animation Loop
     // ═══════════════════════════════════════════════════════
     
     let animationFrameId;
@@ -554,6 +1430,8 @@ console.log('Unit system initialized with', UnitSystem.units.length, 'test units
     
       // Update units
       UnitSystem.update(deltaTime);
+      // Update selection system
+      SelectionSystem.update(deltaTime);
     
       // Render
       renderer.render(scene, camera);
@@ -576,10 +1454,13 @@ console.log('Unit system initialized with', UnitSystem.units.length, 'test units
     // STEP 8: Start Game
     // ═══════════════════════════════════════════════════════
 
-    console.log('Starting animation loop...');
+    debugLog('Starting animation loop...');
     animate();
 
-    console.log(`Warzone Lite ${APPLET_VERSION}: Initialization complete!`);
+    console.log('═══════════════════════════════════════════════════');
+    console.log(`✅ Warzone Lite ${APPLET_VERSION}: READY!`);
+    console.log('═══════════════════════════════════════════════════');
+    debugLog('✅ READY! Left-click to select, Right-click to move');
 
   } catch (error) {
     console.error('Warzone Lite: Fatal error:', error);
