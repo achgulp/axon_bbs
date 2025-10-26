@@ -50,7 +50,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- Main Applet Execution ---
 (async function() {
   try {
-    const APPLET_VERSION = 'v2.0.9 - Shared Texture Fix';
+    const APPLET_VERSION = 'v3.0.0 - Week 2: Air Units & Altitude System';
 
     // ═══════════════════════════════════════════════════════
     // Debug Console (enabled when BBS_DEBUG_MODE is set)
@@ -624,6 +624,35 @@ const UNIT_STATS = {
     range: 2,
     speed: 4,
     type: 'ground'
+  },
+
+  // Air units (Week 2)
+  VTOL: {
+    cost: 250,
+    health: 70,
+    damage: 12,
+    range: 4,
+    speed: 3.5,
+    type: 'air',
+    defaultAltitude: 3
+  },
+  FIGHTER: {
+    cost: 300,
+    health: 60,
+    damage: 20,
+    range: 5,
+    speed: 6,
+    type: 'air',
+    defaultAltitude: 7
+  },
+  BOMBER: {
+    cost: 400,
+    health: 90,
+    damage: 40,
+    range: 6,
+    speed: 2,
+    type: 'air',
+    defaultAltitude: 5
   }
 };
 
@@ -650,9 +679,11 @@ const UnitSystem = {
       maxHealth: stats.health,
       position: { x, y: 0, z },
       rotation: 0,
+      altitude: 0,  // NEW: Track altitude level
       mesh: null,
       hitbox: null,  // Invisible larger collision box for easier selection
       selectionRing: null,  // Visual selection indicator
+      altitudeIndicator: null, // NEW
       path: [],  // Array of waypoints
       currentWaypoint: 0,
       targetPosition: null,
@@ -669,8 +700,27 @@ const UnitSystem = {
     // Create selection ring with player color
     unit.selectionRing = this.createSelectionRing(ownerId);
 
+    // NEW: Add altitude indicator for air units
+    if (stats.type === 'air') {
+      const indicatorGeometry = new THREE.RingGeometry(0.8, 1.0, 16);
+      const indicatorMaterial = new THREE.MeshBasicMaterial({
+        color: PLAYER_COLORS[ownerId],
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.3
+      });
+      unit.altitudeIndicator = new THREE.Mesh(indicatorGeometry, indicatorMaterial);
+      unit.altitudeIndicator.rotation.x = -Math.PI / 2;  // Lay flat
+      scene.add(unit.altitudeIndicator);
+    }
+
     // Position on terrain
     this.updateUnitHeight(unit);
+
+    // NEW: Set altitude for air units
+    if (stats.type === 'air' && stats.defaultAltitude) {
+      AltitudeSystem.setAltitude(unit, stats.defaultAltitude);
+    }
 
     // Add to scene and tracking array
     scene.add(unit.mesh);
@@ -807,6 +857,40 @@ const UnitSystem = {
         case 'SCOUT':
           geometry = new THREE.BoxGeometry(2, 0.8, 3);
           break;
+
+        case 'VTOL':
+          // Diamond/wedge shape for VTOL
+          geometry = new THREE.ConeGeometry(0.6, 1.5, 4);
+          geometry.rotateX(Math.PI / 2);  // Point forward
+          break;
+
+        case 'FIGHTER':
+          // Sleek arrow shape for fighter
+          geometry = new THREE.ConeGeometry(0.4, 2, 3);
+          geometry.rotateX(Math.PI / 2);  // Point forward
+          break;
+
+        case 'BOMBER':
+          // Wide box for bomber
+          geometry = new THREE.BoxGeometry(2, 0.5, 1.5);
+          break;
+
+        case 'VTOL':
+          // Diamond/wedge shape for VTOL
+          geometry = new THREE.ConeGeometry(0.6, 1.5, 4);
+          geometry.rotateX(Math.PI / 2);  // Point forward
+          break;
+
+        case 'FIGHTER':
+          // Sleek arrow shape for fighter
+          geometry = new THREE.ConeGeometry(0.4, 2, 3);
+          geometry.rotateX(Math.PI / 2);  // Point forward
+          break;
+
+        case 'BOMBER':
+          // Wide box for bomber
+          geometry = new THREE.BoxGeometry(2, 0.5, 1.5);
+          break;
         default:
           geometry = new THREE.BoxGeometry(2, 2, 2);
       }
@@ -880,10 +964,15 @@ const UnitSystem = {
       unit.position.z
     );
 
-    // Ground units sit on terrain (increased offset to prevent z-fighting/clipping)
     const stats = UNIT_STATS[unit.type];
-    const heightOffset = unit.type === 'ARTILLERY' ? 2.0 : 1.0;  // Increased from 1.5/0.75 to prevent clipping
-    unit.position.y = terrainHeight + heightOffset;
+    const heightOffset = unit.type === 'ARTILLERY' ? 2.0 : 1.0;
+
+    // Air units use altitude
+    if (stats.type === 'air') {
+      unit.position.y = AltitudeSystem.getYPosition(terrainHeight, unit.altitude || 0);
+    } else {
+      unit.position.y = terrainHeight + heightOffset;
+    }
 
     // Update mesh position
     unit.mesh.position.set(
@@ -912,28 +1001,66 @@ const UnitSystem = {
         unit.position.z
       );
     }
+
+    // NEW: Update altitude indicator (shows on ground below aircraft)
+    if (unit.altitudeIndicator) {
+      unit.altitudeIndicator.position.set(
+        unit.position.x,
+        terrainHeight + 0.1,  // Just above terrain
+        unit.position.z
+      );
+    }
   },
 
   // Move unit toward target using pathfinding
-  moveUnit(unit, targetX, targetZ) {
-    const path = PathfindingSystem.findPath(
-      unit.position.x,
-      unit.position.z,
-      targetX,
-      targetZ
-    );
+  moveUnit(unit, targetX, targetZ, targetAlt) {
+    const stats = UNIT_STATS[unit.type];
 
-    if (path && path.length > 1) {
-      unit.path = path;
-      unit.currentWaypoint = 1;  // Skip first waypoint (current position)
-      unit.targetPosition = unit.path[unit.currentWaypoint];
-      unit.isMoving = true;
-      debugLog('Unit ' + unit.id + ' starting path with ' + path.length + ' waypoints');
+    // Use 3D pathfinding for air units
+    if (stats.type === 'air') {
+      const path = PathfindingSystem.findPath3D(
+        unit.position.x,
+        unit.position.z,
+        unit.altitude,
+        targetX,
+        targetZ,
+        targetAlt || unit.altitude,  // Keep current altitude if not specified
+        unit.type
+      );
+
+      if (path && path.length > 1) {
+        unit.path = path;
+        unit.currentWaypoint = 1;
+        unit.targetPosition = unit.path[unit.currentWaypoint];
+        unit.isMoving = true;
+        debugLog(`Air unit ${unit.id} starting 3D path with ${path.length} waypoints`);
+      } else {
+        debugLog(`⚠️ Air unit ${unit.id} no 3D path found, moving direct`);
+        unit.path = [];
+        unit.targetPosition = { x: targetX, z: targetZ, alt: targetAlt || unit.altitude };
+        unit.isMoving = true;
+      }
     } else {
-      debugLog('⚠️ Unit ' + unit.id + ' no path found, moving direct');
-      unit.path = [];
-      unit.targetPosition = { x: targetX, z: targetZ };
-      unit.isMoving = true;
+      // Ground units use 2D pathfinding (existing code)
+      const path = PathfindingSystem.findPath(
+        unit.position.x,
+        unit.position.z,
+        targetX,
+        targetZ
+      );
+
+      if (path && path.length > 1) {
+        unit.path = path;
+        unit.currentWaypoint = 1;  // Skip first waypoint (current position)
+        unit.targetPosition = unit.path[unit.currentWaypoint];
+        unit.isMoving = true;
+        debugLog('Unit ' + unit.id + ' starting path with ' + path.length + ' waypoints');
+      } else {
+        debugLog('⚠️ Unit ' + unit.id + ' no path found, moving direct');
+        unit.path = [];
+        unit.targetPosition = { x: targetX, z: targetZ };
+        unit.isMoving = true;
+      }
     }
   },
 
@@ -948,39 +1075,59 @@ const UnitSystem = {
         const dz = unit.targetPosition.z - unit.position.z;
         const distance = Math.sqrt(dx * dx + dz * dz);
 
-        if (distance < speed) {
-          // Reached current waypoint
-          unit.position.x = unit.targetPosition.x;
-          unit.position.z = unit.targetPosition.z;
+              if (distance < speed) {
+                // Reached current waypoint
+                unit.position.x = unit.targetPosition.x;
+                unit.position.z = unit.targetPosition.z;
+        
+                // Update altitude for air units
+                if (unit.targetPosition.alt !== undefined) {
+                  AltitudeSystem.setAltitude(unit, unit.targetPosition.alt);
+                }
+        
+                // Check if there are more waypoints
+                if (unit.path.length > 0 && unit.currentWaypoint < unit.path.length - 1) {
+                  // Move to next waypoint
+                  unit.currentWaypoint++;
+                  unit.targetPosition = unit.path[unit.currentWaypoint];
+                } else {
+                  // Reached final destination
+                  unit.isMoving = false;
+                  unit.targetPosition = null;
+                  unit.path = [];
+                  unit.currentWaypoint = 0;
+                }
+              } else {
+                // Move toward current waypoint
+                const moveX = (dx / distance) * speed;
+                const moveZ = (dz / distance) * speed;
+        
+                unit.position.x += moveX;
+                unit.position.z += moveZ;
+        
+                // Update rotation to face direction
+                unit.rotation = Math.atan2(dx, dz);
+              }
+        
+              // Update height to follow terrain (or altitude for air units)
+              this.updateUnitHeight(unit);
+            }
 
-          // Check if there are more waypoints
-          if (unit.path.length > 0 && unit.currentWaypoint < unit.path.length - 1) {
-            // Move to next waypoint
-            unit.currentWaypoint++;
-            unit.targetPosition = unit.path[unit.currentWaypoint];
-          } else {
-            // Reached final destination
-            unit.isMoving = false;
-            unit.targetPosition = null;
-            unit.path = [];
-            unit.currentWaypoint = 0;
-          }
-        } else {
-          // Move toward current waypoint
-          const moveX = (dx / distance) * speed;
-          const moveZ = (dz / distance) * speed;
+            // Auto-attack if not moving
+            if (!unit.isMoving) {
+              // Find enemy target (for testing, attack owner 1 if you're owner 0, etc.)
+              const enemyOwnerId = (unit.ownerId + 1) % 2;  // Simple 2-player logic
+              const target = CombatSystem.findTarget(unit, enemyOwnerId);
 
-          unit.position.x += moveX;
-          unit.position.z += moveZ;
-
-          // Update rotation to face direction
-          unit.rotation = Math.atan2(dx, dz);
-        }
-
-        // Update height to follow terrain
-        this.updateUnitHeight(unit);
-      }
-    });
+              if (target) {
+                // Attack once per second (throttle with timer)
+                if (!unit.lastAttackTime || Date.now() - unit.lastAttackTime > 1000) {
+                  CombatSystem.attack(unit, target);
+                  unit.lastAttackTime = Date.now();
+                }
+              }
+            }
+          });
   },
 
   // Get unit by ID
@@ -993,6 +1140,7 @@ const UnitSystem = {
     scene.remove(unit.mesh);
     if (unit.hitbox) scene.remove(unit.hitbox);
     if (unit.selectionRing) scene.remove(unit.selectionRing);
+    if (unit.altitudeIndicator) scene.remove(unit.altitudeIndicator);
     const index = this.units.indexOf(unit);
     if (index > -1) {
       this.units.splice(index, 1);
@@ -1000,12 +1148,233 @@ const UnitSystem = {
   }
 };
 
+// ═══════════════════════════════════════════════════════
+// ALTITUDE SYSTEM (For Air Units)
+// ═══════════════════════════════════════════════════════
+
+debugLog('Initializing altitude system...');
+
+const AltitudeSystem = {
+  // Altitude levels: 0 = ground, 1-3 = low, 4-7 = medium, 8-10 = high
+  maxAltitude: 10,
+  altitudeLevelHeight: 2,  // Each altitude level = 2 units high
+
+  // Convert altitude level to Y position
+  getYPosition(terrainHeight, altitudeLevel) {
+    return terrainHeight + (altitudeLevel * this.altitudeLevelHeight);
+  },
+
+  // Check if two units can collide (same altitude level)
+  canCollide(unit1, unit2) {
+    // Ground units are always at altitude 0
+    const alt1 = unit1.altitude || 0;
+    const alt2 = unit2.altitude || 0;
+
+    // Same altitude level = can collide
+    return alt1 === alt2;
+  },
+
+  // Get valid altitude range for unit type
+  getAltitudeRange(unitType) {
+    const ranges = {
+      'TANK': { min: 0, max: 0 },        // Ground only
+      'ARTILLERY': { min: 0, max: 0 },   // Ground only
+      'SCOUT': { min: 0, max: 0 },       // Ground only
+      'VTOL': { min: 1, max: 5 },        // Low to medium
+      'FIGHTER': { min: 3, max: 10 },    // Medium to high
+      'BOMBER': { min: 2, max: 8 }       // Low to high
+    };
+
+    return ranges[unitType] || { min: 0, max: 0 };
+  },
+
+  // Change unit altitude (for air units)
+  setAltitude(unit, newAltitude) {
+    const range = this.getAltitudeRange(unit.type);
+
+    // Clamp to valid range
+    unit.altitude = Math.max(range.min, Math.min(range.max, newAltitude));
+
+    // Update Y position
+    const terrainHeight = TerrainSystem.getHeightAt(unit.position.x, unit.position.z);
+    unit.position.y = this.getYPosition(terrainHeight, unit.altitude);
+
+    debugLog(`${unit.type} #${unit.id} altitude set to ${unit.altitude}`);
+  }
+};
+
+debugLog('✅ Altitude system initialized');
+debugLog('   Altitude levels: 0 (ground) to 10 (high)');
+debugLog('   Level height: 2 units');
+
 // Create test units
 const testTank = UnitSystem.createUnit('TANK', -10, -10, 0);
 const testArtillery = UnitSystem.createUnit('ARTILLERY', 10, -10, 1);
 const testScout = UnitSystem.createUnit('SCOUT', 0, 10, 0);
 
-debugLog('✅ Unit system initialized with ' + UnitSystem.units.length + ' test units');
+// Create test air units
+const testVTOL = UnitSystem.createUnit('VTOL', -5, 5, 0);
+const testFighter = UnitSystem.createUnit('FIGHTER', 5, 5, 1);
+const testBomber = UnitSystem.createUnit('BOMBER', 0, -5, 2);
+
+debugLog('✅ Unit system initialized with ' + UnitSystem.units.length + ' units (ground + air)');
+
+// Test air unit movement with altitude changes
+UnitSystem.moveUnit(testFighter, 15, 15, 10);  // Move to high altitude
+
+
+
+// ═══════════════════════════════════════════════════════
+// COMBAT SYSTEM
+// ═══════════════════════════════════════════════════════
+
+console.log('Initializing combat system...');
+
+const CombatSystem = {
+  projectiles: [],
+
+  // Check if attacker can target defender
+  canAttack(attacker, defender) {
+    const attackerStats = UNIT_STATS[attacker.type];
+    const defenderStats = UNIT_STATS[defender.type];
+
+    // Calculate 2D distance
+    const dx = defender.position.x - attacker.position.x;
+    const dz = defender.position.z - attacker.position.z;
+    const distance2D = Math.sqrt(dx * dx + dz * dz);
+
+    // Check range
+    if (distance2D > attackerStats.range) {
+      return { canAttack: false, reason: 'out_of_range' };
+    }
+
+    // Altitude restrictions
+    const altDiff = Math.abs((attacker.altitude || 0) - (defender.altitude || 0));
+
+    // Air-to-air: Must be within 2 altitude levels
+    if (attackerStats.type === 'air' && defenderStats.type === 'air') {
+      if (altDiff > 2) {
+        return { canAttack: false, reason: 'altitude_difference' };
+      }
+    }
+
+    // Air-to-ground: Must be at altitude 1-4 to attack ground
+    if (attackerStats.type === 'air' && defenderStats.type === 'ground') {
+      const attackerAlt = attacker.altitude || 0;
+      if (attackerAlt < 1 || attackerAlt > 4) {
+        return { canAttack: false, reason: 'wrong_altitude' };
+      }
+    }
+
+    // Ground-to-air: Limited range against aircraft
+    if (attackerStats.type === 'ground' && defenderStats.type === 'air') {
+      const defenderAlt = defender.altitude || 0;
+      // Can only hit low-flying aircraft (altitude 1-3)
+      if (defenderAlt > 3) {
+        return { canAttack: false, reason: 'target_too_high' };
+      }
+    }
+
+    return { canAttack: true };
+  },
+
+  // Perform attack
+  attack(attacker, defender) {
+    const canAttackResult = this.canAttack(attacker, defender);
+
+    if (!canAttackResult.canAttack) {
+      console.log(`${attacker.type} cannot attack: ${canAttackResult.reason}`);
+      return false;
+    }
+
+    // NEW: Create projectile visual
+    this.createProjectile(attacker, defender);
+
+    const attackerStats = UNIT_STATS[attacker.type];
+    const damage = attackerStats.damage;
+
+    // Apply damage
+    defender.health -= damage;
+    console.log(`${attacker.type} #${attacker.id} attacked ${defender.type} #${defender.id} for ${damage} damage`);
+    console.log(`  ${defender.type} health: ${defender.health}/${defender.maxHealth}`);
+
+    // Check if destroyed
+    if (defender.health <= 0) {
+      console.log(`💥 ${defender.type} #${defender.id} destroyed!`);
+      this.destroyUnit(defender);
+      return true;
+    }
+
+    return true;
+  },
+
+  createProjectile(from, to) {
+    const geometry = new THREE.SphereGeometry(0.2, 8, 8);
+    const material = new THREE.MeshBasicMaterial({ color: 0xff9900 });
+    const projectile = new THREE.Mesh(geometry, material);
+
+    projectile.position.set(from.position.x, from.position.y, from.position.z);
+    scene.add(projectile);
+
+    this.projectiles.push({
+      mesh: projectile,
+      startPos: { ...from.position },
+      endPos: { ...to.position },
+      progress: 0,
+      speed: 15  // Units per second
+    });
+  },
+
+  updateProjectiles(deltaTime) {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const proj = this.projectiles[i];
+      proj.progress += proj.speed * deltaTime;
+
+      if (proj.progress >= 1) {
+        // Reached target - remove
+        scene.remove(proj.mesh);
+        this.projectiles.splice(i, 1);
+      } else {
+        // Interpolate position
+        proj.mesh.position.x = proj.startPos.x + (proj.endPos.x - proj.startPos.x) * proj.progress;
+        proj.mesh.position.y = proj.startPos.y + (proj.endPos.y - proj.startPos.y) * proj.progress;
+        proj.mesh.position.z = proj.startPos.z + (proj.endPos.z - proj.startPos.z) * proj.progress;
+      }
+    }
+  },
+
+  // Destroy unit and remove from game
+  destroyUnit(unit) {
+    UnitSystem.removeUnit(unit);
+  },
+
+  // Find nearest enemy in range
+  findTarget(attacker, enemyOwnerId) {
+    let nearestEnemy = null;
+    let nearestDistance = Infinity;
+
+    for (const unit of UnitSystem.units) {
+      if (unit.ownerId === enemyOwnerId && unit !== attacker) {
+        const canAttackResult = this.canAttack(attacker, unit);
+
+        if (canAttackResult.canAttack) {
+          const dx = unit.position.x - attacker.position.x;
+          const dz = unit.position.z - attacker.position.z;
+          const distance = Math.sqrt(dx * dx + dz * dz);
+
+          if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestEnemy = unit;
+          }
+        }
+      }
+    }
+
+    return nearestEnemy;
+  }
+};
+
+console.log('✅ Combat system initialized');
 
 // ═══════════════════════════════════════════════════════
 // A* PATHFINDING SYSTEM
@@ -1067,9 +1436,9 @@ const PathfindingSystem = {
     const goalGrid = this.worldToGrid(goalX, goalZ);
 
     // Validate positions
-    if (!this.isValidPosition(startGrid.x, startGrid.z) ||
-        !this.isValidPosition(goalGrid.x, goalGrid.z)) {
-      console.warn('Pathfinding: Invalid start or goal position');
+    if (!this.isValidPosition(startGrid.x, startZ) ||
+        !this.isValidPosition(goalGrid.x, goalZ)) {
+      debugLog('Pathfinding: Invalid start or goal position');
       return null;
     }
 
@@ -1174,6 +1543,139 @@ const PathfindingSystem = {
 
     debugLog('⚠️ No path found or max iterations reached');
     return null;
+  },
+
+  // 3D pathfinding for air units (includes altitude)
+  findPath3D(startX, startZ, startAlt, goalX, goalZ, goalAlt, unitType) {
+    const startGrid = this.worldToGrid(startX, startZ);
+    const goalGrid = this.worldToGrid(goalX, goalZ);
+
+    const altRange = AltitudeSystem.getAltitudeRange(unitType);
+
+    // Validate positions
+    if (!this.isValidPosition(startGrid.x, startGrid.z) ||
+        !this.isValidPosition(goalGrid.x, goalGrid.z)) {
+      debugLog('3D Pathfinding: Invalid start or goal position');
+      return null;
+    }
+
+    // Node structure: { x, z, alt, g, h, f, parent }
+    const openList = [];
+    const closedList = new Set();
+
+    const startNode = {
+      x: startGrid.x,
+      z: startGrid.z,
+      alt: startAlt,
+      g: 0,
+      h: this.heuristic3D(startGrid.x, startGrid.z, startAlt, goalGrid.x, goalGrid.z, goalAlt),
+      f: 0,
+      parent: null
+    };
+    startNode.f = startNode.g + startNode.h;
+    openList.push(startNode);
+
+    // 26-directional movement (8 horizontal + up + down for each)
+    const directions = [];
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dalt = -1; dalt <= 1; dalt++) {
+          if (dx === 0 && dz === 0 && dalt === 0) continue;  // Skip self
+          directions.push({ dx, dz, dalt });
+        }
+      }
+    }
+
+    let iterations = 0;
+    const maxIterations = 5000;
+
+    while (openList.length > 0 && iterations < maxIterations) {
+      iterations++;
+
+      // Find node with lowest f score
+      let currentIndex = 0;
+      for (let i = 1; i < openList.length; i++) {
+        if (openList[i].f < openList[currentIndex].f) {
+          currentIndex = i;
+        }
+      }
+
+      const current = openList[currentIndex];
+
+      // Check if reached goal
+      if (current.x === goalGrid.x && current.z === goalGrid.z && current.alt === goalAlt) {
+        // Reconstruct path
+        const path = [];
+        let node = current;
+        while (node !== null) {
+          const world = this.gridToWorld(node.x, node.z);
+          path.unshift({ x: world.x, z: world.z, alt: node.alt });
+          node = node.parent;
+        }
+        debugLog(`✅ Found 3D path with ${path.length} waypoints (${iterations} iterations)`);
+        return path;
+      }
+
+      // Move current from open to closed
+      openList.splice(currentIndex, 1);
+      closedList.add(`${current.x},${current.z},${current.alt}`);
+
+      // Check all neighbors
+      for (const dir of directions) {
+        const neighborX = current.x + dir.dx;
+        const neighborZ = current.z + dir.dz;
+        const neighborAlt = current.alt + dir.dalt;
+        const neighborKey = `${neighborX},${neighborZ},${neighborAlt}`;
+
+        // Validate altitude range
+        if (neighborAlt < altRange.min || neighborAlt > altRange.max) continue;
+
+        // Skip if already evaluated or invalid position
+        if (closedList.has(neighborKey) || !this.isValidPosition(neighborX, neighborZ)) {
+          continue;
+        }
+
+        // Calculate cost (altitude changes cost more)
+        let movementCost = 1.0;
+        if (dir.dx !== 0 && dir.dz !== 0) movementCost *= 1.414;  // Diagonal
+        if (dir.dalt !== 0) movementCost += 2;  // Altitude change penalty
+
+        const gScore = current.g + movementCost;
+
+        // Check if neighbor in open list
+        let neighborNode = openList.find(n =>
+          n.x === neighborX && n.z === neighborZ && n.alt === neighborAlt
+        );
+
+        if (!neighborNode) {
+          // New node
+          neighborNode = {
+            x: neighborX,
+            z: neighborZ,
+            alt: neighborAlt,
+            g: gScore,
+            h: this.heuristic3D(neighborX, neighborZ, neighborAlt, goalGrid.x, goalGrid.z, goalAlt),
+            f: 0,
+            parent: current
+          };
+          neighborNode.f = neighborNode.g + neighborNode.h;
+          openList.push(neighborNode);
+        } else if (gScore < neighborNode.g) {
+          // Better path found
+          neighborNode.g = gScore;
+          neighborNode.f = neighborNode.g + neighborNode.h;
+          neighborNode.parent = current;
+        }
+      }
+    }
+
+    debugLog('⚠️ No 3D path found or max iterations reached');
+    return null;
+  },
+
+  // 3D heuristic (Manhattan distance including altitude)
+  heuristic3D(x, z, alt, goalX, goalZ, goalAlt) {
+    return Math.abs(x - goalX) + Math.abs(z - goalZ) + Math.abs(alt - goalAlt) * 2;
   }
 };
 
@@ -1430,6 +1932,7 @@ debugLog('✅ Pathfinding system initialized');
     
       // Update units
       UnitSystem.update(deltaTime);
+      CombatSystem.updateProjectiles(deltaTime);  // NEW
       // Update selection system
       SelectionSystem.update(deltaTime);
     
