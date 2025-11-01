@@ -50,7 +50,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- Main Applet Execution ---
 (async function() {
   try {
-    const APPLET_VERSION = 'v3.2.2 - Fixed Django Static File Paths';
+    const APPLET_VERSION = 'v3.2.3 - Debug Ground Unit Rendering';
 
     // ═══════════════════════════════════════════════════════
     // Debug Console (enabled when BBS_DEBUG_MODE is set)
@@ -828,7 +828,10 @@ const UnitSystem = {
     const hasProp = pieModels.propulsion[type];
     const hasWeapon = pieModels.weapons[type];
 
+    debugLog(`Creating mesh for ${type}: body=${!!hasBody}, prop=${!!hasProp}, weapon=${!!hasWeapon}`);
+
     if (hasBody && hasProp && hasWeapon) {
+      debugLog(`Using PIE models for ${type}`);
       // COMPONENT ASSEMBLY: Build droid from body + propulsion + weapon
 
       // 1. Create PROPULSION meshes (WZ2100 tracks are modeled for one side only - need to mirror)
@@ -933,6 +936,7 @@ const UnitSystem = {
 
     } else {
       // FALLBACK: Use primitive geometry if PIE models didn't load
+      debugLog(`⚠️  Using fallback geometry for ${type} (PIE models not found)`);
       let geometry;
       // NOTE: These are fallback dimensions, adjusted to be more consistent with PIE model sizes.
       switch (type) {
@@ -988,6 +992,7 @@ const UnitSystem = {
       droidGroup.add(mesh);
     }
 
+    debugLog(`Mesh created for ${type}: ${droidGroup.children.length} child objects`);
     return droidGroup;
   },
 
