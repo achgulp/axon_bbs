@@ -50,7 +50,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- Main Applet Execution ---
 (async function() {
   try {
-    const APPLET_VERSION = 'v3.0.2 - Week 2: Air Units with Textures';
+    const APPLET_VERSION = 'v3.2.2 - Fixed Django Static File Paths';
 
     // ═══════════════════════════════════════════════════════
     // Debug Console (enabled when BBS_DEBUG_MODE is set)
@@ -116,6 +116,16 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     }
 
     debugLog('✅ Three.js loaded successfully');
+
+    // Load Yuka.js for AI behaviors
+    debugLog('Loading Yuka.js AI library...');
+    await loadScript('https://cdn.jsdelivr.net/npm/yuka@latest/build/yuka.min.js');
+
+    if (!window.YUKA) {
+      throw new Error('Yuka.js failed to load');
+    }
+
+    debugLog('✅ Yuka.js AI library loaded');
 
     // ═══════════════════════════════════════════════════════
     // STEP 1.5: Load Warzone 2100 Texture Atlas
@@ -244,7 +254,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     let textures = {
       bodies: null,
       propulsion: null,
-      weapons: null
+      weapons: null,
+      air: null
     };
     let pieModels = {
       bodies: {},
@@ -255,25 +266,25 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     // Helper function to load texture
     function loadTexture(url) {
       return new Promise((resolve) => {
-        textureLoader.load(
-          url,
-          (texture) => {
-            texture.wrapS = THREE.ClampToEdgeWrapping;
-            texture.wrapT = THREE.ClampToEdgeWrapping;
-            texture.minFilter = THREE.LinearFilter;
-            texture.magFilter = THREE.LinearFilter;
-            texture.colorSpace = THREE.SRGBColorSpace;  // Proper color space for textures
-            texture.needsUpdate = true;  // Force GPU upload
-            debugLog('  Loaded: ' + url.split('/').pop());
-            resolve(texture);
-          },
-          undefined,
-          (err) => {
-            console.warn('Texture load failed:', url, err);
-            resolve(null);
-          }
-        );
-      });
+            textureLoader.load(
+              url,
+              (texture) => {
+                texture.wrapS = THREE.ClampToEdgeWrapping;
+                texture.wrapT = THREE.ClampToEdgeWrapping;
+                texture.minFilter = THREE.LinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                texture.colorSpace = THREE.SRGBColorSpace;  // Proper color space for textures
+                texture.needsUpdate = true;  // Force GPU upload
+                debugLog('  Loaded: ' + url.split('/').pop());
+                resolve(texture);
+              },
+              undefined,
+              (err) => {
+                console.warn('Texture load failed:', url, err);
+                debugLog(`❌ ERROR: Texture load failed: ${url}`); // Added for visibility
+                resolve(null);
+              }
+            );      });
     }
 
     // Load textures and PIE models in parallel
@@ -283,6 +294,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         textures.bodies = await loadTexture('/static/warzone_textures/page-14-droid-hubs.png');
         textures.propulsion = await loadTexture('/static/warzone_textures/page-16-droid-drives.png');
         textures.weapons = await loadTexture('/static/warzone_textures/page-17-droid-weapons.png');
+        textures.air = await loadTexture('/static/warzone_textures/page-200-air-units.png');
       })(),
       // Load body PIE models
       (async () => {
@@ -442,6 +454,7 @@ const TerrainSystem = {
   size: { width: 64, depth: 80 },
   heightLevels: 8,
   heightMap: null,
+  roadMap: null,
   mesh: null,
 
   // Simple 2D noise function
@@ -476,48 +489,59 @@ const TerrainSystem = {
   // Generate strategic heightmap
   generateHeightMap() {
     const map = [];
-    const noise = this.generatePerlinNoise(this.size.width, this.size.depth, 16);  // Even larger scale = much smoother
+    this.roadMap = []; // Initialize road map
+    const noise = this.generatePerlinNoise(this.size.width, this.size.depth, 32);
+    const ruggedNoise = this.generatePerlinNoise(this.size.width, this.size.depth, 12);
 
     for (let z = 0; z < this.size.depth; z++) {
       map[z] = [];
+      this.roadMap[z] = [];
       for (let x = 0; x < this.size.width; x++) {
-        // Base height from noise (very flat terrain)
-        let height = Math.floor(noise[z][x] * 1.5);  // Reduced from 2 to 1.5 for flatter terrain
+        this.roadMap[z][x] = 0; // Default to no road
+        let height = 1;
 
-        // Strategic features:
-
-        // 1. Center plateau (high ground objective)
-        const centerX = this.size.width / 2;
-        const centerZ = this.size.depth / 2;
-        const distFromCenter = Math.sqrt(
-          Math.pow(x - centerX, 2) +
-          Math.pow(z - centerZ, 2)
-        );
-
-        if (distFromCenter < 8) {
-          height = 3;  // Lower plateau (was 5)
-        } else if (distFromCenter < 10) {
-          height = 2;  // Gentler slopes (was 3)
+        const mountainGradient = z / this.size.depth;
+        if (mountainGradient > 0.3) {
+            const gradientProgress = (mountainGradient - 0.3) / 0.7;
+            height += Math.floor(noise[z][x] * 4 * gradientProgress);
+            height += Math.floor(ruggedNoise[z][x] * 2 * gradientProgress);
         }
 
-        // 2. Flat starting zones in corners
-        const inTopLeft = (x < 10 && z < 10);
-        const inTopRight = (x > 54 && z < 10);
-        const inBottomLeft = (x < 10 && z > 70);
-        const inBottomRight = (x > 54 && z > 70);
-
-        if (inTopLeft || inTopRight || inBottomLeft || inBottomRight) {
-          height = 1;  // Flat for bases
+        if (x > this.size.width - 20 && z > this.size.depth - 20) {
+            height = Math.max(height, 5);
+        }
+        if (x < 15 && z < 15) {
+            height = 1;
         }
 
-        // 3. Valley choke point
-        if (x === 32 && z > 20 && z < 60) {
-          height = 0;  // Low valley
+        const riverX = this.size.width / 2.5 + Math.sin(z / 6) * 8;
+        if (x > riverX - 1.5 && x < riverX + 1.5) {
+            height = 0;
         }
 
-        // Clamp to valid range
         map[z][x] = Math.max(0, Math.min(this.heightLevels, height));
       }
+    }
+
+    // Add roads and bridges after heights are set
+    const roadZ1 = Math.floor(this.size.depth * 0.3);
+    const roadZ2 = Math.floor(this.size.depth * 0.7);
+    for (let x = 0; x < this.size.width; x++) {
+        // Horizontal roads
+        this.roadMap[roadZ1][x] = 1;
+        this.roadMap[roadZ2][x] = 1;
+        // Ensure road is on solid ground
+        if (map[roadZ1][x] < 1) map[roadZ1][x] = 1;
+        if (map[roadZ2][x] < 1) map[roadZ2][x] = 1;
+    }
+    // Add bridges where roads cross the river
+    for (let z = 0; z < this.size.depth; z++) {
+        if (this.roadMap[z][Math.floor(this.size.width / 2.5)]) {
+             const riverX = this.size.width / 2.5 + Math.sin(z / 6) * 8;
+             for (let x_br = Math.floor(riverX - 1.5); x_br < riverX + 1.5; x_br++) {
+                 if (map[z][x_br] === 0) map[z][x_br] = 1; // Place bridge
+             }
+        }
     }
 
     return map;
@@ -539,8 +563,11 @@ const TerrainSystem = {
     // Generate heightmap
     this.heightMap = this.generateHeightMap();
 
-    // Apply heights to vertices
+    // Apply heights and vertex colors
     const positions = geometry.attributes.position;
+    const colors = [];
+    const color = new THREE.Color();
+
     for (let i = 0; i < positions.count; i++) {
       const x = Math.floor(i % this.size.width);
       const z = Math.floor(i / this.size.width);
@@ -548,17 +575,36 @@ const TerrainSystem = {
 
       // Y is "up" in Three.js
       positions.setY(i, height);
+
+      // Set vertex color based on height for a desert/mountain theme
+      if (TerrainSystem.roadMap[z][x] === 1) {
+        color.set(0x444444); // Dark grey for roads
+      } else if (height < 1) {
+        color.set(0x336699); // Water
+      } else if (height < 2) {
+        color.set(0xC2B280); // Sandy Desert/Beach
+      } else if (height < 4) {
+        // Mix of green and brown for foothills
+        const t = (height - 2) / 2;
+        color.set(0x6B8E23).lerp(new THREE.Color(0x967969), t);
+      } else {
+        // Mix of green, grey, and white for mountains
+        const t = Math.min(1, (height - 4) / 4);
+        color.set(0x677862).lerp(new THREE.Color(0xcccccc), t); // Start with a grey-green
+      }
+      colors.push(color.r, color.g, color.b);
     }
+
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
     // Recompute normals for lighting
     geometry.computeVertexNormals();
 
-    // Create material with height-based coloring
+    // Create material that uses vertex colors
     const material = new THREE.MeshStandardMaterial({
-      color: 0x6B8E23,  // Olive green base
-      roughness: 0.8,
-      metalness: 0.2,
-      vertexColors: false
+      roughness: 0.9, // More rough for natural terrain
+      metalness: 0.1,
+      vertexColors: true // Enable vertex colors
     });
 
     // Create mesh
@@ -580,6 +626,23 @@ const TerrainSystem = {
     }
 
     return this.heightMap[tileZ][tileX];
+  },
+
+  // Get terrain normal at world position by sampling height
+  getNormalAt(x, z) {
+    const d = 0.5; // Distance to sample for slope calculation
+    const hx_plus = this.getHeightAt(x + d, z);
+    const hx_minus = this.getHeightAt(x - d, z);
+    const hz_plus = this.getHeightAt(x, z + d);
+    const hz_minus = this.getHeightAt(x, z - d);
+
+    // Calculate slope in X and Z directions
+    const slopeX = (hx_plus - hx_minus) / (2 * d);
+    const slopeZ = (hz_plus - hz_minus) / (2 * d);
+
+    // Create normal vector from slopes and normalize it
+    const normal = new THREE.Vector3(-slopeX, 1, -slopeZ).normalize();
+    return normal;
   }
 };
 
@@ -591,7 +654,14 @@ debugLog('✅ Terrain generated with ' +
   (TerrainSystem.size.width * TerrainSystem.size.depth) + ' vertices ' +
   '(' + TerrainSystem.size.width + 'x' + TerrainSystem.size.depth + ')');
 
+// ═══════════════════════════════════════════════════════
+// Yuka AI System
+// ═══════════════════════════════════════════════════════
 
+const yukaEntityManager = new YUKA.EntityManager();
+const yukaTime = new YUKA.Time();
+
+debugLog('✅ Yuka.js Entity Manager initialized');
 
 // ═══════════════════════════════════════════════════════
 // UNIT SYSTEM
@@ -643,7 +713,7 @@ const UNIT_STATS = {
     range: 5,
     speed: 6,
     type: 'air',
-    defaultAltitude: 7
+    defaultAltitude: 5
   },
   BOMBER: {
     cost: 400,
@@ -652,7 +722,7 @@ const UNIT_STATS = {
     range: 6,
     speed: 2,
     type: 'air',
-    defaultAltitude: 5
+    defaultAltitude: 7
   }
 };
 
@@ -691,7 +761,7 @@ const UnitSystem = {
     };
 
     // Create 3D mesh
-    unit.mesh = this.createMesh(type, ownerId);
+    unit.mesh = this.createMesh(type, ownerId, stats);
 
     // Create invisible hitbox for easier selection
     unit.hitbox = this.createHitbox(type);
@@ -722,19 +792,34 @@ const UnitSystem = {
       AltitudeSystem.setAltitude(unit, stats.defaultAltitude);
     }
 
+    // Create Yuka vehicle for AI movement
+    const vehicle = new YUKA.Vehicle();
+    vehicle.position.set(unit.position.x, unit.position.y, unit.position.z);
+    vehicle.maxSpeed = stats.speed;
+    vehicle.maxForce = 5; // Steering force
+    vehicle.updateOrientation = false; // We handle rotation separately
+
+    // Add obstacle avoidance (units avoid each other)
+    const avoidBehavior = new YUKA.ObstacleAvoidanceBehavior([], 3);
+    vehicle.steering.add(avoidBehavior);
+
+    // Store reference
+    unit.yukaVehicle = vehicle;
+    yukaEntityManager.add(vehicle);
+
     // Add to scene and tracking array
     scene.add(unit.mesh);
     scene.add(unit.hitbox);
     scene.add(unit.selectionRing);
     this.units.push(unit);
 
-    debugLog('Created ' + type + ' unit #' + unit.id + ' for player ' + ownerId + ' at (' + x.toFixed(1) + ', ' + z.toFixed(1) + ')');
+    debugLog('Created ' + type + ' unit #' + unit.id + ' for player ' + ownerId + ' at (' + x.toFixed(1) + ', ' + z.toFixed(1) + ') with Yuka vehicle');
 
     return unit;
   },
 
   // Create 3D mesh for unit using PIE models (assembles body + propulsion + weapon)
-  createMesh(type, ownerId) {
+  createMesh(type, ownerId, stats) {
     const droidGroup = new THREE.Group();
     droidGroup.userData = { unitId: null };
 
@@ -750,17 +835,18 @@ const UnitSystem = {
       // Create FRESH geometry for each track (don't clone - cloning may not copy attributes properly)
 
       // Right track (original)
-      const propGeometryRight = createGeometryFromPIE(pieModels.propulsion[type]);
       const propMaterialRight = new THREE.MeshPhongMaterial({
         color: 0xffffff,
         emissive: 0x000000,
         specular: 0x444444,
-        shininess: 20
+        shininess: 20,
+        side: THREE.DoubleSide // Render both sides to fix mirroring issue
       });
       if (textures.propulsion) {
         propMaterialRight.map = textures.propulsion;  // Shared texture (no clone)
         propMaterialRight.needsUpdate = true;
       }
+      const propGeometryRight = createGeometryFromPIE(pieModels.propulsion[type]);
       const propMeshRight = new THREE.Mesh(propGeometryRight, propMaterialRight);
       propMeshRight.castShadow = true;
       propMeshRight.receiveShadow = true;
@@ -768,17 +854,18 @@ const UnitSystem = {
       droidGroup.add(propMeshRight);
 
       // Left track (mirrored copy) - create FRESH geometry, don't clone
-      const propGeometryLeft = createGeometryFromPIE(pieModels.propulsion[type]);
       const propMaterialLeft = new THREE.MeshPhongMaterial({
         color: 0xffffff,
         emissive: 0x000000,
         specular: 0x444444,
-        shininess: 20
+        shininess: 20,
+        side: THREE.DoubleSide // Render both sides to fix mirroring issue
       });
       if (textures.propulsion) {
         propMaterialLeft.map = textures.propulsion;  // Shared texture (no clone)
         propMaterialLeft.needsUpdate = true;
       }
+      const propGeometryLeft = createGeometryFromPIE(pieModels.propulsion[type]);
       const propMeshLeft = new THREE.Mesh(propGeometryLeft, propMaterialLeft);
       propMeshLeft.castShadow = true;
       propMeshLeft.receiveShadow = true;
@@ -842,40 +929,41 @@ const UnitSystem = {
       droidGroup.add(weaponMesh);
 
       // Scale entire droid assembly for visibility
-      droidGroup.scale.set(4, 4, 4);
+      droidGroup.scale.set(1.5, 1.5, 1.5);
 
     } else {
       // FALLBACK: Use primitive geometry if PIE models didn't load
       let geometry;
+      // NOTE: These are fallback dimensions, adjusted to be more consistent with PIE model sizes.
       switch (type) {
         case 'TANK':
-          geometry = new THREE.BoxGeometry(3, 1.5, 4);
+          geometry = new THREE.BoxGeometry(1.2, 0.8, 1.8);
           break;
         case 'ARTILLERY':
-          geometry = new THREE.CylinderGeometry(1.5, 2, 3, 8);
+          geometry = new THREE.CylinderGeometry(0.8, 1, 1.5, 8);
           break;
         case 'SCOUT':
-          geometry = new THREE.BoxGeometry(2, 0.8, 3);
+          geometry = new THREE.BoxGeometry(0.8, 0.5, 1.2);
           break;
 
         case 'VTOL':
           // Diamond/wedge shape for VTOL
-          geometry = new THREE.ConeGeometry(0.8, 2, 4);
+          geometry = new THREE.ConeGeometry(0.5, 1.5, 4);
           geometry.rotateX(Math.PI / 2);  // Point forward
           break;
 
         case 'FIGHTER':
           // Sleek arrow shape for fighter
-          geometry = new THREE.ConeGeometry(0.6, 2.5, 3);
+          geometry = new THREE.ConeGeometry(0.4, 2.0, 3);
           geometry.rotateX(Math.PI / 2);  // Point forward
           break;
 
         case 'BOMBER':
           // Wide box for bomber
-          geometry = new THREE.BoxGeometry(2.5, 0.6, 2);
+          geometry = new THREE.BoxGeometry(1.8, 0.4, 1.5);
           break;
         default:
-          geometry = new THREE.BoxGeometry(2, 2, 2);
+          geometry = new THREE.BoxGeometry(1, 1, 1);
       }
 
       // Create material with player colors (no textures for simple geometry)
@@ -886,10 +974,17 @@ const UnitSystem = {
         shininess: 30
       });
 
+      // For air units, apply the specific air texture if available
+      if (stats.type === 'air' && textures.air) {
+        material.map = textures.air;
+        material.color.set(0xffffff); // Use white color to show texture correctly
+        material.needsUpdate = true;
+      }
+
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      mesh.scale.set(4, 4, 4);
+      mesh.scale.set(1.5, 1.5, 1.5);
       droidGroup.add(mesh);
     }
 
@@ -996,122 +1091,104 @@ const UnitSystem = {
     }
   },
 
-  // Move unit toward target using pathfinding
+  // Move unit toward target using Yuka steering behaviors
   moveUnit(unit, targetX, targetZ, targetAlt) {
     const stats = UNIT_STATS[unit.type];
 
-    // Use 3D pathfinding for air units
-    if (stats.type === 'air') {
-      const path = PathfindingSystem.findPath3D(
-        unit.position.x,
-        unit.position.z,
-        unit.altitude,
-        targetX,
-        targetZ,
-        targetAlt || unit.altitude,  // Keep current altitude if not specified
-        unit.type
-      );
+    // Clear previous steering behaviors
+    unit.yukaVehicle.steering.clear();
 
-      if (path && path.length > 1) {
-        unit.path = path;
-        unit.currentWaypoint = 1;
-        unit.targetPosition = unit.path[unit.currentWaypoint];
-        unit.isMoving = true;
-        debugLog(`Air unit ${unit.id} starting 3D path with ${path.length} waypoints`);
-      } else {
-        debugLog(`⚠️ Air unit ${unit.id} no 3D path found, moving direct`);
-        unit.path = [];
-        unit.targetPosition = { x: targetX, z: targetZ, alt: targetAlt || unit.altitude };
-        unit.isMoving = true;
-      }
-    } else {
-      // Ground units use 2D pathfinding (existing code)
-      const path = PathfindingSystem.findPath(
-        unit.position.x,
-        unit.position.z,
-        targetX,
-        targetZ
-      );
+    // Re-add obstacle avoidance (always active)
+    const allObstacles = UnitSystem.units
+      .filter(u => u !== unit && u.yukaVehicle)
+      .map(u => u.yukaVehicle);
+    const avoidBehavior = new YUKA.ObstacleAvoidanceBehavior(allObstacles, 3);
+    unit.yukaVehicle.steering.add(avoidBehavior);
 
-      if (path && path.length > 1) {
-        unit.path = path;
-        unit.currentWaypoint = 1;  // Skip first waypoint (current position)
-        unit.targetPosition = unit.path[unit.currentWaypoint];
+    // Ground units use A* pathfinding + Yuka FollowPath
+    if (stats.type === 'ground') {
+      debugLog(`Finding path for ground unit ${unit.id}...`);
+      const path = PathfindingSystem.findPath(unit.position.x, unit.position.z, targetX, targetZ);
+
+      if (path && path.length > 0) {
+        const yukaPath = new YUKA.Path();
+        path.forEach(waypoint => {
+          // The Y position will be determined by the terrain height at the waypoint
+          const terrainHeight = TerrainSystem.getHeightAt(waypoint.x, waypoint.z);
+          const heightOffset = unit.type === 'ARTILLERY' ? 2.0 : 1.0;
+          yukaPath.add(new YUKA.Vector3(waypoint.x, terrainHeight + heightOffset, waypoint.z));
+        });
+
+        yukaPath.loop = false; // Don't loop the path
+
+        const followPathBehavior = new YUKA.FollowPathBehavior(yukaPath, 1.5); // 1.5 radius to consider waypoint reached
+        unit.yukaVehicle.steering.add(followPathBehavior);
+
         unit.isMoving = true;
-        debugLog('Unit ' + unit.id + ' starting path with ' + path.length + ' waypoints');
+        unit.targetPosition = { x: targetX, z: targetZ }; // Still store final destination
+
+        debugLog(`Unit ${unit.id} (${unit.type}) following path with ${path.length} waypoints via Yuka FollowPathBehavior`);
       } else {
-        debugLog('⚠️ Unit ' + unit.id + ' no path found, moving direct');
-        unit.path = [];
-        unit.targetPosition = { x: targetX, z: targetZ };
-        unit.isMoving = true;
+        debugLog(`No path found for unit ${unit.id}.`);
+        unit.isMoving = false;
+        unit.targetPosition = null;
+        unit.yukaVehicle.velocity.set(0, 0, 0); // Stop the vehicle
       }
+    }
+    // Air units use Arrive behavior, but only in the XZ plane. Altitude is handled in the animate() loop.
+    else if (stats.type === 'air') {
+      const finalTargetAlt = targetAlt !== undefined ? targetAlt : unit.altitude;
+      unit.targetAltitude = finalTargetAlt;
+
+      // Target the destination in XZ, but use the vehicle's current Y.
+      // The animate loop will smoothly adjust Y to the target altitude.
+      const targetPosition = new YUKA.Vector3(targetX, unit.yukaVehicle.position.y, targetZ);
+      const arriveBehavior = new YUKA.ArriveBehavior(targetPosition, 2, 0.5);
+      unit.yukaVehicle.steering.add(arriveBehavior);
+
+      unit.isMoving = true;
+      unit.targetPosition = { x: targetX, z: targetZ };
+
+      debugLog(`Air unit ${unit.id} (${unit.type}) moving to (${targetX.toFixed(1)}, ${targetZ.toFixed(1)}). Target altitude: ${finalTargetAlt}`);
     }
   },
 
   // Update all units (called every frame)
   update(deltaTime) {
     this.units.forEach(unit => {
+      // Check if unit has arrived at target (Yuka handles movement)
       if (unit.isMoving && unit.targetPosition) {
-        const stats = UNIT_STATS[unit.type];
-        const speed = stats.speed * deltaTime;
-
         const dx = unit.targetPosition.x - unit.position.x;
         const dz = unit.targetPosition.z - unit.position.z;
         const distance = Math.sqrt(dx * dx + dz * dz);
 
-              if (distance < speed) {
-                // Reached current waypoint
-                unit.position.x = unit.targetPosition.x;
-                unit.position.z = unit.targetPosition.z;
-        
-                // Update altitude for air units
-                if (unit.targetPosition.alt !== undefined) {
-                  AltitudeSystem.setAltitude(unit, unit.targetPosition.alt);
-                }
-        
-                // Check if there are more waypoints
-                if (unit.path.length > 0 && unit.currentWaypoint < unit.path.length - 1) {
-                  // Move to next waypoint
-                  unit.currentWaypoint++;
-                  unit.targetPosition = unit.path[unit.currentWaypoint];
-                } else {
-                  // Reached final destination
-                  unit.isMoving = false;
-                  unit.targetPosition = null;
-                  unit.path = [];
-                  unit.currentWaypoint = 0;
-                }
-              } else {
-                // Move toward current waypoint
-                const moveX = (dx / distance) * speed;
-                const moveZ = (dz / distance) * speed;
-        
-                unit.position.x += moveX;
-                unit.position.z += moveZ;
-        
-                // Update rotation to face direction
-                unit.rotation = Math.atan2(dx, dz);
-              }
-        
-              // Update height to follow terrain (or altitude for air units)
-              this.updateUnitHeight(unit);
-            }
+        // Check if arrived (within 1 unit of target)
+        if (distance < 1.0) {
+          unit.isMoving = false;
+          unit.targetPosition = null;
 
-            // Auto-attack if not moving
-            if (!unit.isMoving) {
-              // Find enemy target (for testing, attack owner 1 if you're owner 0, etc.)
-              const enemyOwnerId = (unit.ownerId + 1) % 2;  // Simple 2-player logic
-              const target = CombatSystem.findTarget(unit, enemyOwnerId);
+          // Stop the Yuka vehicle
+          unit.yukaVehicle.velocity.set(0, 0, 0);
 
-              if (target) {
-                // Attack once per second (throttle with timer)
-                if (!unit.lastAttackTime || Date.now() - unit.lastAttackTime > 1000) {
-                  CombatSystem.attack(unit, target);
-                  unit.lastAttackTime = Date.now();
-                }
-              }
-            }
-          });
+          debugLog(`Unit ${unit.id} arrived at destination`);
+        }
+      }
+
+      // Auto-attack if not moving
+      if (!unit.isMoving) {
+        // Find enemy target (for testing, attack owner 1 if you're owner 0, etc.)
+        const enemyOwnerId = (unit.ownerId + 1) % 2;  // Simple 2-player logic
+        const target = CombatSystem.findTarget(unit, enemyOwnerId);
+
+        if (target) {
+          // Attack once per second (throttle with timer)
+          if (!unit.lastAttackTime || Date.now() - unit.lastAttackTime > 1000) {
+            CombatSystem.attack(unit, target);
+            unit.lastAttackTime = Date.now();
+          }
+        }
+      }
+    });
   },
 
   // Get unit by ID
@@ -1324,6 +1401,7 @@ const CombatSystem = {
 
   // Destroy unit and remove from game
   destroyUnit(unit) {
+    debugLog(`💥 Unit ${unit.id} (${unit.type}) destroyed by enemy action.`);
     UnitSystem.removeUnit(unit);
   },
 
@@ -1388,17 +1466,27 @@ const PathfindingSystem = {
 
     const fromHeight = TerrainSystem.heightMap[fromZ][fromX];
     const toHeight = TerrainSystem.heightMap[toZ][toX];
+    const heightDiff = toHeight - fromHeight;
+
+    // Make rivers impassable
+    if (toHeight === 0) {
+        return Infinity;
+    }
 
     // Base movement cost
     const isDiagonal = (fromX !== toX && fromZ !== toZ);
     let cost = isDiagonal ? 1.414 : 1.0;  // √2 for diagonal
 
     // Height change cost (climbing is expensive)
-    const heightDiff = toHeight - fromHeight;
     if (heightDiff > 0) {
       cost += heightDiff * 2;  // Going uphill costs more
     } else if (heightDiff < 0) {
       cost += Math.abs(heightDiff) * 0.5;  // Going downhill costs less
+    }
+
+    // Roads are faster
+    if (TerrainSystem.roadMap[toZ][toX] === 1) {
+        cost *= 0.5;
     }
 
     return cost;
@@ -1415,8 +1503,8 @@ const PathfindingSystem = {
     const goalGrid = this.worldToGrid(goalX, goalZ);
 
     // Validate positions
-    if (!this.isValidPosition(startGrid.x, startZ) ||
-        !this.isValidPosition(goalGrid.x, goalZ)) {
+    if (!this.isValidPosition(startGrid.x, startGrid.z) ||
+        !this.isValidPosition(goalGrid.x, goalGrid.z)) {
       debugLog('Pathfinding: Invalid start or goal position');
       return null;
     }
@@ -1901,24 +1989,123 @@ UnitSystem.moveUnit(testVTOL, -15, -15, 2);    // Move to low altitude
     // ═══════════════════════════════════════════════════════
     // STEP 7: Animation Loop
     // ═══════════════════════════════════════════════════════
-    
+
     let animationFrameId;
     let lastTime = Date.now();
-    
+
     function animate() {
       animationFrameId = requestAnimationFrame(animate);
-    
+
       // Calculate delta time
       const now = Date.now();
       const deltaTime = (now - lastTime) / 1000;  // Convert to seconds
       lastTime = now;
-    
-      // Update units
+
+      // Update Yuka AI system
+      const yukaDelta = yukaTime.update().getDelta();
+      yukaEntityManager.update(yukaDelta);
+
+      // Sync Three.js mesh positions with Yuka vehicles
+      UnitSystem.units.forEach(unit => {
+        if (unit.yukaVehicle) {
+          // Copy Yuka position to Three.js mesh (X and Z only, Y is handled separately)
+          unit.position.x = unit.yukaVehicle.position.x;
+          unit.position.z = unit.yukaVehicle.position.z;
+
+          // --- Y-Position Smoothing ---
+          const stats = UNIT_STATS[unit.type];
+          let targetY;
+
+          if (stats.type === 'air') {
+            // Air units: Gradually change altitude level
+            if (unit.targetAltitude !== undefined && unit.altitude !== unit.targetAltitude) {
+              const altDiff = unit.targetAltitude - unit.altitude;
+              const altStep = Math.sign(altDiff) * Math.min(Math.abs(altDiff), deltaTime * 2); // 2 levels/sec
+              unit.altitude += altStep;
+            }
+            
+            // Target Y is based on altitude relative to sea-level, but with terrain avoidance
+            const seaLevelAltitude = AltitudeSystem.getYPosition(0, unit.altitude);
+            const terrainHeight = TerrainSystem.getHeightAt(unit.position.x, unit.position.z);
+            const minSafeAltitude = terrainHeight + 2.0; // Must be at least 2 units above ground
+
+            targetY = Math.max(seaLevelAltitude, minSafeAltitude);
+          } else {
+            // Ground units: Target Y is on the terrain surface
+            const terrainHeight = TerrainSystem.getHeightAt(unit.position.x, unit.position.z);
+            // Adjusted offset to balance between hovering and clipping
+            const heightOffset = unit.type === 'ARTILLERY' ? 1.2 : 0.6;
+            targetY = terrainHeight + heightOffset;
+          }
+
+          // Smoothly interpolate the unit's Y position towards the target Y
+          // Use a higher interpolation factor for ground units to make them stick to terrain more closely
+          const interpolationFactor = stats.type === 'ground' ? 10 : 5;
+          unit.position.y = THREE.MathUtils.lerp(unit.position.y, targetY, deltaTime * interpolationFactor);
+
+          // Update Yuka vehicle Y to match the smoothed position
+          unit.yukaVehicle.position.y = unit.position.y;
+
+          // --- Sanity Checks and Final Updates ---
+          if (isNaN(unit.position.x) || isNaN(unit.position.y) || isNaN(unit.position.z)) {
+            console.error(`Unit ${unit.id} has invalid position:`, unit.position);
+          } else {
+            // Update mesh position
+            unit.mesh.position.set(unit.position.x, unit.position.y, unit.position.z);
+          }
+
+          // --- Rotation and Tilting ---
+          const yukaVelocity = unit.yukaVehicle.velocity;
+          const isMoving = yukaVelocity.length() > 0.1;
+
+          if (isMoving) {
+            unit.rotation = Math.atan2(yukaVelocity.x, yukaVelocity.z);
+          }
+
+          const headingQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), unit.rotation);
+          let finalQuaternion = headingQuaternion;
+
+          // Ground units tilt with the terrain
+          if (stats.type === 'ground') {
+            const terrainNormal = TerrainSystem.getNormalAt(unit.position.x, unit.position.z);
+            const upVector = new THREE.Vector3(0, 1, 0);
+            const tiltQuaternion = new THREE.Quaternion().setFromUnitVectors(upVector, terrainNormal);
+            finalQuaternion = tiltQuaternion.multiply(headingQuaternion);
+          }
+
+          if (isNaN(finalQuaternion.x) || isNaN(finalQuaternion.y) || isNaN(finalQuaternion.z) || isNaN(finalQuaternion.w)) {
+            console.error(`Unit ${unit.id} has invalid finalQuaternion.`);
+          } else {
+            // Smoothly interpolate to the final rotation
+            unit.mesh.quaternion.slerp(finalQuaternion, deltaTime * 7);
+          }
+
+          // Update hitbox position
+          if (unit.hitbox) {
+            unit.hitbox.position.set(unit.position.x, unit.position.y, unit.position.z);
+            unit.hitbox.rotation.y = unit.rotation;
+          }
+
+          // Update selection ring position (on ground)
+          if (unit.selectionRing) {
+            const terrainHeight = TerrainSystem.getHeightAt(unit.position.x, unit.position.z);
+            unit.selectionRing.position.set(unit.position.x, terrainHeight + 0.2, unit.position.z);
+          }
+
+          // Update altitude indicator for air units
+          if (unit.altitudeIndicator) {
+            const terrainHeight = TerrainSystem.getHeightAt(unit.position.x, unit.position.z);
+            unit.altitudeIndicator.position.set(unit.position.x, terrainHeight + 0.1, unit.position.z);
+          }
+        }
+      });
+
+      // Update units (now just checks arrival and handles combat)
       UnitSystem.update(deltaTime);
-      CombatSystem.updateProjectiles(deltaTime);  // NEW
+      CombatSystem.updateProjectiles(deltaTime);
       // Update selection system
       SelectionSystem.update(deltaTime);
-    
+
       // Render
       renderer.render(scene, camera);
     }
