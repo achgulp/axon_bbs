@@ -51,6 +51,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 (async function() {
   try {
     const APPLET_VERSION = 'v3.2.3 - Debug Ground Unit Rendering';
+    // Build timestamp: 2025-11-01T21:07:00Z (forces new hash for publishing)
 
     // ═══════════════════════════════════════════════════════
     // Debug Console (enabled when BBS_DEBUG_MODE is set)
