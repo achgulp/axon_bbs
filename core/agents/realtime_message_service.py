@@ -42,7 +42,7 @@ class RealtimeMessageService:
     - Any applet needing <1s message latency
     """
 
-    def __init__(self, board_id, poll_interval=1, **kwargs):
+    def __init__(self, board_id, poll_interval=1, federation_interval=5, use_lan_federation=False, **kwargs):
         from messaging.models import MessageBoard
 
         logger.info(f"[RealtimeMessageService] Initializing for board_id={board_id}")
@@ -56,36 +56,48 @@ class RealtimeMessageService:
         except MessageBoard.DoesNotExist:
             raise ValueError(f"MessageBoard with ID {self.board_id} does not exist.")
 
-        self.poll_interval = int(poll_interval)
-        self.thread = threading.Thread(target=self._run, daemon=True)
+        # Separate intervals for local SSE vs federation sync
+        self.poll_interval = float(poll_interval)  # For local DB checks + SSE (can be 0.016 for 60fps)
+        self.federation_interval = float(federation_interval)  # For Tor/LAN federation (typically 5-10s)
+        self.use_lan_federation = use_lan_federation  # If True, bypass Tor proxy for LAN
+
+        # Two separate threads for local SSE and federation
+        self.local_thread = threading.Thread(target=self._local_loop, daemon=True, name=f"Local-{self.board.name}")
+        self.federation_thread = threading.Thread(target=self._federation_loop, daemon=True, name=f"Federation-{self.board.name}")
         self.shutdown_event = threading.Event()
 
-        # Broadcast queue system for SSE clients
+        # Broadcast queue system for SSE clients (already thread-safe)
         self.subscriber_queues = []
         self.subscribers_lock = threading.Lock()
 
-        # Track last synced message to avoid re-processing
+        # Track last synced message to avoid re-processing (needs lock for dual-thread access)
         self.last_sync_time = timezone.now()
+        self.sync_time_lock = threading.Lock()
 
         # Federation authentication
         self.local_instance = None
         self.private_key = None
         self._load_identity()
 
-        logger.info(f"RealtimeMessageService initialized for board '{self.board.name}' with {self.poll_interval}s poll interval.")
+        logger.info(f"RealtimeMessageService initialized for board '{self.board.name}' with local={self.poll_interval}s, federation={self.federation_interval}s, lan_mode={self.use_lan_federation}")
 
     def start(self):
-        """Start the service's background thread"""
-        print(f"[DEBUG] RealtimeMessageService.start() called for board '{self.board.name}'")
-        print(f"[DEBUG] Thread object: {self.thread}, daemon={self.thread.daemon}")
-        self.thread.start()
-        print(f"[DEBUG] Thread.start() completed. is_alive={self.thread.is_alive()}")
-        logger.info(f"RealtimeMessageService thread started for board '{self.board.name}'")
+        """Start both background threads (local SSE + federation sync)"""
+        logger.info(f"[RealtimeMessageService] Starting threads for board '{self.board.name}'")
+        self.local_thread.start()
+        self.federation_thread.start()
+        logger.info(f"[RealtimeMessageService] Threads started - Local: {self.local_thread.is_alive()}, Federation: {self.federation_thread.is_alive()}")
 
     def stop(self):
-        """Stop the service's background thread"""
+        """Stop both background threads"""
+        logger.info(f"[RealtimeMessageService] Shutting down threads for board '{self.board.name}'")
         self.shutdown_event.set()
-        logger.info(f"RealtimeMessageService shutting down for board '{self.board.name}'")
+
+        # Wait for both threads to finish (with timeout)
+        self.local_thread.join(timeout=2)
+        self.federation_thread.join(timeout=2)
+
+        logger.info(f"[RealtimeMessageService] Threads stopped for board '{self.board.name}'")
 
     def subscribe(self):
         """
@@ -166,43 +178,63 @@ class RealtimeMessageService:
             if dead_queues:
                 logger.debug(f"Removed {len(dead_queues)} disconnected SSE clients from board '{self.board.name}'")
 
-    def _run(self):
-        """Background loop: poll for new local messages, sync with peers, broadcast to SSE clients"""
-        print(f"[DEBUG] _run() method started for board '{self.board.name}'!")
-        try:
-            print(f"[DEBUG] About to enter while loop for board '{self.board.name}'")
-            logger.info(f"[RealtimeMessageService] Starting real-time sync loop for board '{self.board.name}', room_id: {self.board.federation_room_id}")
+    def _local_loop(self):
+        """Fast loop: Check local DB for new messages and broadcast to SSE clients"""
+        logger.info(f"[RealtimeMessageService] Starting LOCAL loop for board '{self.board.name}' at {self.poll_interval}s interval ({1/self.poll_interval:.1f} fps)")
 
+        try:
             while not self.shutdown_event.wait(self.poll_interval):
                 try:
                     from messaging.models import Message
 
+                    # Get last sync time safely (shared with federation thread)
+                    with self.sync_time_lock:
+                        check_since = self.last_sync_time
+
                     # Check for new local messages since last sync
                     new_messages = Message.objects.filter(
                         board=self.board,
-                        created_at__gt=self.last_sync_time
+                        created_at__gt=check_since
                     ).order_by('created_at')
 
                     if new_messages.exists():
-                        logger.info(f"[RealtimeMessageService] Found {new_messages.count()} new messages on board '{self.board.name}'")
-                        logger.info(f"[RealtimeMessageService] Broadcasting to {len(self.subscriber_queues)} subscribers")
-                        self.last_sync_time = new_messages.last().created_at
+                        logger.info(f"[LOCAL] Found {new_messages.count()} new messages on board '{self.board.name}'")
+                        logger.info(f"[LOCAL] Broadcasting to {len(self.subscriber_queues)} subscribers")
 
-                        # Broadcast to local SSE subscribers
+                        # Update last sync time safely
+                        with self.sync_time_lock:
+                            self.last_sync_time = new_messages.last().created_at
+
+                        # Broadcast to SSE clients (already thread-safe with subscribers_lock)
                         self._broadcast_update(new_messages)
 
-                    # Synchronize with federated peers
+                except Exception as e:
+                    logger.error(f"Error in local loop for board '{self.board.name}': {e}", exc_info=True)
+
+        except Exception as e:
+            logger.error(f"FATAL: Local loop crashed for board '{self.board.name}': {e}", exc_info=True)
+
+    def _federation_loop(self):
+        """Slow loop: Synchronize with federated peers (Tor or LAN)"""
+        logger.info(f"[RealtimeMessageService] Starting FEDERATION loop for board '{self.board.name}' at {self.federation_interval}s interval")
+
+        try:
+            while not self.shutdown_event.wait(self.federation_interval):
+                try:
+                    # Sync with peers (uses self.sync_time_lock internally)
                     self._synchronize_with_peers()
 
                 except Exception as e:
-                    logger.error(f"Error in RealtimeMessageService loop for board '{self.board.name}': {e}", exc_info=True)
+                    logger.error(f"Error in federation loop for board '{self.board.name}': {e}", exc_info=True)
+
         except Exception as e:
-            logger.error(f"FATAL: RealtimeMessageService thread crashed for board '{self.board.name}': {e}", exc_info=True)
+            logger.error(f"FATAL: Federation loop crashed for board '{self.board.name}': {e}", exc_info=True)
 
     def _synchronize_with_peers(self):
         """
         Poll federated peers for new messages.
         Uses board.trusted_peers and board.federation_room_id.
+        Supports both Tor (default) and LAN/clearnet (if use_lan_federation=True).
         """
         from core.models import TrustedInstance
         from messaging.models import Message
@@ -220,7 +252,17 @@ class RealtimeMessageService:
             logger.debug(f"No matching trusted peers found for board '{self.board.name}'")
             return
 
-        proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+        # Use Tor proxy by default, bypass for LAN federation
+        if self.use_lan_federation:
+            proxies = None  # Direct connection for LAN (10-50ms latency)
+            logger.debug(f"[FEDERATION] Using LAN/clearnet mode (no Tor proxy)")
+        else:
+            proxies = {'http': 'socks5h://127.0.0.1:9050', 'https': 'socks5h://127.0.0.1:9050'}
+            logger.debug(f"[FEDERATION] Using Tor mode (1-5s latency)")
+
+        # Get last sync time safely
+        with self.sync_time_lock:
+            check_since = self.last_sync_time
 
         for peer in trusted_peers:
             if not peer.web_ui_onion_url:
@@ -229,7 +271,7 @@ class RealtimeMessageService:
             try:
                 # Request messages since last_sync_time
                 messages_url = f"{peer.web_ui_onion_url.strip('/')}/api/realtime/rooms/{self.board.federation_room_id}/messages/"
-                params = {'since': self.last_sync_time.isoformat()}
+                params = {'since': check_since.isoformat()}
 
                 response = requests.get(
                     messages_url,
@@ -295,7 +337,8 @@ class RealtimeMessageService:
 
         if new_count > 0:
             logger.info(f"Merged {new_count} new messages for board '{self.board.name}' from peer {peer_hostname}")
-            # Update last_sync_time to latest message
+            # Update last_sync_time to latest message (thread-safe)
             latest_msg = Message.objects.filter(board=self.board).order_by('-created_at').first()
             if latest_msg:
-                self.last_sync_time = latest_msg.created_at
+                with self.sync_time_lock:
+                    self.last_sync_time = latest_msg.created_at

@@ -13,7 +13,25 @@ class MessageBoard(models.Model):
     is_realtime = models.BooleanField(
         default=False,
         help_text="Enable real-time federation sync for low-latency updates. "
-                  "When True, messages bypass BitSync polling and use direct BBS-to-BBS push (1s poll interval)."
+                  "When True, messages bypass BitSync polling and use direct BBS-to-BBS push."
+    )
+    local_poll_interval = models.FloatField(
+        default=1.0,
+        help_text="Local SSE update interval in seconds. "
+                  "For chat/games: 0.016 (60fps), 0.033 (30fps), 0.1 (10fps). "
+                  "For boards: 1.0 (1fps). Lower = more responsive but higher CPU usage."
+    )
+    federation_poll_interval = models.FloatField(
+        default=5.0,
+        help_text="Federation sync interval in seconds. "
+                  "For Tor: 5-10s (slow but private). For LAN: 0.1-1s (fast). "
+                  "Federation is always slower than local updates."
+    )
+    use_lan_federation = models.BooleanField(
+        default=False,
+        help_text="Bypass Tor proxy for LAN/clearnet federation. "
+                  "Enable for local network gaming (10-50ms latency). "
+                  "Disable for privacy/Tor federation (1-5s latency)."
     )
     federation_room_id = models.CharField(
         max_length=255,
@@ -27,7 +45,7 @@ class MessageBoard(models.Model):
         default=list,
         blank=True,
         help_text="List of trusted peer onion URLs for real-time sync. "
-                  "Format: ['http://peer1.onion', 'http://peer2.onion']. "
+                  "Format: ['http://peer1.onion', 'http://peer2.onion'] or ['http://192.168.1.100:8000'] for LAN. "
                   "Only applies when is_realtime=True."
     )
     message_retention_days = models.PositiveIntegerField(

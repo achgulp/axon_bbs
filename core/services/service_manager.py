@@ -192,10 +192,15 @@ class ServiceManager:
         logger.debug(f"Found {realtime_boards.count()} real-time message board(s) to start...")
         for board in realtime_boards:
             try:
-                service = RealtimeMessageService(board_id=board.id)
+                service = RealtimeMessageService(
+                    board_id=board.id,
+                    poll_interval=board.local_poll_interval,
+                    federation_interval=board.federation_poll_interval,
+                    use_lan_federation=board.use_lan_federation
+                )
                 service.start()
                 self.realtime_services[board.id] = service
-                logger.debug(f"Started RealtimeMessageService for board '{board.name}' (id={board.id})")
+                logger.debug(f"Started RealtimeMessageService for board '{board.name}' (id={board.id}) - local={board.local_poll_interval}s, federation={board.federation_poll_interval}s, lan={board.use_lan_federation}")
             except Exception as e:
                 logger.error(f"Failed to start RealtimeMessageService for board '{board.name}': {e}", exc_info=True)
 
@@ -214,10 +219,15 @@ class ServiceManager:
                 logger.error(f"Cannot start realtime service for board '{board.name}': is_realtime=False")
                 return False
 
-            service = RealtimeMessageService(board_id=board.id)
+            service = RealtimeMessageService(
+                board_id=board.id,
+                poll_interval=board.local_poll_interval,
+                federation_interval=board.federation_poll_interval,
+                use_lan_federation=board.use_lan_federation
+            )
             service.start()
             self.realtime_services[board.id] = service
-            logger.info(f"Started RealtimeMessageService for board '{board.name}' (id={board.id})")
+            logger.info(f"Started RealtimeMessageService for board '{board.name}' (id={board.id}) - local={board.local_poll_interval}s, federation={board.federation_poll_interval}s, lan={board.use_lan_federation}")
             return True
 
         except MessageBoard.DoesNotExist:
@@ -235,11 +245,11 @@ class ServiceManager:
 
         logger.info(f"Stopping RealtimeMessageService for board {board_id}...")
         service = self.realtime_services.get(board_id)
-        service.stop()
-        service.thread.join(timeout=10)
+        service.stop()  # This now handles both threads internally with join()
 
-        if service.thread.is_alive():
-            logger.error(f"Failed to stop realtime service for board {board_id} in time.")
+        # Check if threads stopped (stop() already does join with timeout)
+        if service.local_thread.is_alive() or service.federation_thread.is_alive():
+            logger.error(f"Failed to stop realtime service threads for board {board_id} in time.")
             return False
 
         del self.realtime_services[board_id]
