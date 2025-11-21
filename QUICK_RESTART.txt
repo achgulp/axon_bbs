@@ -1,0 +1,152 @@
+═══════════════════════════════════════════════════════════════════
+WARZONE LITE - QUICK RESTART (Oct 25, 2025)
+═══════════════════════════════════════════════════════════════════
+
+📍 CURRENT STATE: v2.0.7 - Fresh Geometry (No Cloning)
+🎯 STATUS: ⚠️ Droid assembly works but track textures fail on 2 of 3 units
+
+📁 Main File: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+📁 Textures: /home/dukejer/axon_bbs/frontend/public/warzone_textures/
+📁 Full Docs: /home/dukejer/axon_bbs/WARZONE_LITE_RESTART_20251025.md
+
+───────────────────────────────────────────────────────────────────
+✅ COMPLETED (Week 1 - 100%+)
+───────────────────────────────────────────────────────────────────
+• Tasks 0-1.3: Terrain, units, rendering, pathfinding
+• Task 1.4: Mouse selection with raycasting
+• Task 1.5: Click-to-move with A* pathfinding
+• Task 1.6 (v1.7.0): Invisible hitboxes for easier clicking
+• Task 1.7 (v1.8.0): Warzone 2100 texture atlas loading
+• Task 1.8 (v1.9.0): ⭐ Authentic WZ2100 PIE model loader ⭐
+• Task 1.9 (v1.10.0): Camera zoom + pan controls
+• Task 1.10 (v1.11.0): Bug fixes - WASD controls + texture rendering
+• Task 1.11 (v1.12.0): 4x model scaling
+• Task 2.0 (v2.0.0-2.0.7): ⭐ DROID ASSEMBLY + TEXTURE DEBUGGING ⭐
+  - v2.0.0: Component assembly system implemented
+  - v2.0.1-2.0.7: Track texture debugging (7 iterations, issue persists)
+
+───────────────────────────────────────────────────────────────────
+🎮 DROID ASSEMBLY SYSTEM (v2.0.0)
+───────────────────────────────────────────────────────────────────
+• Full PIE format parser with CONNECTORS support (lines 128-200)
+• Loads 9 PIE models: 3 bodies + 3 propulsion + 3 weapons
+• Component assembly: body + tracks + turret positioned via connectors
+• Three texture atlases:
+  - page-14-droid-hubs.png (bodies)
+  - page-16-droid-drives.png (propulsion)
+  - page-17-droid-weapons.png (weapons)
+• Authentic WZ2100 droid rendering with proper positioning
+• Camera: Zoom (mouse wheel), Pan (WASD/arrows)
+• 4x model scaling for RTS visibility
+
+───────────────────────────────────────────────────────────────────
+⚠️ KNOWN ISSUES (v2.0.7)
+───────────────────────────────────────────────────────────────────
+1. ❌ Track textures fail on 2 of 3 vehicles (33% success rate)
+2. ✅ Bodies texture correctly (100%)
+3. ✅ Weapons texture correctly (100%)
+4. ✅ Turrets face forward (180° rotation applied)
+5. ✅ Tracks mirrored for left/right symmetry
+6. ⚠️ Texture issue persists despite 7 debugging iterations
+
+───────────────────────────────────────────────────────────────────
+⏳ NEXT SESSION PRIORITIES
+───────────────────────────────────────────────────────────────────
+🔥 CRITICAL: Fix track texture rendering (2 of 3 units fail)
+  • Try MeshBasicMaterial instead of MeshPhongMaterial
+  • Test unique texture instances per material (not shared)
+  • Check Three.js version compatibility
+  • Debug mirrored geometry (scale.x = -1) with shared textures
+
+FUTURE FEATURES:
+• TCMASK team color mask system
+• Turret rotation to face targets
+• Muzzle flash effects using weapon connectors
+• Units may clip through terrain at steep elevation changes
+• Particle effects (explosions, projectiles)
+
+───────────────────────────────────────────────────────────────────
+💡 KEY TECHNICAL DETAILS
+───────────────────────────────────────────────────────────────────
+• 3 unit types: TANK (box), ARTILLERY (cylinder), SCOUT (small box)
+• Hitboxes: 2-3x larger than visible mesh
+• Player colors: [0x007bff, 0xff4136, 0x2ecc40, 0xffdc00] (BRGR)
+• Terrain: multi-level (0-8 heights), Perlin noise scale 16
+• Camera: orthographic 45° isometric, fixed RTS view
+
+───────────────────────────────────────────────────────────────────
+🚀 QUICK COMMANDS - START EVERY SESSION
+───────────────────────────────────────────────────────────────────
+# ⚠️ START TOKEN MONITOR FIRST! (Prevents running out of tokens)
+./START_TOKEN_MONITOR.sh
+
+───────────────────────────────────────────────────────────────────
+🔧 OTHER COMMANDS
+───────────────────────────────────────────────────────────────────
+# Syntax check
+node -c /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+
+# View current version
+grep "APPLET_VERSION" /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+
+# Verify textures exist
+ls -lh /home/dukejer/axon_bbs/frontend/public/warzone_textures/
+
+# View texture loading code
+sed -n '120,148p' /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+
+───────────────────────────────────────────────────────────────────
+📋 WHEN RESUMING, SAY:
+───────────────────────────────────────────────────────────────────
+"⚠️ IMPORTANT: Token monitor is running. Report usage when notified.
+
+Resuming Warzone Lite development. Last session implemented texture
+system v1.8.0. Need to browser test textured units. Here's context:
+[paste /home/dukejer/axon_bbs/QUICK_RESTART.txt or full restart doc]"
+
+═══════════════════════════════════════════════════════════════════
+Session Summary: Oct 25, 2025 Evening - v2.0.7 Texture Debug
+───────────────────────────────────────────────────────────────────
+Version: v2.0.7 - Fresh Geometry (No Cloning)
+
+⚠️ PERSISTENT ISSUE: Track textures fail on 2 of 3 vehicles
+
+Features Working:
+  ✅ Full component assembly (body + propulsion + weapon)
+  ✅ CONNECTORS parsing and positioning
+  ✅ Turret rotation (180° to face forward)
+  ✅ Track mirroring for left/right symmetry
+  ✅ Bodies texture correctly (100% success)
+  ✅ Weapons texture correctly (100% success)
+  ❌ Tracks texture on 1 of 3 units only (33% success)
+
+Debugging Attempts (v2.0.1 → v2.0.7):
+  • v2.0.1: Track positioning + mirroring
+  • v2.0.2: Texture cloning (broke everything - reverted)
+  • v2.0.3: Reverted to texture sharing
+  • v2.0.4: Added material.needsUpdate flags
+  • v2.0.5: Added texture.needsUpdate on load
+  • v2.0.6: Added colorSpace + explicit map assignment
+  • v2.0.7: Fresh geometry creation (no cloning)
+
+Evidence:
+  • Console confirms all 3 textures load successfully
+  • Bodies use same shared texture pattern - work 100%
+  • Weapons use same shared texture pattern - work 100%
+  • Tracks use same shared texture pattern - work 33%
+  • Pattern is consistent across reloads
+
+Current Theory:
+  Likely Three.js bug or WebGL context issue with shared textures
+  on mirrored geometry (scale.x = -1). First mesh created always
+  works, subsequent meshes fail to bind texture properly.
+
+Next Session Actions:
+  1. Test with MeshBasicMaterial (simpler shader)
+  2. Try unique texture instance per material
+  3. Add explicit renderer.render() after mesh creation
+  4. Check Three.js version compatibility
+  5. Consider per-unit texture loading instead of shared
+
+Token Usage: ~170k/200k (85% used)
+═══════════════════════════════════════════════════════════════════

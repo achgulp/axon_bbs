@@ -50,8 +50,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- Main Applet Execution ---
 (async function() {
   try {
-    const APPLET_VERSION = 'v3.2.3 - Debug Ground Unit Rendering';
-    // Build timestamp: 2025-11-01T21:07:00Z (forces new hash for publishing)
+    const APPLET_VERSION = 'v3.2.0 - A* Pathfinding Integration';
 
     // ═══════════════════════════════════════════════════════
     // Debug Console (enabled when BBS_DEBUG_MODE is set)
@@ -300,9 +299,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
       // Load body PIE models
       (async () => {
         try {
-          pieModels.bodies.SCOUT = await loadPIEModel('/static/warzone_models/body_light.pie');
-          pieModels.bodies.TANK = await loadPIEModel('/static/warzone_models/body_medium.pie');
-          pieModels.bodies.ARTILLERY = await loadPIEModel('/static/warzone_models/body_heavy.pie');
+          pieModels.bodies.SCOUT = await loadPIEModel('/warzone_models/body_light.pie');
+          pieModels.bodies.TANK = await loadPIEModel('/warzone_models/body_medium.pie');
+          pieModels.bodies.ARTILLERY = await loadPIEModel('/warzone_models/body_heavy.pie');
         } catch (err) {
           console.warn('Body PIE model load failed:', err);
         }
@@ -310,9 +309,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
       // Load propulsion PIE models
       (async () => {
         try {
-          pieModels.propulsion.SCOUT = await loadPIEModel('/static/warzone_models/prop_tracks_light.pie');
-          pieModels.propulsion.TANK = await loadPIEModel('/static/warzone_models/prop_tracks_medium.pie');
-          pieModels.propulsion.ARTILLERY = await loadPIEModel('/static/warzone_models/prop_tracks_heavy.pie');
+          pieModels.propulsion.SCOUT = await loadPIEModel('/warzone_models/prop_tracks_light.pie');
+          pieModels.propulsion.TANK = await loadPIEModel('/warzone_models/prop_tracks_medium.pie');
+          pieModels.propulsion.ARTILLERY = await loadPIEModel('/warzone_models/prop_tracks_heavy.pie');
         } catch (err) {
           console.warn('Propulsion PIE model load failed:', err);
         }
@@ -320,9 +319,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
       // Load weapon PIE models
       (async () => {
         try {
-          pieModels.weapons.SCOUT = await loadPIEModel('/static/warzone_models/weapon_cannon.pie');
-          pieModels.weapons.TANK = await loadPIEModel('/static/warzone_models/weapon_cannon.pie');
-          pieModels.weapons.ARTILLERY = await loadPIEModel('/static/warzone_models/weapon_mortar.pie');
+          pieModels.weapons.SCOUT = await loadPIEModel('/warzone_models/weapon_cannon.pie');
+          pieModels.weapons.TANK = await loadPIEModel('/warzone_models/weapon_cannon.pie');
+          pieModels.weapons.ARTILLERY = await loadPIEModel('/warzone_models/weapon_mortar.pie');
         } catch (err) {
           console.warn('Weapon PIE model load failed:', err);
         }
@@ -829,10 +828,7 @@ const UnitSystem = {
     const hasProp = pieModels.propulsion[type];
     const hasWeapon = pieModels.weapons[type];
 
-    debugLog(`Creating mesh for ${type}: body=${!!hasBody}, prop=${!!hasProp}, weapon=${!!hasWeapon}`);
-
     if (hasBody && hasProp && hasWeapon) {
-      debugLog(`Using PIE models for ${type}`);
       // COMPONENT ASSEMBLY: Build droid from body + propulsion + weapon
 
       // 1. Create PROPULSION meshes (WZ2100 tracks are modeled for one side only - need to mirror)
@@ -937,7 +933,6 @@ const UnitSystem = {
 
     } else {
       // FALLBACK: Use primitive geometry if PIE models didn't load
-      debugLog(`⚠️  Using fallback geometry for ${type} (PIE models not found)`);
       let geometry;
       // NOTE: These are fallback dimensions, adjusted to be more consistent with PIE model sizes.
       switch (type) {
@@ -993,7 +988,6 @@ const UnitSystem = {
       droidGroup.add(mesh);
     }
 
-    debugLog(`Mesh created for ${type}: ${droidGroup.children.length} child objects`);
     return droidGroup;
   },
 
@@ -1349,9 +1343,6 @@ const CombatSystem = {
       return false;
     }
 
-    // NEW: Create muzzle flash at attacker position
-    VisualEffectsSystem.createMuzzleFlash(attacker.position);
-
     // NEW: Create projectile visual
     this.createProjectile(attacker, defender);
 
@@ -1362,9 +1353,6 @@ const CombatSystem = {
     defender.health -= damage;
     console.log(`${attacker.type} #${attacker.id} attacked ${defender.type} #${defender.id} for ${damage} damage`);
     console.log(`  ${defender.type} health: ${defender.health}/${defender.maxHealth}`);
-
-    // NEW: Create hit indicator at defender position
-    VisualEffectsSystem.createHitIndicator(defender.position, damage);
 
     // Check if destroyed
     if (defender.health <= 0) {
@@ -1384,18 +1372,13 @@ const CombatSystem = {
     projectile.position.set(from.position.x, from.position.y, from.position.z);
     scene.add(projectile);
 
-    const projectileData = {
+    this.projectiles.push({
       mesh: projectile,
       startPos: { ...from.position },
       endPos: { ...to.position },
       progress: 0,
       speed: 15  // Units per second
-    };
-
-    // NEW: Initialize smoke trail
-    VisualEffectsSystem.addProjectileTrail(projectileData);
-
-    this.projectiles.push(projectileData);
+    });
   },
 
   updateProjectiles(deltaTime) {
@@ -1406,22 +1389,12 @@ const CombatSystem = {
       if (proj.progress >= 1) {
         // Reached target - remove
         scene.remove(proj.mesh);
-
-        // NEW: Remove trail mesh if it exists
-        if (proj.trailMesh) {
-          scene.remove(proj.trailMesh);
-        }
-
         this.projectiles.splice(i, 1);
       } else {
         // Interpolate position
         proj.mesh.position.x = proj.startPos.x + (proj.endPos.x - proj.startPos.x) * proj.progress;
         proj.mesh.position.y = proj.startPos.y + (proj.endPos.y - proj.startPos.y) * proj.progress;
         proj.mesh.position.z = proj.startPos.z + (proj.endPos.z - proj.startPos.z) * proj.progress;
-
-        // NEW: Update smoke trail
-        VisualEffectsSystem.updateProjectileTrail(proj, deltaTime);
-        VisualEffectsSystem.renderProjectileTrail(proj);
       }
     }
   },
@@ -1429,10 +1402,6 @@ const CombatSystem = {
   // Destroy unit and remove from game
   destroyUnit(unit) {
     debugLog(`💥 Unit ${unit.id} (${unit.type}) destroyed by enemy action.`);
-
-    // NEW: Create explosion particles BEFORE removing unit
-    VisualEffectsSystem.createExplosion(unit.position);
-
     UnitSystem.removeUnit(unit);
   },
 
@@ -1463,238 +1432,6 @@ const CombatSystem = {
 };
 
 console.log('✅ Combat system initialized');
-
-// ═══════════════════════════════════════════════════════
-// VISUAL EFFECTS SYSTEM
-// ═══════════════════════════════════════════════════════
-
-debugLog('Initializing visual effects system...');
-
-const VisualEffectsSystem = {
-  particles: [],
-  muzzleFlashes: [],
-  hitIndicators: [],
-  projectileTrails: [],
-
-  // Create muzzle flash at weapon position
-  createMuzzleFlash(position) {
-    const light = new THREE.PointLight(0xffaa00, 2, 5);
-    light.position.set(position.x, position.y, position.z);
-    scene.add(light);
-
-    this.muzzleFlashes.push({
-      light: light,
-      createdAt: Date.now(),
-      duration: 100  // milliseconds
-    });
-  },
-
-  // Create explosion particles when unit is destroyed
-  createExplosion(position) {
-    const particleCount = 25;
-    const colors = [0xff6600, 0xff0000, 0xffff00];
-
-    for (let i = 0; i < particleCount; i++) {
-      const geometry = new THREE.SphereGeometry(0.1, 6, 6);
-      const color = colors[Math.floor(Math.random() * colors.length)];
-      const material = new THREE.MeshBasicMaterial({ color: color });
-      const particle = new THREE.Mesh(geometry, material);
-
-      particle.position.set(position.x, position.y, position.z);
-      scene.add(particle);
-
-      // Random direction and speed
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.random() * Math.PI;
-      const speed = 3 + Math.random() * 3;
-
-      const velocity = {
-        x: Math.sin(phi) * Math.cos(theta) * speed,
-        y: Math.cos(phi) * speed + 2,  // Add upward bias
-        z: Math.sin(phi) * Math.sin(theta) * speed
-      };
-
-      this.particles.push({
-        mesh: particle,
-        velocity: velocity,
-        position: { ...position },
-        createdAt: Date.now(),
-        lifetime: 1000,  // 1 second in milliseconds
-        gravity: -9.8
-      });
-    }
-  },
-
-  // Create floating damage indicator
-  createHitIndicator(position, damage) {
-    // Create HTML div overlay for text
-    const damageDiv = document.createElement('div');
-    damageDiv.textContent = damage.toString();
-    damageDiv.style.cssText = `
-      position: fixed;
-      color: #ff0000;
-      font-size: 18px;
-      font-weight: bold;
-      font-family: Arial, sans-serif;
-      pointer-events: none;
-      white-space: nowrap;
-      z-index: 100;
-    `;
-    document.body.appendChild(damageDiv);
-
-    // Store initial world position for conversion to screen space each frame
-    this.hitIndicators.push({
-      div: damageDiv,
-      worldPosition: { ...position },
-      createdAt: Date.now(),
-      lifetime: 1500,  // 1.5 seconds in milliseconds
-      initialOpacity: 1.0
-    });
-  },
-
-  // Add smoke trail to projectile
-  addProjectileTrail(projectileData) {
-    projectileData.trail = [];
-    projectileData.trailMaxAge = 0.5;  // Fade over 0.5 seconds
-    projectileData.trailUpdateCounter = 0;
-    projectileData.trailUpdateFrequency = 3;  // Update trail every 3 frames
-  },
-
-  // Update projectile trail
-  updateProjectileTrail(projectileData, deltaTime) {
-    // Record position periodically
-    projectileData.trailUpdateCounter++;
-    if (projectileData.trailUpdateCounter >= projectileData.trailUpdateFrequency) {
-      projectileData.trail.push({
-        x: projectileData.mesh.position.x,
-        y: projectileData.mesh.position.y,
-        z: projectileData.mesh.position.z,
-        age: 0
-      });
-
-      // Keep only last 10 positions
-      if (projectileData.trail.length > 10) {
-        projectileData.trail.shift();
-      }
-
-      projectileData.trailUpdateCounter = 0;
-    }
-
-    // Age trail points
-    for (let point of projectileData.trail) {
-      point.age += deltaTime;
-    }
-
-    // Remove old trail points
-    projectileData.trail = projectileData.trail.filter(p => p.age < projectileData.trailMaxAge);
-  },
-
-  // Render trail as line in next frame
-  renderProjectileTrail(projectileData) {
-    // Remove old trail mesh if it exists
-    if (projectileData.trailMesh) {
-      scene.remove(projectileData.trailMesh);
-    }
-
-    if (projectileData.trail.length < 2) return;
-
-    // Build line geometry from trail points
-    const points = projectileData.trail.map(p => new THREE.Vector3(p.x, p.y, p.z));
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-
-    const material = new THREE.LineBasicMaterial({
-      color: 0xaaaaaa,
-      linewidth: 2,
-      transparent: true,
-      opacity: 0.6
-    });
-
-    projectileData.trailMesh = new THREE.Line(geometry, material);
-    scene.add(projectileData.trailMesh);
-  },
-
-  // Update all visual effects
-  updateEffects(deltaTime) {
-    const currentTime = Date.now();
-
-    // Update muzzle flashes
-    for (let i = this.muzzleFlashes.length - 1; i >= 0; i--) {
-      const flash = this.muzzleFlashes[i];
-      if (currentTime - flash.createdAt > flash.duration) {
-        scene.remove(flash.light);
-        this.muzzleFlashes.splice(i, 1);
-      }
-    }
-
-    // Update particles
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const particle = this.particles[i];
-      const age = (currentTime - particle.createdAt) / 1000;  // Convert to seconds
-      const lifetime = particle.lifetime / 1000;
-
-      if (age > lifetime) {
-        scene.remove(particle.mesh);
-        this.particles.splice(i, 1);
-      } else {
-        // Apply velocity and gravity
-        particle.position.x += particle.velocity.x * deltaTime;
-        particle.position.y += particle.velocity.y * deltaTime;
-        particle.position.z += particle.velocity.z * deltaTime;
-        particle.velocity.y += particle.gravity * deltaTime;
-
-        // Fade opacity
-        const fade = 1.0 - (age / lifetime);
-        particle.mesh.material.opacity = fade;
-        particle.mesh.material.transparent = true;
-
-        // Update mesh position
-        particle.mesh.position.set(particle.position.x, particle.position.y, particle.position.z);
-      }
-    }
-
-    // Update hit indicators
-    for (let i = this.hitIndicators.length - 1; i >= 0; i--) {
-      const indicator = this.hitIndicators[i];
-      const age = (currentTime - indicator.createdAt) / 1000;  // Convert to seconds
-      const lifetime = indicator.lifetime / 1000;
-
-      if (age > lifetime) {
-        document.body.removeChild(indicator.div);
-        this.hitIndicators.splice(i, 1);
-      } else {
-        // Move upward in world space
-        const worldPos = {
-          x: indicator.worldPosition.x,
-          y: indicator.worldPosition.y + (2 * age),  // Float 2 units over lifetime
-          z: indicator.worldPosition.z
-        };
-
-        // Convert to screen space
-        const screenPos = new THREE.Vector3(worldPos.x, worldPos.y, worldPos.z);
-        screenPos.project(camera);
-
-        const screenX = (screenPos.x * window.innerWidth) / 2 + window.innerWidth / 2;
-        const screenY = -(screenPos.y * window.innerHeight) / 2 + window.innerHeight / 2;
-
-        // Update div position
-        indicator.div.style.left = screenX + 'px';
-        indicator.div.style.top = screenY + 'px';
-
-        // Fade opacity
-        const fade = 1.0 - (age / lifetime);
-        indicator.div.style.opacity = fade.toString();
-      }
-    }
-
-    // Limit max particles to 100
-    while (this.particles.length > 100) {
-      const particle = this.particles.shift();
-      scene.remove(particle.mesh);
-    }
-  }
-};
-
-debugLog('✅ Visual effects system initialized');
 
 // ═══════════════════════════════════════════════════════
 // A* PATHFINDING SYSTEM
@@ -2366,10 +2103,6 @@ UnitSystem.moveUnit(testVTOL, -15, -15, 2);    // Move to low altitude
       // Update units (now just checks arrival and handles combat)
       UnitSystem.update(deltaTime);
       CombatSystem.updateProjectiles(deltaTime);
-
-      // NEW: Update visual effects
-      VisualEffectsSystem.updateEffects(deltaTime);
-
       // Update selection system
       SelectionSystem.update(deltaTime);
 

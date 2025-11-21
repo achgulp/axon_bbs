@@ -932,13 +932,992 @@ Ready for review. Should I continue to Task 1.4?
 
 ---
 
-## REMAINING TASKS (LOCKED - Get approval first!)
+## WEEK 2 TASKS: Air Units & Altitude System
 
-The following tasks are documented but **LOCKED** until you complete the first checkpoint:
+**Prerequisites:** Tasks 0, 1.1, 1.2, 1.3 must be complete and approved
 
-- Task 1.4: Mouse input and unit selection
-- Task 1.5: Click-to-move pathfinding
-- Task 2.1-2.5: Air units and altitude system (Week 2)
+---
+
+### TASK 2.1: Implement Altitude System
+
+### Goal
+Add altitude levels (0-10) for air units to fly at different heights above terrain.
+
+### What to Add
+After the UnitSystem, add the AltitudeSystem:
+
+### Code Template
+
+```javascript
+// ═══════════════════════════════════════════════════════
+// ALTITUDE SYSTEM (For Air Units)
+// ═══════════════════════════════════════════════════════
+
+console.log('Initializing altitude system...');
+
+const AltitudeSystem = {
+  // Altitude levels: 0 = ground, 1-3 = low, 4-7 = medium, 8-10 = high
+  maxAltitude: 10,
+  altitudeLevelHeight: 2,  // Each altitude level = 2 units high
+
+  // Convert altitude level to Y position
+  getYPosition(terrainHeight, altitudeLevel) {
+    return terrainHeight + (altitudeLevel * this.altitudeLevelHeight);
+  },
+
+  // Check if two units can collide (same altitude level)
+  canCollide(unit1, unit2) {
+    // Ground units are always at altitude 0
+    const alt1 = unit1.altitude || 0;
+    const alt2 = unit2.altitude || 0;
+
+    // Same altitude level = can collide
+    return alt1 === alt2;
+  },
+
+  // Get valid altitude range for unit type
+  getAltitudeRange(unitType) {
+    const ranges = {
+      'TANK': { min: 0, max: 0 },        // Ground only
+      'ARTILLERY': { min: 0, max: 0 },   // Ground only
+      'SCOUT': { min: 0, max: 0 },       // Ground only
+      'VTOL': { min: 1, max: 5 },        // Low to medium
+      'FIGHTER': { min: 3, max: 10 },    // Medium to high
+      'BOMBER': { min: 2, max: 8 }       // Low to high
+    };
+
+    return ranges[unitType] || { min: 0, max: 0 };
+  },
+
+  // Change unit altitude (for air units)
+  setAltitude(unit, newAltitude) {
+    const range = this.getAltitudeRange(unit.type);
+
+    // Clamp to valid range
+    unit.altitude = Math.max(range.min, Math.min(range.max, newAltitude));
+
+    // Update Y position
+    const terrainHeight = TerrainSystem.getHeightAt(unit.position.x, unit.position.z);
+    unit.position.y = this.getYPosition(terrainHeight, unit.altitude);
+
+    console.log(`${unit.type} #${unit.id} altitude set to ${unit.altitude}`);
+  }
+};
+
+console.log('✅ Altitude system initialized');
+console.log('   Altitude levels: 0 (ground) to 10 (high)');
+console.log('   Level height: 2 units');
+```
+
+### Implementation Steps
+
+1. Open `Warzone_Lite.js`
+2. Find the end of the UnitSystem code
+3. Add the AltitudeSystem code above
+4. Save the file
+
+### Acceptance Criteria
+
+- [ ] AltitudeSystem added without syntax errors
+- [ ] Console shows "✅ Altitude system initialized"
+- [ ] Can call `AltitudeSystem.getAltitudeRange('FIGHTER')`
+- [ ] Altitude ranges defined for all unit types
+
+### Submit for Review
+
+```
+Task 2.1 complete! Implemented altitude system.
+
+Added:
+- AltitudeSystem with 11 altitude levels (0-10)
+- Each level = 2 units high
+- Altitude ranges per unit type
+- Collision detection based on altitude
+- setAltitude() function for air units
+
+Ready for Task 2.2 (Air unit types).
+```
+
+---
+
+### TASK 2.2: Add Air Unit Types (VTOL, Fighter, Bomber)
+
+### Goal
+Add three air unit types with different characteristics and geometries.
+
+### What to Modify
+Update UNIT_STATS and UnitSystem.createMesh():
+
+### Code Changes
+
+**Step 1: Add air unit stats to UNIT_STATS:**
+
+```javascript
+const UNIT_STATS = {
+  // ... existing ground units ...
+
+  // Air units (Week 2)
+  VTOL: {
+    cost: 250,
+    health: 70,
+    damage: 12,
+    range: 4,
+    speed: 3.5,
+    type: 'air',
+    defaultAltitude: 3
+  },
+  FIGHTER: {
+    cost: 300,
+    health: 60,
+    damage: 20,
+    range: 5,
+    speed: 6,
+    type: 'air',
+    defaultAltitude: 7
+  },
+  BOMBER: {
+    cost: 400,
+    health: 90,
+    damage: 40,
+    range: 6,
+    speed: 2,
+    type: 'air',
+    defaultAltitude: 5
+  }
+};
+```
+
+**Step 2: Update UnitSystem.createMesh() to handle air units:**
+
+Find the `createMesh(type, ownerId)` function and add these cases to the switch statement:
+
+```javascript
+createMesh(type, ownerId) {
+  let geometry;
+
+  switch (type) {
+    // ... existing ground unit cases ...
+
+    case 'VTOL':
+      // Diamond/wedge shape for VTOL
+      geometry = new THREE.ConeGeometry(0.6, 1.5, 4);
+      geometry.rotateX(Math.PI / 2);  // Point forward
+      break;
+
+    case 'FIGHTER':
+      // Sleek arrow shape for fighter
+      geometry = new THREE.ConeGeometry(0.4, 2, 3);
+      geometry.rotateX(Math.PI / 2);  // Point forward
+      break;
+
+    case 'BOMBER':
+      // Wide box for bomber
+      geometry = new THREE.BoxGeometry(2, 0.5, 1.5);
+      break;
+
+    default:
+      geometry = new THREE.BoxGeometry(1, 1, 1);
+  }
+
+  const material = new THREE.MeshPhongMaterial({
+    color: PLAYER_COLORS[ownerId],
+    emissive: 0x222222,
+    specular: 0x333333
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.userData = { unitId: null };
+
+  return mesh;
+}
+```
+
+**Step 3: Update createUnit() to set initial altitude for air units:**
+
+Find the `createUnit()` function and add after creating the unit object:
+
+```javascript
+createUnit(type, x, z, ownerId) {
+  const stats = UNIT_STATS[type];
+  if (!stats) {
+    console.error('Unknown unit type:', type);
+    return null;
+  }
+
+  const unit = {
+    id: `unit_${this.nextUnitId++}`,
+    type: type,
+    ownerId: ownerId,
+    health: stats.health,
+    maxHealth: stats.health,
+    position: { x, y: 0, z },
+    rotation: 0,
+    altitude: 0,  // NEW: Track altitude level
+    mesh: null,
+    targetPosition: null,
+    isMoving: false
+  };
+
+  // Create 3D mesh
+  unit.mesh = this.createMesh(type, ownerId);
+
+  // Position on terrain
+  this.updateUnitHeight(unit);
+
+  // NEW: Set altitude for air units
+  if (stats.type === 'air' && stats.defaultAltitude) {
+    AltitudeSystem.setAltitude(unit, stats.defaultAltitude);
+  }
+
+  // Add to scene and tracking array
+  scene.add(unit.mesh);
+  this.units.push(unit);
+
+  console.log(`Created ${type} unit #${unit.id} for player ${ownerId}`);
+
+  return unit;
+}
+```
+
+**Step 4: Create test air units:**
+
+After the existing test units, add:
+
+```javascript
+// Create test air units
+const testVTOL = UnitSystem.createUnit('VTOL', -5, 5, 0);
+const testFighter = UnitSystem.createUnit('FIGHTER', 5, 5, 1);
+const testBomber = UnitSystem.createUnit('BOMBER', 0, -5, 2);
+
+console.log('Unit system initialized with', UnitSystem.units.length, 'units (ground + air)');
+```
+
+### Implementation Steps
+
+1. Add air unit stats to UNIT_STATS
+2. Update createMesh() with air unit geometries
+3. Add altitude field to createUnit()
+4. Set default altitude for air units
+5. Create 3 test air units
+6. Save the file
+
+### Acceptance Criteria
+
+- [ ] Air unit stats added
+- [ ] VTOL uses cone geometry (diamond shape)
+- [ ] Fighter uses thin cone (arrow shape)
+- [ ] Bomber uses wide box
+- [ ] Test units spawn at correct altitudes
+- [ ] Console shows "6 units (ground + air)"
+- [ ] Air units visible floating above terrain
+
+### Submit for Review
+
+```
+Task 2.2 complete! Added air unit types.
+
+Implemented:
+- VTOL, Fighter, Bomber unit stats
+- Unique geometries for each air unit
+- Altitude assignment on creation
+- 3 test air units spawned
+
+Can see:
+- VTOL at altitude 3 (6 units high)
+- Fighter at altitude 7 (14 units high)
+- Bomber at altitude 5 (10 units high)
+
+Ready for Task 2.3 (3D pathfinding).
+```
+
+---
+
+### TASK 2.3: Implement 3D Pathfinding for Air Units
+
+### Goal
+Extend A* pathfinding to support altitude changes for air units.
+
+### What to Modify
+Update PathfindingSystem to handle 3D movement:
+
+### Code to Add
+
+Add this new function to PathfindingSystem:
+
+```javascript
+// 3D pathfinding for air units (includes altitude)
+findPath3D(startX, startZ, startAlt, goalX, goalZ, goalAlt, unitType) {
+  const startGrid = this.worldToGrid(startX, startZ);
+  const goalGrid = this.worldToGrid(goalX, goalZ);
+
+  const altRange = AltitudeSystem.getAltitudeRange(unitType);
+
+  // Validate positions
+  if (!this.isValidPosition(startGrid.x, startGrid.z) ||
+      !this.isValidPosition(goalGrid.x, goalGrid.z)) {
+    console.warn('3D Pathfinding: Invalid start or goal position');
+    return null;
+  }
+
+  // Node structure: { x, z, alt, g, h, f, parent }
+  const openList = [];
+  const closedList = new Set();
+
+  const startNode = {
+    x: startGrid.x,
+    z: startGrid.z,
+    alt: startAlt,
+    g: 0,
+    h: this.heuristic3D(startGrid.x, startGrid.z, startAlt, goalGrid.x, goalGrid.z, goalAlt),
+    f: 0,
+    parent: null
+  };
+  startNode.f = startNode.g + startNode.h;
+  openList.push(startNode);
+
+  // 26-directional movement (8 horizontal + up + down for each)
+  const directions = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dalt = -1; dalt <= 1; dalt++) {
+        if (dx === 0 && dz === 0 && dalt === 0) continue;  // Skip self
+        directions.push({ dx, dz, dalt });
+      }
+    }
+  }
+
+  let iterations = 0;
+  const maxIterations = 5000;
+
+  while (openList.length > 0 && iterations < maxIterations) {
+    iterations++;
+
+    // Find node with lowest f score
+    let currentIndex = 0;
+    for (let i = 1; i < openList.length; i++) {
+      if (openList[i].f < openList[currentIndex].f) {
+        currentIndex = i;
+      }
+    }
+
+    const current = openList[currentIndex];
+
+    // Check if reached goal
+    if (current.x === goalGrid.x && current.z === goalGrid.z && current.alt === goalAlt) {
+      // Reconstruct path
+      const path = [];
+      let node = current;
+      while (node !== null) {
+        const world = this.gridToWorld(node.x, node.z);
+        path.unshift({ x: world.x, z: world.z, alt: node.alt });
+        node = node.parent;
+      }
+      console.log(`✅ Found 3D path with ${path.length} waypoints (${iterations} iterations)`);
+      return path;
+    }
+
+    // Move current from open to closed
+    openList.splice(currentIndex, 1);
+    closedList.add(`${current.x},${current.z},${current.alt}`);
+
+    // Check all neighbors
+    for (const dir of directions) {
+      const neighborX = current.x + dir.dx;
+      const neighborZ = current.z + dir.dz;
+      const neighborAlt = current.alt + dir.dalt;
+      const neighborKey = `${neighborX},${neighborZ},${neighborAlt}`;
+
+      // Validate altitude range
+      if (neighborAlt < altRange.min || neighborAlt > altRange.max) continue;
+
+      // Skip if already evaluated or invalid position
+      if (closedList.has(neighborKey) || !this.isValidPosition(neighborX, neighborZ)) {
+        continue;
+      }
+
+      // Calculate cost (altitude changes cost more)
+      let movementCost = 1.0;
+      if (dir.dx !== 0 && dir.dz !== 0) movementCost *= 1.414;  // Diagonal
+      if (dir.dalt !== 0) movementCost += 2;  // Altitude change penalty
+
+      const gScore = current.g + movementCost;
+
+      // Check if neighbor in open list
+      let neighborNode = openList.find(n =>
+        n.x === neighborX && n.z === neighborZ && n.alt === neighborAlt
+      );
+
+      if (!neighborNode) {
+        neighborNode = {
+          x: neighborX,
+          z: neighborZ,
+          alt: neighborAlt,
+          g: gScore,
+          h: this.heuristic3D(neighborX, neighborZ, neighborAlt, goalGrid.x, goalGrid.z, goalAlt),
+          f: 0,
+          parent: current
+        };
+        neighborNode.f = neighborNode.g + neighborNode.h;
+        openList.push(neighborNode);
+      } else if (gScore < neighborNode.g) {
+        neighborNode.g = gScore;
+        neighborNode.f = neighborNode.g + neighborNode.h;
+        neighborNode.parent = current;
+      }
+    }
+  }
+
+  console.warn('⚠️ No 3D path found or max iterations reached');
+  return null;
+},
+
+// 3D heuristic (Manhattan distance including altitude)
+heuristic3D(x, z, alt, goalX, goalZ, goalAlt) {
+  return Math.abs(x - goalX) + Math.abs(z - goalZ) + Math.abs(alt - goalAlt) * 2;
+}
+```
+
+### Update UnitSystem.moveUnit() to use 3D pathfinding:
+
+```javascript
+moveUnit(unit, targetX, targetZ, targetAlt) {
+  const stats = UNIT_STATS[unit.type];
+
+  // Use 3D pathfinding for air units
+  if (stats.type === 'air') {
+    const path = PathfindingSystem.findPath3D(
+      unit.position.x,
+      unit.position.z,
+      unit.altitude,
+      targetX,
+      targetZ,
+      targetAlt || unit.altitude,  // Keep current altitude if not specified
+      unit.type
+    );
+
+    if (path && path.length > 1) {
+      unit.path = path;
+      unit.currentWaypoint = 1;
+      unit.targetPosition = unit.path[unit.currentWaypoint];
+      unit.isMoving = true;
+      console.log(`Air unit ${unit.id} starting 3D path with ${path.length} waypoints`);
+    }
+  } else {
+    // Ground units use 2D pathfinding (existing code)
+    const path = PathfindingSystem.findPath(
+      unit.position.x,
+      unit.position.z,
+      targetX,
+      targetZ
+    );
+    // ... rest of existing ground pathfinding ...
+  }
+}
+```
+
+### Update UnitSystem.update() to handle altitude in movement:
+
+```javascript
+update(deltaTime) {
+  this.units.forEach(unit => {
+    if (unit.isMoving && unit.targetPosition) {
+      const stats = UNIT_STATS[unit.type];
+      const speed = stats.speed * deltaTime;
+
+      const dx = unit.targetPosition.x - unit.position.x;
+      const dz = unit.targetPosition.z - unit.position.z;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+
+      if (distance < speed) {
+        // Reached waypoint
+        unit.position.x = unit.targetPosition.x;
+        unit.position.z = unit.targetPosition.z;
+
+        // Update altitude for air units
+        if (unit.targetPosition.alt !== undefined) {
+          AltitudeSystem.setAltitude(unit, unit.targetPosition.alt);
+        }
+
+        // Move to next waypoint
+        if (unit.path.length > 0 && unit.currentWaypoint < unit.path.length - 1) {
+          unit.currentWaypoint++;
+          unit.targetPosition = unit.path[unit.currentWaypoint];
+        } else {
+          unit.isMoving = false;
+          unit.targetPosition = null;
+          unit.path = [];
+          unit.currentWaypoint = 0;
+        }
+      } else {
+        // Move toward waypoint
+        const moveX = (dx / distance) * speed;
+        const moveZ = (dz / distance) * speed;
+
+        unit.position.x += moveX;
+        unit.position.z += moveZ;
+
+        unit.rotation = Math.atan2(dx, dz);
+      }
+
+      this.updateUnitHeight(unit);
+    }
+  });
+}
+```
+
+### Test the 3D pathfinding:
+
+```javascript
+// Test air unit movement with altitude changes
+UnitSystem.moveUnit(testFighter, 15, 15, 10);  // Move to high altitude
+UnitSystem.moveUnit(testVTOL, -15, -15, 2);    // Move to low altitude
+```
+
+### Implementation Steps
+
+1. Add `findPath3D()` to PathfindingSystem
+2. Add `heuristic3D()` helper function
+3. Update `UnitSystem.moveUnit()` to handle air units
+4. Update `UnitSystem.update()` to change altitude
+5. Add test movements for air units
+6. Save and test
+
+### Acceptance Criteria
+
+- [ ] 3D pathfinding function added
+- [ ] Handles 26-directional movement
+- [ ] Respects altitude min/max for unit types
+- [ ] Air units move in 3D (X, Z, altitude)
+- [ ] Fighter can move to high altitude (10)
+- [ ] VTOL respects low altitude limit (1-5)
+- [ ] Console shows "Found 3D path with N waypoints"
+
+### Submit for Review
+
+```
+Task 2.3 complete! Implemented 3D pathfinding.
+
+Added:
+- findPath3D() with 26-directional search
+- heuristic3D() for altitude distance
+- Altitude validation per unit type
+- Updated moveUnit() for air vs ground
+- Updated unit.update() to handle altitude changes
+
+Air units now:
+- Path through 3D space
+- Change altitude smoothly
+- Respect min/max altitude limits
+
+Ready for Task 2.4 (Air combat).
+```
+
+---
+
+### TASK 2.4: Air Combat Mechanics (COMPLEX - Pro Agent)
+
+### Goal
+Implement air-to-air and air-to-ground combat with range and altitude restrictions.
+
+### What to Add
+Create a CombatSystem after AltitudeSystem:
+
+### Code Template
+
+```javascript
+// ═══════════════════════════════════════════════════════
+// COMBAT SYSTEM
+// ═══════════════════════════════════════════════════════
+
+console.log('Initializing combat system...');
+
+const CombatSystem = {
+  // Check if attacker can target defender
+  canAttack(attacker, defender) {
+    const attackerStats = UNIT_STATS[attacker.type];
+    const defenderStats = UNIT_STATS[defender.type];
+
+    // Calculate 2D distance
+    const dx = defender.position.x - attacker.position.x;
+    const dz = defender.position.z - attacker.position.z;
+    const distance2D = Math.sqrt(dx * dx + dz * dz);
+
+    // Check range
+    if (distance2D > attackerStats.range) {
+      return { canAttack: false, reason: 'out_of_range' };
+    }
+
+    // Altitude restrictions
+    const altDiff = Math.abs((attacker.altitude || 0) - (defender.altitude || 0));
+
+    // Air-to-air: Must be within 2 altitude levels
+    if (attackerStats.type === 'air' && defenderStats.type === 'air') {
+      if (altDiff > 2) {
+        return { canAttack: false, reason: 'altitude_difference' };
+      }
+    }
+
+    // Air-to-ground: Must be at altitude 1-4 to attack ground
+    if (attackerStats.type === 'air' && defenderStats.type === 'ground') {
+      const attackerAlt = attacker.altitude || 0;
+      if (attackerAlt < 1 || attackerAlt > 4) {
+        return { canAttack: false, reason: 'wrong_altitude' };
+      }
+    }
+
+    // Ground-to-air: Limited range against aircraft
+    if (attackerStats.type === 'ground' && defenderStats.type === 'air') {
+      const defenderAlt = defender.altitude || 0;
+      // Can only hit low-flying aircraft (altitude 1-3)
+      if (defenderAlt > 3) {
+        return { canAttack: false, reason: 'target_too_high' };
+      }
+    }
+
+    return { canAttack: true };
+  },
+
+  // Perform attack
+  attack(attacker, defender) {
+    const canAttackResult = this.canAttack(attacker, defender);
+
+    if (!canAttackResult.canAttack) {
+      console.log(`${attacker.type} cannot attack: ${canAttackResult.reason}`);
+      return false;
+    }
+
+    const attackerStats = UNIT_STATS[attacker.type];
+    const damage = attackerStats.damage;
+
+    // Apply damage
+    defender.health -= damage;
+    console.log(`${attacker.type} #${attacker.id} attacked ${defender.type} #${defender.id} for ${damage} damage`);
+    console.log(`  ${defender.type} health: ${defender.health}/${defender.maxHealth}`);
+
+    // Check if destroyed
+    if (defender.health <= 0) {
+      console.log(`💥 ${defender.type} #${defender.id} destroyed!`);
+      this.destroyUnit(defender);
+      return true;
+    }
+
+    return true;
+  },
+
+  // Destroy unit and remove from game
+  destroyUnit(unit) {
+    UnitSystem.removeUnit(unit);
+  },
+
+  // Find nearest enemy in range
+  findTarget(attacker, enemyOwnerId) {
+    let nearestEnemy = null;
+    let nearestDistance = Infinity;
+
+    for (const unit of UnitSystem.units) {
+      if (unit.ownerId === enemyOwnerId && unit !== attacker) {
+        const canAttackResult = this.canAttack(attacker, unit);
+
+        if (canAttackResult.canAttack) {
+          const dx = unit.position.x - attacker.position.x;
+          const dz = unit.position.z - attacker.position.z;
+          const distance = Math.sqrt(dx * dx + dz * dz);
+
+          if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestEnemy = unit;
+          }
+        }
+      }
+    }
+
+    return nearestEnemy;
+  }
+};
+
+console.log('✅ Combat system initialized');
+```
+
+### Add Auto-Attack to Unit Update Loop
+
+Update `UnitSystem.update()` to check for targets:
+
+```javascript
+update(deltaTime) {
+  this.units.forEach(unit => {
+    // ... existing movement code ...
+
+    // Auto-attack if not moving
+    if (!unit.isMoving) {
+      const stats = UNIT_STATS[unit.type];
+
+      // Find enemy target (for testing, attack owner 1 if you're owner 0, etc.)
+      const enemyOwnerId = (unit.ownerId + 1) % 2;  // Simple 2-player logic
+      const target = CombatSystem.findTarget(unit, enemyOwnerId);
+
+      if (target) {
+        // Attack once per second (throttle with timer)
+        if (!unit.lastAttackTime || Date.now() - unit.lastAttackTime > 1000) {
+          CombatSystem.attack(unit, target);
+          unit.lastAttackTime = Date.now();
+        }
+      }
+    }
+  });
+}
+```
+
+### Implementation Steps
+
+1. Add CombatSystem code
+2. Implement canAttack() with altitude logic
+3. Implement attack() with damage
+4. Add destroyUnit() function
+5. Update unit update loop for auto-attack
+6. Test with existing units
+
+### Acceptance Criteria
+
+- [ ] CombatSystem added
+- [ ] Air units can attack air targets (within 2 altitude levels)
+- [ ] Air units can attack ground (altitude 1-4 only)
+- [ ] Ground units can attack low aircraft (altitude 1-3)
+- [ ] High-flying aircraft immune to ground fire
+- [ ] Console shows damage and kills
+- [ ] Destroyed units removed from scene
+
+### Submit for Review
+
+```
+Task 2.4 complete! Implemented air combat system.
+
+Added:
+- CombatSystem with altitude-based restrictions
+- canAttack() validation (range + altitude)
+- attack() with damage and destruction
+- findTarget() for auto-engagement
+- Destroyed units properly removed
+
+Combat rules:
+- Air-to-air: ±2 altitude levels
+- Air-to-ground: altitude 1-4 required
+- Ground-to-air: max altitude 3 targets
+- Auto-attack every 1 second
+
+Ready for Task 2.5 (Visual feedback).
+```
+
+---
+
+### TASK 2.5: Visual Feedback for Air Combat
+
+### Goal
+Add altitude indicators, shadows, and projectile effects for better gameplay feedback.
+
+### What to Add
+
+**Step 1: Add altitude indicator rings to air units**
+
+Update `UnitSystem.createUnit()` to add indicator:
+
+```javascript
+createUnit(type, x, z, ownerId) {
+  // ... existing code ...
+
+  const unit = {
+    // ... existing fields ...
+    altitudeIndicator: null  // NEW
+  };
+
+  // ... create mesh ...
+
+  // NEW: Add altitude indicator for air units
+  const stats = UNIT_STATS[type];
+  if (stats.type === 'air') {
+    const indicatorGeometry = new THREE.RingGeometry(0.8, 1.0, 16);
+    const indicatorMaterial = new THREE.MeshBasicMaterial({
+      color: PLAYER_COLORS[ownerId],
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.3
+    });
+    unit.altitudeIndicator = new THREE.Mesh(indicatorGeometry, indicatorMaterial);
+    unit.altitudeIndicator.rotation.x = -Math.PI / 2;  // Lay flat
+    scene.add(unit.altitudeIndicator);
+  }
+
+  // ... rest of function ...
+}
+```
+
+**Step 2: Update altitude indicator position**
+
+Update `UnitSystem.updateUnitHeight()`:
+
+```javascript
+updateUnitHeight(unit) {
+  const terrainHeight = TerrainSystem.getHeightAt(unit.position.x, unit.position.z);
+
+  const stats = UNIT_STATS[unit.type];
+  const heightOffset = unit.type === 'ARTILLERY' ? 2.0 : 1.0;
+
+  // Air units use altitude
+  if (stats.type === 'air') {
+    unit.position.y = AltitudeSystem.getYPosition(terrainHeight, unit.altitude || 0);
+  } else {
+    unit.position.y = terrainHeight + heightOffset;
+  }
+
+  // Update mesh
+  unit.mesh.position.set(unit.position.x, unit.position.y, unit.position.z);
+  unit.mesh.rotation.y = unit.rotation;
+
+  // NEW: Update altitude indicator (shows on ground below aircraft)
+  if (unit.altitudeIndicator) {
+    unit.altitudeIndicator.position.set(
+      unit.position.x,
+      terrainHeight + 0.1,  // Just above terrain
+      unit.position.z
+    );
+  }
+}
+```
+
+**Step 3: Add projectile visual effect**
+
+Add to CombatSystem.attack():
+
+```javascript
+attack(attacker, defender) {
+  const canAttackResult = this.canAttack(attacker, defender);
+  if (!canAttackResult.canAttack) return false;
+
+  // NEW: Create projectile visual
+  this.createProjectile(attacker, defender);
+
+  // ... existing damage code ...
+}
+```
+
+**Step 4: Implement projectile system:**
+
+```javascript
+// Add to CombatSystem
+const CombatSystem = {
+  projectiles: [],
+
+  // ... existing methods ...
+
+  createProjectile(from, to) {
+    const geometry = new THREE.SphereGeometry(0.2, 8, 8);
+    const material = new THREE.MeshBasicMaterial({ color: 0xff9900 });
+    const projectile = new THREE.Mesh(geometry, material);
+
+    projectile.position.set(from.position.x, from.position.y, from.position.z);
+    scene.add(projectile);
+
+    this.projectiles.push({
+      mesh: projectile,
+      startPos: { ...from.position },
+      endPos: { ...to.position },
+      progress: 0,
+      speed: 15  // Units per second
+    });
+  },
+
+  updateProjectiles(deltaTime) {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const proj = this.projectiles[i];
+      proj.progress += proj.speed * deltaTime;
+
+      if (proj.progress >= 1) {
+        // Reached target - remove
+        scene.remove(proj.mesh);
+        this.projectiles.splice(i, 1);
+      } else {
+        // Interpolate position
+        proj.mesh.position.x = proj.startPos.x + (proj.endPos.x - proj.startPos.x) * proj.progress;
+        proj.mesh.position.y = proj.startPos.y + (proj.endPos.y - proj.startPos.y) * proj.progress;
+        proj.mesh.position.z = proj.startPos.z + (proj.endPos.z - proj.startPos.z) * proj.progress;
+      }
+    }
+  }
+};
+```
+
+**Step 5: Update animation loop:**
+
+```javascript
+function animate() {
+  animationFrameId = requestAnimationFrame(animate);
+
+  const now = Date.now();
+  const deltaTime = (now - lastTime) / 1000;
+  lastTime = now;
+
+  UnitSystem.update(deltaTime);
+  CombatSystem.updateProjectiles(deltaTime);  // NEW
+
+  renderer.render(scene, camera);
+}
+```
+
+### Implementation Steps
+
+1. Add altitude indicators to air units
+2. Update indicator position on terrain
+3. Add projectile creation to attacks
+4. Implement projectile animation system
+5. Update animation loop
+6. Remove indicators when units destroyed
+
+### Acceptance Criteria
+
+- [ ] Air units show rings on ground below
+- [ ] Rings match player color
+- [ ] Projectiles spawn when attacking
+- [ ] Projectiles travel from attacker to target
+- [ ] Projectiles removed after hitting
+- [ ] Everything updates smoothly
+
+### Submit for Review
+
+```
+Task 2.5 complete! Added visual feedback for air combat.
+
+Implemented:
+- Altitude indicator rings (on terrain below aircraft)
+- Projectile system with sphere geometry
+- Smooth projectile interpolation
+- Auto-cleanup after projectile hits
+
+Visual improvements:
+- Can see which altitude air units are at
+- Combat is visible with projectiles
+- Player colors match across units/indicators
+
+✅ WEEK 2 COMPLETE!
+All air unit and altitude features implemented.
+Ready for Week 3 (Asset extraction & texturing).
+```
+
+---
+
+## WEEK 2 COMPLETION CHECKPOINT
+
+**Junior Developers:** Complete Tasks 2.1-2.5, then **STOP** and submit for review.
+
+**Senior Architect (Claude Code) will:**
+1. Review all air unit code
+2. Test combat mechanics
+3. Verify altitude restrictions
+4. Approve before Week 3
+
+---
+
+## REMAINING TASKS (LOCKED)
+
 - Task 3.1-3.5: Asset extraction and texturing (Week 3)
 - Task 4.1-4.5: Multiplayer and federation (Week 4)
 

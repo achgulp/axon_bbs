@@ -7,21 +7,70 @@
 
 ## 🚀 Quick Start (30 Seconds)
 
-**When starting a new Claude Code session, say exactly this:**
+**FIRST: Start the token monitor (prevents running out of tokens):**
+
+```bash
+cd /home/dukejer/axon_bbs
+./START_TOKEN_MONITOR.sh
+```
+
+**THEN: Resume Claude Code session by saying exactly this:**
 
 ```
 Resume Warzone Lite project.
 
-Read these files:
-1. /home/dukejer/axon_bbs/SESSION_SUMMARY_2025_10_24.md
-2. /home/dukejer/axon_bbs/HOW_TO_LAUNCH_SUBAGENTS.md
+IMPORTANT: Token monitor is running. When you see token check notifications, report your current usage.
 
-Current status: Tasks 0-1.3 complete. Ready for Task 1.4.
+Read these files:
+1. /home/dukejer/axon_bbs/QUICK_RESTART.txt
+2. /home/dukejer/axon_bbs/SESSION_SUMMARY_2025_10_25_EVENING.md
+
+Current status: v1.10.0 - PIE models working, need to fix WASD controls and white textures.
 
 Let's continue!
 ```
 
 **That's it!** Claude Code will read the files and be fully restored.
+
+---
+
+## 🔔 Token Monitor (AUTO-SAVE PROTECTION)
+
+**What it does:** Background process that monitors session time and reminds Claude to save session summaries before hitting 200k token limit.
+
+### Start the Monitor
+
+```bash
+./START_TOKEN_MONITOR.sh
+```
+
+**Output:**
+```
+✅ TOKEN MONITOR STARTED
+PID: 123456
+Monitor will check every 30 minutes
+Notifications sent to screen session 'Claude'
+```
+
+### How It Works
+
+- ⏱️  **30min:** "Quick token check?"
+- ⏱️  **60min:** "How are tokens?"
+- ⚠️  **90min:** "Likely approaching 80% - Consider saving!"
+- 🔴 **120min:** "SAVE SESSION SUMMARY NOW!"
+
+**Notifications appear in Claude's screen session automatically!**
+
+### Stop the Monitor
+
+```bash
+./STOP_TOKEN_MONITOR.sh
+```
+
+### Why This Matters
+
+**Without monitor:** Easy to hit 200k limit and lose session context
+**With monitor:** Automatic reminders ensure you save summaries at 80% (160k tokens)
 
 ---
 
@@ -63,15 +112,20 @@ Let's continue!
 
 ### Completed Tasks ✅
 
-- **Task 0:** BBS API Test (Gemini Flash)
-- **Task 1.1:** Warzone_Lite.js Skeleton (Senior architect - Gemini truncation issue)
-- **Task 1.2:** Terrain Heightmap System (Gemini Flash unsafe --yolo)
-- **Task 1.3:** Ground Unit System (Gemini Flash safe sandbox) ⭐ **NEW!**
+- **Task 0-1.3:** Terrain, units, pathfinding, rendering
+- **Task 1.4:** Mouse selection with raycasting
+- **Task 1.5:** Click-to-move with A* pathfinding
+- **Task 1.6:** Invisible hitboxes for easier clicking
+- **Task 1.7:** Warzone 2100 texture atlas loading
+- **Task 1.8 (v1.9.0):** ⭐ **PIE model loader** - Authentic WZ2100 models!
+- **Task 1.9 (v1.10.0):** Camera zoom + pan controls
 
 ### Next Tasks 📋
 
-- **Task 1.4:** Mouse Input & Selection (Gemini Flash - NEXT)
-- **Task 1.5:** A* Pathfinding (Gemini Pro - complex algorithm)
+- **URGENT:** Fix WASD keyboard controls (not firing)
+- **URGENT:** Fix white texture on PIE models
+- **Soon:** Implement TCMASK team colors
+- **Soon:** Add propulsion + weapon PIE models
 
 ### Production Files
 
@@ -132,10 +186,10 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 ## 📊 Token Budget Status
 
-**Current Usage:** ~120,000 / 200,000 (60%)
-**Remaining:** ~80,000 (40%)
-**Estimated for completion:** ~75,000 more tokens
-**Status:** 🟢 On track!
+**Current Usage:** ~112,000 / 200,000 (56%)
+**Remaining:** ~88,000 (44%)
+**Last Session:** Oct 25 Evening - PIE models + camera controls
+**Status:** 🟢 Excellent! Plenty of runway remaining
 
 ---
 

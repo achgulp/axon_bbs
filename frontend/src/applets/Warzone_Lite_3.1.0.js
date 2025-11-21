@@ -50,8 +50,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- Main Applet Execution ---
 (async function() {
   try {
-    const APPLET_VERSION = 'v3.2.3 - Debug Ground Unit Rendering';
-    // Build timestamp: 2025-11-01T21:07:00Z (forces new hash for publishing)
+    const APPLET_VERSION = 'v3.1.0 - Yuka.js AI Integration';
 
     // ═══════════════════════════════════════════════════════
     // Debug Console (enabled when BBS_DEBUG_MODE is set)
@@ -120,7 +119,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
     // Load Yuka.js for AI behaviors
     debugLog('Loading Yuka.js AI library...');
-    await loadScript('https://cdn.jsdelivr.net/npm/yuka@latest/build/yuka.min.js');
+    await loadScript('/node_modules/yuka/build/yuka.js');
 
     if (!window.YUKA) {
       throw new Error('Yuka.js failed to load');
@@ -255,8 +254,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     let textures = {
       bodies: null,
       propulsion: null,
-      weapons: null,
-      air: null
+      weapons: null
     };
     let pieModels = {
       bodies: {},
@@ -267,25 +265,25 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     // Helper function to load texture
     function loadTexture(url) {
       return new Promise((resolve) => {
-            textureLoader.load(
-              url,
-              (texture) => {
-                texture.wrapS = THREE.ClampToEdgeWrapping;
-                texture.wrapT = THREE.ClampToEdgeWrapping;
-                texture.minFilter = THREE.LinearFilter;
-                texture.magFilter = THREE.LinearFilter;
-                texture.colorSpace = THREE.SRGBColorSpace;  // Proper color space for textures
-                texture.needsUpdate = true;  // Force GPU upload
-                debugLog('  Loaded: ' + url.split('/').pop());
-                resolve(texture);
-              },
-              undefined,
-              (err) => {
-                console.warn('Texture load failed:', url, err);
-                debugLog(`❌ ERROR: Texture load failed: ${url}`); // Added for visibility
-                resolve(null);
-              }
-            );      });
+        textureLoader.load(
+          url,
+          (texture) => {
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.colorSpace = THREE.SRGBColorSpace;  // Proper color space for textures
+            texture.needsUpdate = true;  // Force GPU upload
+            debugLog('  Loaded: ' + url.split('/').pop());
+            resolve(texture);
+          },
+          undefined,
+          (err) => {
+            console.warn('Texture load failed:', url, err);
+            resolve(null);
+          }
+        );
+      });
     }
 
     // Load textures and PIE models in parallel
@@ -295,7 +293,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         textures.bodies = await loadTexture('/static/warzone_textures/page-14-droid-hubs.png');
         textures.propulsion = await loadTexture('/static/warzone_textures/page-16-droid-drives.png');
         textures.weapons = await loadTexture('/static/warzone_textures/page-17-droid-weapons.png');
-        textures.air = await loadTexture('/static/warzone_textures/page-200-air-units.png');
       })(),
       // Load body PIE models
       (async () => {
@@ -455,7 +452,6 @@ const TerrainSystem = {
   size: { width: 64, depth: 80 },
   heightLevels: 8,
   heightMap: null,
-  roadMap: null,
   mesh: null,
 
   // Simple 2D noise function
@@ -490,59 +486,48 @@ const TerrainSystem = {
   // Generate strategic heightmap
   generateHeightMap() {
     const map = [];
-    this.roadMap = []; // Initialize road map
-    const noise = this.generatePerlinNoise(this.size.width, this.size.depth, 32);
-    const ruggedNoise = this.generatePerlinNoise(this.size.width, this.size.depth, 12);
+    const noise = this.generatePerlinNoise(this.size.width, this.size.depth, 16);  // Even larger scale = much smoother
 
     for (let z = 0; z < this.size.depth; z++) {
       map[z] = [];
-      this.roadMap[z] = [];
       for (let x = 0; x < this.size.width; x++) {
-        this.roadMap[z][x] = 0; // Default to no road
-        let height = 1;
+        // Base height from noise (very flat terrain)
+        let height = Math.floor(noise[z][x] * 1.5);  // Reduced from 2 to 1.5 for flatter terrain
 
-        const mountainGradient = z / this.size.depth;
-        if (mountainGradient > 0.3) {
-            const gradientProgress = (mountainGradient - 0.3) / 0.7;
-            height += Math.floor(noise[z][x] * 4 * gradientProgress);
-            height += Math.floor(ruggedNoise[z][x] * 2 * gradientProgress);
+        // Strategic features:
+
+        // 1. Center plateau (high ground objective)
+        const centerX = this.size.width / 2;
+        const centerZ = this.size.depth / 2;
+        const distFromCenter = Math.sqrt(
+          Math.pow(x - centerX, 2) +
+          Math.pow(z - centerZ, 2)
+        );
+
+        if (distFromCenter < 8) {
+          height = 3;  // Lower plateau (was 5)
+        } else if (distFromCenter < 10) {
+          height = 2;  // Gentler slopes (was 3)
         }
 
-        if (x > this.size.width - 20 && z > this.size.depth - 20) {
-            height = Math.max(height, 5);
-        }
-        if (x < 15 && z < 15) {
-            height = 1;
+        // 2. Flat starting zones in corners
+        const inTopLeft = (x < 10 && z < 10);
+        const inTopRight = (x > 54 && z < 10);
+        const inBottomLeft = (x < 10 && z > 70);
+        const inBottomRight = (x > 54 && z > 70);
+
+        if (inTopLeft || inTopRight || inBottomLeft || inBottomRight) {
+          height = 1;  // Flat for bases
         }
 
-        const riverX = this.size.width / 2.5 + Math.sin(z / 6) * 8;
-        if (x > riverX - 1.5 && x < riverX + 1.5) {
-            height = 0;
+        // 3. Valley choke point
+        if (x === 32 && z > 20 && z < 60) {
+          height = 0;  // Low valley
         }
 
+        // Clamp to valid range
         map[z][x] = Math.max(0, Math.min(this.heightLevels, height));
       }
-    }
-
-    // Add roads and bridges after heights are set
-    const roadZ1 = Math.floor(this.size.depth * 0.3);
-    const roadZ2 = Math.floor(this.size.depth * 0.7);
-    for (let x = 0; x < this.size.width; x++) {
-        // Horizontal roads
-        this.roadMap[roadZ1][x] = 1;
-        this.roadMap[roadZ2][x] = 1;
-        // Ensure road is on solid ground
-        if (map[roadZ1][x] < 1) map[roadZ1][x] = 1;
-        if (map[roadZ2][x] < 1) map[roadZ2][x] = 1;
-    }
-    // Add bridges where roads cross the river
-    for (let z = 0; z < this.size.depth; z++) {
-        if (this.roadMap[z][Math.floor(this.size.width / 2.5)]) {
-             const riverX = this.size.width / 2.5 + Math.sin(z / 6) * 8;
-             for (let x_br = Math.floor(riverX - 1.5); x_br < riverX + 1.5; x_br++) {
-                 if (map[z][x_br] === 0) map[z][x_br] = 1; // Place bridge
-             }
-        }
     }
 
     return map;
@@ -564,11 +549,8 @@ const TerrainSystem = {
     // Generate heightmap
     this.heightMap = this.generateHeightMap();
 
-    // Apply heights and vertex colors
+    // Apply heights to vertices
     const positions = geometry.attributes.position;
-    const colors = [];
-    const color = new THREE.Color();
-
     for (let i = 0; i < positions.count; i++) {
       const x = Math.floor(i % this.size.width);
       const z = Math.floor(i / this.size.width);
@@ -576,36 +558,17 @@ const TerrainSystem = {
 
       // Y is "up" in Three.js
       positions.setY(i, height);
-
-      // Set vertex color based on height for a desert/mountain theme
-      if (TerrainSystem.roadMap[z][x] === 1) {
-        color.set(0x444444); // Dark grey for roads
-      } else if (height < 1) {
-        color.set(0x336699); // Water
-      } else if (height < 2) {
-        color.set(0xC2B280); // Sandy Desert/Beach
-      } else if (height < 4) {
-        // Mix of green and brown for foothills
-        const t = (height - 2) / 2;
-        color.set(0x6B8E23).lerp(new THREE.Color(0x967969), t);
-      } else {
-        // Mix of green, grey, and white for mountains
-        const t = Math.min(1, (height - 4) / 4);
-        color.set(0x677862).lerp(new THREE.Color(0xcccccc), t); // Start with a grey-green
-      }
-      colors.push(color.r, color.g, color.b);
     }
-
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
     // Recompute normals for lighting
     geometry.computeVertexNormals();
 
-    // Create material that uses vertex colors
+    // Create material with height-based coloring
     const material = new THREE.MeshStandardMaterial({
-      roughness: 0.9, // More rough for natural terrain
-      metalness: 0.1,
-      vertexColors: true // Enable vertex colors
+      color: 0x6B8E23,  // Olive green base
+      roughness: 0.8,
+      metalness: 0.2,
+      vertexColors: false
     });
 
     // Create mesh
@@ -627,23 +590,6 @@ const TerrainSystem = {
     }
 
     return this.heightMap[tileZ][tileX];
-  },
-
-  // Get terrain normal at world position by sampling height
-  getNormalAt(x, z) {
-    const d = 0.5; // Distance to sample for slope calculation
-    const hx_plus = this.getHeightAt(x + d, z);
-    const hx_minus = this.getHeightAt(x - d, z);
-    const hz_plus = this.getHeightAt(x, z + d);
-    const hz_minus = this.getHeightAt(x, z - d);
-
-    // Calculate slope in X and Z directions
-    const slopeX = (hx_plus - hx_minus) / (2 * d);
-    const slopeZ = (hz_plus - hz_minus) / (2 * d);
-
-    // Create normal vector from slopes and normalize it
-    const normal = new THREE.Vector3(-slopeX, 1, -slopeZ).normalize();
-    return normal;
   }
 };
 
@@ -714,7 +660,7 @@ const UNIT_STATS = {
     range: 5,
     speed: 6,
     type: 'air',
-    defaultAltitude: 5
+    defaultAltitude: 7
   },
   BOMBER: {
     cost: 400,
@@ -723,7 +669,7 @@ const UNIT_STATS = {
     range: 6,
     speed: 2,
     type: 'air',
-    defaultAltitude: 7
+    defaultAltitude: 5
   }
 };
 
@@ -762,7 +708,7 @@ const UnitSystem = {
     };
 
     // Create 3D mesh
-    unit.mesh = this.createMesh(type, ownerId, stats);
+    unit.mesh = this.createMesh(type, ownerId);
 
     // Create invisible hitbox for easier selection
     unit.hitbox = this.createHitbox(type);
@@ -820,7 +766,7 @@ const UnitSystem = {
   },
 
   // Create 3D mesh for unit using PIE models (assembles body + propulsion + weapon)
-  createMesh(type, ownerId, stats) {
+  createMesh(type, ownerId) {
     const droidGroup = new THREE.Group();
     droidGroup.userData = { unitId: null };
 
@@ -829,28 +775,24 @@ const UnitSystem = {
     const hasProp = pieModels.propulsion[type];
     const hasWeapon = pieModels.weapons[type];
 
-    debugLog(`Creating mesh for ${type}: body=${!!hasBody}, prop=${!!hasProp}, weapon=${!!hasWeapon}`);
-
     if (hasBody && hasProp && hasWeapon) {
-      debugLog(`Using PIE models for ${type}`);
       // COMPONENT ASSEMBLY: Build droid from body + propulsion + weapon
 
       // 1. Create PROPULSION meshes (WZ2100 tracks are modeled for one side only - need to mirror)
       // Create FRESH geometry for each track (don't clone - cloning may not copy attributes properly)
 
       // Right track (original)
+      const propGeometryRight = createGeometryFromPIE(pieModels.propulsion[type]);
       const propMaterialRight = new THREE.MeshPhongMaterial({
         color: 0xffffff,
         emissive: 0x000000,
         specular: 0x444444,
-        shininess: 20,
-        side: THREE.DoubleSide // Render both sides to fix mirroring issue
+        shininess: 20
       });
       if (textures.propulsion) {
         propMaterialRight.map = textures.propulsion;  // Shared texture (no clone)
         propMaterialRight.needsUpdate = true;
       }
-      const propGeometryRight = createGeometryFromPIE(pieModels.propulsion[type]);
       const propMeshRight = new THREE.Mesh(propGeometryRight, propMaterialRight);
       propMeshRight.castShadow = true;
       propMeshRight.receiveShadow = true;
@@ -858,18 +800,17 @@ const UnitSystem = {
       droidGroup.add(propMeshRight);
 
       // Left track (mirrored copy) - create FRESH geometry, don't clone
+      const propGeometryLeft = createGeometryFromPIE(pieModels.propulsion[type]);
       const propMaterialLeft = new THREE.MeshPhongMaterial({
         color: 0xffffff,
         emissive: 0x000000,
         specular: 0x444444,
-        shininess: 20,
-        side: THREE.DoubleSide // Render both sides to fix mirroring issue
+        shininess: 20
       });
       if (textures.propulsion) {
         propMaterialLeft.map = textures.propulsion;  // Shared texture (no clone)
         propMaterialLeft.needsUpdate = true;
       }
-      const propGeometryLeft = createGeometryFromPIE(pieModels.propulsion[type]);
       const propMeshLeft = new THREE.Mesh(propGeometryLeft, propMaterialLeft);
       propMeshLeft.castShadow = true;
       propMeshLeft.receiveShadow = true;
@@ -933,42 +874,40 @@ const UnitSystem = {
       droidGroup.add(weaponMesh);
 
       // Scale entire droid assembly for visibility
-      droidGroup.scale.set(1.5, 1.5, 1.5);
+      droidGroup.scale.set(4, 4, 4);
 
     } else {
       // FALLBACK: Use primitive geometry if PIE models didn't load
-      debugLog(`⚠️  Using fallback geometry for ${type} (PIE models not found)`);
       let geometry;
-      // NOTE: These are fallback dimensions, adjusted to be more consistent with PIE model sizes.
       switch (type) {
         case 'TANK':
-          geometry = new THREE.BoxGeometry(1.2, 0.8, 1.8);
+          geometry = new THREE.BoxGeometry(3, 1.5, 4);
           break;
         case 'ARTILLERY':
-          geometry = new THREE.CylinderGeometry(0.8, 1, 1.5, 8);
+          geometry = new THREE.CylinderGeometry(1.5, 2, 3, 8);
           break;
         case 'SCOUT':
-          geometry = new THREE.BoxGeometry(0.8, 0.5, 1.2);
+          geometry = new THREE.BoxGeometry(2, 0.8, 3);
           break;
 
         case 'VTOL':
           // Diamond/wedge shape for VTOL
-          geometry = new THREE.ConeGeometry(0.5, 1.5, 4);
+          geometry = new THREE.ConeGeometry(0.8, 2, 4);
           geometry.rotateX(Math.PI / 2);  // Point forward
           break;
 
         case 'FIGHTER':
           // Sleek arrow shape for fighter
-          geometry = new THREE.ConeGeometry(0.4, 2.0, 3);
+          geometry = new THREE.ConeGeometry(0.6, 2.5, 3);
           geometry.rotateX(Math.PI / 2);  // Point forward
           break;
 
         case 'BOMBER':
           // Wide box for bomber
-          geometry = new THREE.BoxGeometry(1.8, 0.4, 1.5);
+          geometry = new THREE.BoxGeometry(2.5, 0.6, 2);
           break;
         default:
-          geometry = new THREE.BoxGeometry(1, 1, 1);
+          geometry = new THREE.BoxGeometry(2, 2, 2);
       }
 
       // Create material with player colors (no textures for simple geometry)
@@ -979,21 +918,13 @@ const UnitSystem = {
         shininess: 30
       });
 
-      // For air units, apply the specific air texture if available
-      if (stats.type === 'air' && textures.air) {
-        material.map = textures.air;
-        material.color.set(0xffffff); // Use white color to show texture correctly
-        material.needsUpdate = true;
-      }
-
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      mesh.scale.set(1.5, 1.5, 1.5);
+      mesh.scale.set(4, 4, 4);
       droidGroup.add(mesh);
     }
 
-    debugLog(`Mesh created for ${type}: ${droidGroup.children.length} child objects`);
     return droidGroup;
   },
 
@@ -1111,52 +1042,23 @@ const UnitSystem = {
     const avoidBehavior = new YUKA.ObstacleAvoidanceBehavior(allObstacles, 3);
     unit.yukaVehicle.steering.add(avoidBehavior);
 
-    // Ground units use A* pathfinding + Yuka FollowPath
-    if (stats.type === 'ground') {
-      debugLog(`Finding path for ground unit ${unit.id}...`);
-      const path = PathfindingSystem.findPath(unit.position.x, unit.position.z, targetX, targetZ);
-
-      if (path && path.length > 0) {
-        const yukaPath = new YUKA.Path();
-        path.forEach(waypoint => {
-          // The Y position will be determined by the terrain height at the waypoint
-          const terrainHeight = TerrainSystem.getHeightAt(waypoint.x, waypoint.z);
-          const heightOffset = unit.type === 'ARTILLERY' ? 2.0 : 1.0;
-          yukaPath.add(new YUKA.Vector3(waypoint.x, terrainHeight + heightOffset, waypoint.z));
-        });
-
-        yukaPath.loop = false; // Don't loop the path
-
-        const followPathBehavior = new YUKA.FollowPathBehavior(yukaPath, 1.5); // 1.5 radius to consider waypoint reached
-        unit.yukaVehicle.steering.add(followPathBehavior);
-
-        unit.isMoving = true;
-        unit.targetPosition = { x: targetX, z: targetZ }; // Still store final destination
-
-        debugLog(`Unit ${unit.id} (${unit.type}) following path with ${path.length} waypoints via Yuka FollowPathBehavior`);
-      } else {
-        debugLog(`No path found for unit ${unit.id}.`);
-        unit.isMoving = false;
-        unit.targetPosition = null;
-        unit.yukaVehicle.velocity.set(0, 0, 0); // Stop the vehicle
-      }
-    }
-    // Air units use Arrive behavior, but only in the XZ plane. Altitude is handled in the animate() loop.
-    else if (stats.type === 'air') {
-      const finalTargetAlt = targetAlt !== undefined ? targetAlt : unit.altitude;
+    // Determine target altitude for air units
+    let finalTargetAlt = unit.altitude;
+    if (stats.type === 'air') {
+      finalTargetAlt = targetAlt !== undefined ? targetAlt : unit.altitude;
       unit.targetAltitude = finalTargetAlt;
-
-      // Target the destination in XZ, but use the vehicle's current Y.
-      // The animate loop will smoothly adjust Y to the target altitude.
-      const targetPosition = new YUKA.Vector3(targetX, unit.yukaVehicle.position.y, targetZ);
-      const arriveBehavior = new YUKA.ArriveBehavior(targetPosition, 2, 0.5);
-      unit.yukaVehicle.steering.add(arriveBehavior);
-
-      unit.isMoving = true;
-      unit.targetPosition = { x: targetX, z: targetZ };
-
-      debugLog(`Air unit ${unit.id} (${unit.type}) moving to (${targetX.toFixed(1)}, ${targetZ.toFixed(1)}). Target altitude: ${finalTargetAlt}`);
     }
+
+    // Add Arrive behavior for smooth movement to target
+    const targetPosition = new YUKA.Vector3(targetX, unit.yukaVehicle.position.y, targetZ);
+    const arriveBehavior = new YUKA.ArriveBehavior(targetPosition, 2, 0.5);
+    unit.yukaVehicle.steering.add(arriveBehavior);
+
+    // Mark unit as moving
+    unit.isMoving = true;
+    unit.targetPosition = { x: targetX, z: targetZ };
+
+    debugLog(`Unit ${unit.id} (${unit.type}) moving to (${targetX.toFixed(1)}, ${targetZ.toFixed(1)}) via Yuka Arrive behavior`);
   },
 
   // Update all units (called every frame)
@@ -1349,9 +1251,6 @@ const CombatSystem = {
       return false;
     }
 
-    // NEW: Create muzzle flash at attacker position
-    VisualEffectsSystem.createMuzzleFlash(attacker.position);
-
     // NEW: Create projectile visual
     this.createProjectile(attacker, defender);
 
@@ -1362,9 +1261,6 @@ const CombatSystem = {
     defender.health -= damage;
     console.log(`${attacker.type} #${attacker.id} attacked ${defender.type} #${defender.id} for ${damage} damage`);
     console.log(`  ${defender.type} health: ${defender.health}/${defender.maxHealth}`);
-
-    // NEW: Create hit indicator at defender position
-    VisualEffectsSystem.createHitIndicator(defender.position, damage);
 
     // Check if destroyed
     if (defender.health <= 0) {
@@ -1384,18 +1280,13 @@ const CombatSystem = {
     projectile.position.set(from.position.x, from.position.y, from.position.z);
     scene.add(projectile);
 
-    const projectileData = {
+    this.projectiles.push({
       mesh: projectile,
       startPos: { ...from.position },
       endPos: { ...to.position },
       progress: 0,
       speed: 15  // Units per second
-    };
-
-    // NEW: Initialize smoke trail
-    VisualEffectsSystem.addProjectileTrail(projectileData);
-
-    this.projectiles.push(projectileData);
+    });
   },
 
   updateProjectiles(deltaTime) {
@@ -1406,33 +1297,18 @@ const CombatSystem = {
       if (proj.progress >= 1) {
         // Reached target - remove
         scene.remove(proj.mesh);
-
-        // NEW: Remove trail mesh if it exists
-        if (proj.trailMesh) {
-          scene.remove(proj.trailMesh);
-        }
-
         this.projectiles.splice(i, 1);
       } else {
         // Interpolate position
         proj.mesh.position.x = proj.startPos.x + (proj.endPos.x - proj.startPos.x) * proj.progress;
         proj.mesh.position.y = proj.startPos.y + (proj.endPos.y - proj.startPos.y) * proj.progress;
         proj.mesh.position.z = proj.startPos.z + (proj.endPos.z - proj.startPos.z) * proj.progress;
-
-        // NEW: Update smoke trail
-        VisualEffectsSystem.updateProjectileTrail(proj, deltaTime);
-        VisualEffectsSystem.renderProjectileTrail(proj);
       }
     }
   },
 
   // Destroy unit and remove from game
   destroyUnit(unit) {
-    debugLog(`💥 Unit ${unit.id} (${unit.type}) destroyed by enemy action.`);
-
-    // NEW: Create explosion particles BEFORE removing unit
-    VisualEffectsSystem.createExplosion(unit.position);
-
     UnitSystem.removeUnit(unit);
   },
 
@@ -1463,238 +1339,6 @@ const CombatSystem = {
 };
 
 console.log('✅ Combat system initialized');
-
-// ═══════════════════════════════════════════════════════
-// VISUAL EFFECTS SYSTEM
-// ═══════════════════════════════════════════════════════
-
-debugLog('Initializing visual effects system...');
-
-const VisualEffectsSystem = {
-  particles: [],
-  muzzleFlashes: [],
-  hitIndicators: [],
-  projectileTrails: [],
-
-  // Create muzzle flash at weapon position
-  createMuzzleFlash(position) {
-    const light = new THREE.PointLight(0xffaa00, 2, 5);
-    light.position.set(position.x, position.y, position.z);
-    scene.add(light);
-
-    this.muzzleFlashes.push({
-      light: light,
-      createdAt: Date.now(),
-      duration: 100  // milliseconds
-    });
-  },
-
-  // Create explosion particles when unit is destroyed
-  createExplosion(position) {
-    const particleCount = 25;
-    const colors = [0xff6600, 0xff0000, 0xffff00];
-
-    for (let i = 0; i < particleCount; i++) {
-      const geometry = new THREE.SphereGeometry(0.1, 6, 6);
-      const color = colors[Math.floor(Math.random() * colors.length)];
-      const material = new THREE.MeshBasicMaterial({ color: color });
-      const particle = new THREE.Mesh(geometry, material);
-
-      particle.position.set(position.x, position.y, position.z);
-      scene.add(particle);
-
-      // Random direction and speed
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.random() * Math.PI;
-      const speed = 3 + Math.random() * 3;
-
-      const velocity = {
-        x: Math.sin(phi) * Math.cos(theta) * speed,
-        y: Math.cos(phi) * speed + 2,  // Add upward bias
-        z: Math.sin(phi) * Math.sin(theta) * speed
-      };
-
-      this.particles.push({
-        mesh: particle,
-        velocity: velocity,
-        position: { ...position },
-        createdAt: Date.now(),
-        lifetime: 1000,  // 1 second in milliseconds
-        gravity: -9.8
-      });
-    }
-  },
-
-  // Create floating damage indicator
-  createHitIndicator(position, damage) {
-    // Create HTML div overlay for text
-    const damageDiv = document.createElement('div');
-    damageDiv.textContent = damage.toString();
-    damageDiv.style.cssText = `
-      position: fixed;
-      color: #ff0000;
-      font-size: 18px;
-      font-weight: bold;
-      font-family: Arial, sans-serif;
-      pointer-events: none;
-      white-space: nowrap;
-      z-index: 100;
-    `;
-    document.body.appendChild(damageDiv);
-
-    // Store initial world position for conversion to screen space each frame
-    this.hitIndicators.push({
-      div: damageDiv,
-      worldPosition: { ...position },
-      createdAt: Date.now(),
-      lifetime: 1500,  // 1.5 seconds in milliseconds
-      initialOpacity: 1.0
-    });
-  },
-
-  // Add smoke trail to projectile
-  addProjectileTrail(projectileData) {
-    projectileData.trail = [];
-    projectileData.trailMaxAge = 0.5;  // Fade over 0.5 seconds
-    projectileData.trailUpdateCounter = 0;
-    projectileData.trailUpdateFrequency = 3;  // Update trail every 3 frames
-  },
-
-  // Update projectile trail
-  updateProjectileTrail(projectileData, deltaTime) {
-    // Record position periodically
-    projectileData.trailUpdateCounter++;
-    if (projectileData.trailUpdateCounter >= projectileData.trailUpdateFrequency) {
-      projectileData.trail.push({
-        x: projectileData.mesh.position.x,
-        y: projectileData.mesh.position.y,
-        z: projectileData.mesh.position.z,
-        age: 0
-      });
-
-      // Keep only last 10 positions
-      if (projectileData.trail.length > 10) {
-        projectileData.trail.shift();
-      }
-
-      projectileData.trailUpdateCounter = 0;
-    }
-
-    // Age trail points
-    for (let point of projectileData.trail) {
-      point.age += deltaTime;
-    }
-
-    // Remove old trail points
-    projectileData.trail = projectileData.trail.filter(p => p.age < projectileData.trailMaxAge);
-  },
-
-  // Render trail as line in next frame
-  renderProjectileTrail(projectileData) {
-    // Remove old trail mesh if it exists
-    if (projectileData.trailMesh) {
-      scene.remove(projectileData.trailMesh);
-    }
-
-    if (projectileData.trail.length < 2) return;
-
-    // Build line geometry from trail points
-    const points = projectileData.trail.map(p => new THREE.Vector3(p.x, p.y, p.z));
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-
-    const material = new THREE.LineBasicMaterial({
-      color: 0xaaaaaa,
-      linewidth: 2,
-      transparent: true,
-      opacity: 0.6
-    });
-
-    projectileData.trailMesh = new THREE.Line(geometry, material);
-    scene.add(projectileData.trailMesh);
-  },
-
-  // Update all visual effects
-  updateEffects(deltaTime) {
-    const currentTime = Date.now();
-
-    // Update muzzle flashes
-    for (let i = this.muzzleFlashes.length - 1; i >= 0; i--) {
-      const flash = this.muzzleFlashes[i];
-      if (currentTime - flash.createdAt > flash.duration) {
-        scene.remove(flash.light);
-        this.muzzleFlashes.splice(i, 1);
-      }
-    }
-
-    // Update particles
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const particle = this.particles[i];
-      const age = (currentTime - particle.createdAt) / 1000;  // Convert to seconds
-      const lifetime = particle.lifetime / 1000;
-
-      if (age > lifetime) {
-        scene.remove(particle.mesh);
-        this.particles.splice(i, 1);
-      } else {
-        // Apply velocity and gravity
-        particle.position.x += particle.velocity.x * deltaTime;
-        particle.position.y += particle.velocity.y * deltaTime;
-        particle.position.z += particle.velocity.z * deltaTime;
-        particle.velocity.y += particle.gravity * deltaTime;
-
-        // Fade opacity
-        const fade = 1.0 - (age / lifetime);
-        particle.mesh.material.opacity = fade;
-        particle.mesh.material.transparent = true;
-
-        // Update mesh position
-        particle.mesh.position.set(particle.position.x, particle.position.y, particle.position.z);
-      }
-    }
-
-    // Update hit indicators
-    for (let i = this.hitIndicators.length - 1; i >= 0; i--) {
-      const indicator = this.hitIndicators[i];
-      const age = (currentTime - indicator.createdAt) / 1000;  // Convert to seconds
-      const lifetime = indicator.lifetime / 1000;
-
-      if (age > lifetime) {
-        document.body.removeChild(indicator.div);
-        this.hitIndicators.splice(i, 1);
-      } else {
-        // Move upward in world space
-        const worldPos = {
-          x: indicator.worldPosition.x,
-          y: indicator.worldPosition.y + (2 * age),  // Float 2 units over lifetime
-          z: indicator.worldPosition.z
-        };
-
-        // Convert to screen space
-        const screenPos = new THREE.Vector3(worldPos.x, worldPos.y, worldPos.z);
-        screenPos.project(camera);
-
-        const screenX = (screenPos.x * window.innerWidth) / 2 + window.innerWidth / 2;
-        const screenY = -(screenPos.y * window.innerHeight) / 2 + window.innerHeight / 2;
-
-        // Update div position
-        indicator.div.style.left = screenX + 'px';
-        indicator.div.style.top = screenY + 'px';
-
-        // Fade opacity
-        const fade = 1.0 - (age / lifetime);
-        indicator.div.style.opacity = fade.toString();
-      }
-    }
-
-    // Limit max particles to 100
-    while (this.particles.length > 100) {
-      const particle = this.particles.shift();
-      scene.remove(particle.mesh);
-    }
-  }
-};
-
-debugLog('✅ Visual effects system initialized');
 
 // ═══════════════════════════════════════════════════════
 // A* PATHFINDING SYSTEM
@@ -1729,27 +1373,17 @@ const PathfindingSystem = {
 
     const fromHeight = TerrainSystem.heightMap[fromZ][fromX];
     const toHeight = TerrainSystem.heightMap[toZ][toX];
-    const heightDiff = toHeight - fromHeight;
-
-    // Make rivers impassable
-    if (toHeight === 0) {
-        return Infinity;
-    }
 
     // Base movement cost
     const isDiagonal = (fromX !== toX && fromZ !== toZ);
     let cost = isDiagonal ? 1.414 : 1.0;  // √2 for diagonal
 
     // Height change cost (climbing is expensive)
+    const heightDiff = toHeight - fromHeight;
     if (heightDiff > 0) {
       cost += heightDiff * 2;  // Going uphill costs more
     } else if (heightDiff < 0) {
       cost += Math.abs(heightDiff) * 0.5;  // Going downhill costs less
-    }
-
-    // Roads are faster
-    if (TerrainSystem.roadMap[toZ][toX] === 1) {
-        cost *= 0.5;
     }
 
     return cost;
@@ -1766,8 +1400,8 @@ const PathfindingSystem = {
     const goalGrid = this.worldToGrid(goalX, goalZ);
 
     // Validate positions
-    if (!this.isValidPosition(startGrid.x, startGrid.z) ||
-        !this.isValidPosition(goalGrid.x, goalGrid.z)) {
+    if (!this.isValidPosition(startGrid.x, startZ) ||
+        !this.isValidPosition(goalGrid.x, goalZ)) {
       debugLog('Pathfinding: Invalid start or goal position');
       return null;
     }
@@ -2275,72 +1909,34 @@ UnitSystem.moveUnit(testVTOL, -15, -15, 2);    // Move to low altitude
           unit.position.x = unit.yukaVehicle.position.x;
           unit.position.z = unit.yukaVehicle.position.z;
 
-          // --- Y-Position Smoothing ---
+          // Handle altitude for air units
           const stats = UNIT_STATS[unit.type];
-          let targetY;
-
           if (stats.type === 'air') {
-            // Air units: Gradually change altitude level
+            // Gradually transition to target altitude
             if (unit.targetAltitude !== undefined && unit.altitude !== unit.targetAltitude) {
               const altDiff = unit.targetAltitude - unit.altitude;
-              const altStep = Math.sign(altDiff) * Math.min(Math.abs(altDiff), deltaTime * 2); // 2 levels/sec
+              const altStep = Math.sign(altDiff) * Math.min(Math.abs(altDiff), deltaTime * 2);
               unit.altitude += altStep;
             }
-            
-            // Target Y is based on altitude relative to sea-level, but with terrain avoidance
-            const seaLevelAltitude = AltitudeSystem.getYPosition(0, unit.altitude);
             const terrainHeight = TerrainSystem.getHeightAt(unit.position.x, unit.position.z);
-            const minSafeAltitude = terrainHeight + 2.0; // Must be at least 2 units above ground
-
-            targetY = Math.max(seaLevelAltitude, minSafeAltitude);
+            unit.position.y = AltitudeSystem.getYPosition(terrainHeight, unit.altitude);
           } else {
-            // Ground units: Target Y is on the terrain surface
+            // Ground units follow terrain
             const terrainHeight = TerrainSystem.getHeightAt(unit.position.x, unit.position.z);
-            // Adjusted offset to balance between hovering and clipping
-            const heightOffset = unit.type === 'ARTILLERY' ? 1.2 : 0.6;
-            targetY = terrainHeight + heightOffset;
+            const heightOffset = unit.type === 'ARTILLERY' ? 2.0 : 1.0;
+            unit.position.y = terrainHeight + heightOffset;
           }
 
-          // Smoothly interpolate the unit's Y position towards the target Y
-          // Use a higher interpolation factor for ground units to make them stick to terrain more closely
-          const interpolationFactor = stats.type === 'ground' ? 10 : 5;
-          unit.position.y = THREE.MathUtils.lerp(unit.position.y, targetY, deltaTime * interpolationFactor);
-
-          // Update Yuka vehicle Y to match the smoothed position
+          // Update Yuka vehicle Y to match (keep in sync)
           unit.yukaVehicle.position.y = unit.position.y;
 
-          // --- Sanity Checks and Final Updates ---
-          if (isNaN(unit.position.x) || isNaN(unit.position.y) || isNaN(unit.position.z)) {
-            console.error(`Unit ${unit.id} has invalid position:`, unit.position);
-          } else {
-            // Update mesh position
-            unit.mesh.position.set(unit.position.x, unit.position.y, unit.position.z);
-          }
+          // Update mesh position
+          unit.mesh.position.set(unit.position.x, unit.position.y, unit.position.z);
 
-          // --- Rotation and Tilting ---
-          const yukaVelocity = unit.yukaVehicle.velocity;
-          const isMoving = yukaVelocity.length() > 0.1;
-
-          if (isMoving) {
-            unit.rotation = Math.atan2(yukaVelocity.x, yukaVelocity.z);
-          }
-
-          const headingQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), unit.rotation);
-          let finalQuaternion = headingQuaternion;
-
-          // Ground units tilt with the terrain
-          if (stats.type === 'ground') {
-            const terrainNormal = TerrainSystem.getNormalAt(unit.position.x, unit.position.z);
-            const upVector = new THREE.Vector3(0, 1, 0);
-            const tiltQuaternion = new THREE.Quaternion().setFromUnitVectors(upVector, terrainNormal);
-            finalQuaternion = tiltQuaternion.multiply(headingQuaternion);
-          }
-
-          if (isNaN(finalQuaternion.x) || isNaN(finalQuaternion.y) || isNaN(finalQuaternion.z) || isNaN(finalQuaternion.w)) {
-            console.error(`Unit ${unit.id} has invalid finalQuaternion.`);
-          } else {
-            // Smoothly interpolate to the final rotation
-            unit.mesh.quaternion.slerp(finalQuaternion, deltaTime * 7);
+          // Update rotation to face movement direction
+          if (unit.yukaVehicle.velocity.length() > 0.1) {
+            unit.rotation = Math.atan2(unit.yukaVehicle.velocity.x, unit.yukaVehicle.velocity.z);
+            unit.mesh.rotation.y = unit.rotation;
           }
 
           // Update hitbox position
@@ -2366,10 +1962,6 @@ UnitSystem.moveUnit(testVTOL, -15, -15, 2);    // Move to low altitude
       // Update units (now just checks arrival and handles combat)
       UnitSystem.update(deltaTime);
       CombatSystem.updateProjectiles(deltaTime);
-
-      // NEW: Update visual effects
-      VisualEffectsSystem.updateEffects(deltaTime);
-
       // Update selection system
       SelectionSystem.update(deltaTime);
 
