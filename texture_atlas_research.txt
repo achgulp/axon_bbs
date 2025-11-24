@@ -1,4 +1,4 @@
-# Full path: /home/dukejer/axon_bbs/texture_atlas_research.txt
+# Full path: /path/to/axon_bbs/texture_atlas_research.txt
 
 ## Warzone 2100 Texture Atlas Research
 

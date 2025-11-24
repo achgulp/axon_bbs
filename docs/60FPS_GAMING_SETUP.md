@@ -183,7 +183,7 @@ Router (192.168.1.1)
 
 1. **On Pi4-A**:
    ```bash
-   cd /home/dukejer/axon_bbs
+   cd /path/to/axon_bbs
    source venv/bin/activate
    python manage.py shell
    ```

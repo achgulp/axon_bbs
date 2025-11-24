@@ -139,7 +139,7 @@ docs/Session_2025-10-18_AxonChat_Phase2.md  - This session notes (NEW)
 ```bash
 # Local
 URL: http://127.0.0.1:8000
-Path: /home/dukejer/axon_bbs
+Path: /path/to/axon_bbs
 
 # Git workflow: Development (push changes)
 git add .
@@ -147,13 +147,13 @@ git commit -m "message"
 git push origin main
 
 # Django management
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 python manage.py <command>
 
 # Restart Django
 pkill -f "python manage.py runserver"
-cd /home/dukejer/axon_bbs && nohup python manage.py runserver 0.0.0.0:8000 > /dev/null 2>&1 &
+cd /path/to/axon_bbs && nohup python manage.py runserver 0.0.0.0:8000 > /dev/null 2>&1 &
 ```
 
 ### PiBBS
@@ -234,7 +234,7 @@ cd /home/pibbs/axon_bbs && nohup python manage.py runserver 0.0.0.0:8000 > /dev/
 ### Update Applet Code in Database
 ```bash
 # Host BBS
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 python manage.py post_applet_update frontend/src/applets/AxonChat.js \
   --name AxonChat \
@@ -267,7 +267,7 @@ ssh -p 2222 pibbs@192.168.58.7 "cd /home/pibbs/axon_bbs && source venv/bin/activ
 ### Rebuild Frontend
 ```bash
 # Host BBS
-cd /home/dukejer/axon_bbs/frontend && npm run build
+cd /path/to/axon_bbs/frontend && npm run build
 
 # PiBBS
 ssh -p 2222 pibbs@192.168.58.7 "cd /home/pibbs/axon_bbs/frontend && npm run build"
@@ -283,7 +283,7 @@ tail -f /tmp/django_host.log  # (if configured)
 ssh -p 2222 pibbs@192.168.58.7 "tail -f /tmp/django_pibbs.log"  # (if configured)
 
 # Or start Django without background mode to see live logs:
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 python manage.py runserver 0.0.0.0:8000
 ```

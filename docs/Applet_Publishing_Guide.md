@@ -97,7 +97,7 @@ Axon BBS applets are JavaScript files that run in sandboxed iframes. The publish
 
 ### Step 1: Create or Update Applet Code
 
-**Location:** `/home/dukejer/axon_bbs/frontend/src/applets/YourApplet.js`
+**Location:** `/path/to/axon_bbs/frontend/src/applets/YourApplet.js`
 
 **Required Structure:**
 ```javascript
@@ -167,7 +167,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 **Command:**
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 python manage.py update_applet_manifests
 ```
@@ -273,7 +273,7 @@ ssh -p 2222 pibbs@192.168.58.7 "cd axon_bbs && git pull && source venv/bin/activ
 **For Multiple Remotes:**
 ```bash
 # HostBBS (local)
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 git pull
 source venv/bin/activate
 python manage.py update_applet_manifests
@@ -294,7 +294,7 @@ nano frontend/src/applets/AxonChat.js
 # (Make changes, update APPLET_VERSION to "v21")
 
 # 2. Update manifests on HostBBS
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 python manage.py update_applet_manifests
 
@@ -623,7 +623,7 @@ print(f"Hash: {attachment.metadata_manifest['content_hash']}")
 
 **Diagnosis:**
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 python manage.py shell <<'EOF'
 from applets.models import Applet
@@ -734,8 +734,8 @@ tail -f /tmp/django_host.log | grep -i timezone
 **When:** After updating models or encountering import errors
 
 ```bash
-find /home/dukejer/axon_bbs -type d -name __pycache__ -exec rm -rf {} +
-find /home/dukejer/axon_bbs -name "*.pyc" -delete
+find /path/to/axon_bbs -type d -name __pycache__ -exec rm -rf {} +
+find /path/to/axon_bbs -name "*.pyc" -delete
 ```
 
 ---
@@ -745,7 +745,7 @@ find /home/dukejer/axon_bbs -name "*.pyc" -delete
 **HostBBS:**
 ```bash
 pkill -9 -f "python.*runserver"
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 nohup python manage.py runserver 0.0.0.0:8000 > /tmp/django_host.log 2>&1 &
 ```

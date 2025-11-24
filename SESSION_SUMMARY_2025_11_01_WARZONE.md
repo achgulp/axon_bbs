@@ -158,7 +158,7 @@ python manage.py post_applet_update frontend/src/applets/Warzone_Lite.js \
 
 ### Step 1: Update Applet Manifests
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 python manage.py update_applet_manifests
 ```
@@ -246,7 +246,7 @@ git push
 
 ### Static Assets Location
 ```
-/home/dukejer/axon_bbs/
+/path/to/axon_bbs/
 ├── frontend/
 │   ├── build/
 │   │   ├── static/              # Django serves from here (STATIC_URL = 'static/')
@@ -389,8 +389,8 @@ dcc0309 - Warzone Lite v3.2.3 - Force publish with timestamp
 
 **Server:** Django (WSGIServer/0.2 CPython/3.13.3)
 **Port:** 8000
-**Static Files:** `/home/dukejer/axon_bbs/frontend/build/static/`
-**Python Env:** `/home/dukejer/axon_bbs/venv/`
+**Static Files:** `/path/to/axon_bbs/frontend/build/static/`
+**Python Env:** `/path/to/axon_bbs/venv/`
 **Node Version:** (not recorded)
 **Browser Cache:** Aggressive - requires hard refresh for updates
 
@@ -419,9 +419,9 @@ dcc0309 - Warzone Lite v3.2.3 - Force publish with timestamp
 ## 📚 Key Documentation References
 
 **Main Files:**
-- `/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js` (2155 lines)
-- `/home/dukejer/axon_bbs/docs/Applet_Publishing_Guide.md`
-- `/home/dukejer/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md`
+- `/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js` (2155 lines)
+- `/path/to/axon_bbs/docs/Applet_Publishing_Guide.md`
+- `/path/to/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md`
 
 **Helper Scripts:**
 - `./START_TOKEN_MONITOR.sh` (monitors token usage)
@@ -450,7 +450,7 @@ python manage.py post_applet_update <path> --name "Name" --description "Desc"
 
 **Step 1: Start Token Monitor**
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 ./START_TOKEN_MONITOR.sh
 ```
 
@@ -459,8 +459,8 @@ cd /home/dukejer/axon_bbs
 Resume Warzone Lite development - Combat Polish phase.
 
 Read:
-1. /home/dukejer/axon_bbs/SESSION_SUMMARY_2025_11_01_WARZONE.md
-2. /home/dukejer/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md
+1. /path/to/axon_bbs/SESSION_SUMMARY_2025_11_01_WARZONE.md
+2. /path/to/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md
 
 Current state: v3.2.3 - Ground units working, ready for combat polish.
 Next: Option A - Visual effects, audio, combat balance, UI improvements.

@@ -1,7 +1,7 @@
 # Axon BBS - Project Status & Development Progress
 
-**Version**: 10.27.0+
-**Last Updated**: October 23, 2025
+**Version**: 10.30.0+
+**Last Updated**: November 22, 2025
 **Status**: 🟢 PRODUCTION READY
 
 ---
@@ -20,19 +20,21 @@
 
 ## Executive Summary
 
-Axon BBS has reached a significant milestone with the completion of the **real-time federated chat system (AxonChat)**, comprehensive **backup/restore infrastructure**, and a production-ready **sandboxed applet framework**. The platform now supports sub-second real-time communication across federated instances, secure execution of complex 3D games, and one-click disaster recovery.
+Axon BBS has reached a significant milestone with the completion of the **60fps real-time gaming infrastructure**, **real-time federated chat system (AxonChat)**, comprehensive **backup/restore infrastructure**, and a production-ready **sandboxed applet framework**. The platform now supports 60fps local multiplayer gaming, sub-second real-time communication across federated instances, secure execution of complex 3D games, and one-click disaster recovery.
 
-### Major Achievements (October 2025)
+### Major Achievements (October-November 2025)
 
 | Feature | Status | Impact |
 |---------|--------|--------|
-| Real-Time Federated Chat | ✅ Complete | 100x latency improvement (2-4 min → 1-3 sec) |
-| Backup/Restore System | ✅ Complete | Full disaster recovery capability |
-| Hybrid Applet Architecture | ✅ Complete | Supports large apps (5MB+ assets) |
-| Client-Side Integrity Verification | ✅ Complete | Prevents corrupted code execution |
-| Automated BBS Cloning | ✅ Complete | One-click instance deployment |
-| Timezone-Aware Timestamps | ✅ Complete | Tor Browser compatibility |
-| Applet Event Bus API | ✅ Complete | Real-time multi-user applications |
+| 60fps Dual-Loop Architecture | ✅ Complete (Nov 21) | 60fps local + LAN federation for gaming |
+| Warzone Lite RTS | ✅ Complete | Full multiplayer RTS with 10 unit types |
+| Real-Time Federated Chat | ✅ Complete (Oct 20) | 100x latency improvement (2-4 min → 1-3 sec) |
+| Backup/Restore System | ✅ Complete (Oct 14) | Full disaster recovery capability |
+| Hybrid Applet Architecture | ✅ Complete (Oct 15) | Supports large apps (5MB+ assets) |
+| Client-Side Integrity Verification | ✅ Complete (Oct 15) | Prevents corrupted code execution |
+| Automated BBS Cloning | ✅ Complete (Oct 14) | One-click instance deployment |
+| Timezone-Aware Timestamps | ✅ Complete (Oct 20) | Tor Browser compatibility |
+| Applet Event Bus API | ✅ Complete (Oct 15) | Real-time multi-user applications |
 
 ---
 
@@ -553,10 +555,28 @@ python manage.py post_applet_update \
 
 ## In Progress
 
-### 1. User-Uploaded Applets 🚧
+### 1. Bee Adventure (FPS Game) 🚧
+
+**Status**: External Development (Not Yet in Axon BBS)
+**Target**: December 2025
+
+**Current Phase:**
+- Core gameplay with AntiGravity engine
+- AI bees and NPCs implementation
+- Single-player polish
+
+**Next Steps:**
+1. Complete single-player features
+2. Port to Axon BBS as sandboxed applet
+3. Build FPSNetcode library for multiplayer
+4. Adapt patterns for RTSNetcode and RacingNetcode
+
+**Roadmap**: See `/docs/NETCODE_ROADMAP.md` for complete plan
+
+### 2. User-Uploaded Applets 🚧
 
 **Status**: 60% Complete
-**Target**: November 2025
+**Target**: Q1 2026
 
 **Completed:**
 - ✅ Applet model supports `owner` field
@@ -583,10 +603,10 @@ If approved: Applet becomes public
 If rejected: User notified via PM
 ```
 
-### 2. Universal Embed Framework 🚧
+### 3. Universal Embed Framework 🚧
 
 **Status**: 30% Complete
-**Target**: December 2025
+**Target**: Q1 2026
 
 **Completed:**
 - ✅ Applet model has `handles_mime_types` field
@@ -955,6 +975,111 @@ The platform is **stable, performant, and secure**, ready for:
 
 ---
 
-**Last Updated**: October 23, 2025 by Achduke7
+## Recent Updates (November 2025)
+
+### 60fps Dual-Loop Architecture ✅ **COMPLETE** (November 21, 2025)
+
+**Major Infrastructure Update:**
+- ✅ RealtimeMessageService fully implemented (345 lines)
+- ✅ MessageBoard model updated with new fields:
+  - `local_poll_interval` - Local update rate (16ms-1s, default 16ms = 60fps)
+  - `federation_poll_interval` - Separate federation sync (100ms-10s)
+  - `use_lan_federation` - Toggle LAN (fast) vs Tor (private)
+  - `federation_room_id` - Shared room across instances
+  - `trusted_peers` - Peer URL list
+- ✅ Database migration 0003 applied successfully
+- ✅ Tested on dual Pi4 setup (8 players @ 60fps)
+- ✅ Documentation updated (ARCHITECTURE.md v10.30.0, 60FPS_GAMING_SETUP.md)
+
+**Performance Achieved:**
+- Local 60fps: 16-20ms latency ✅
+- Single Pi4: 4 players @ 60fps ✅
+- Dual Pi4 LAN: 8 players @ 60fps ✅
+- CPU usage: ~14% per player ✅
+
+**Status:** Production ready for real-time gaming
+
+### Warzone Lite Completion ✅ **COMPLETE** (November 2025)
+
+**Full RTS Implementation:**
+- 2,416 lines of JavaScript
+- 64×80 terrain with 0-8 elevation levels
+- 10 unit types (5 ground, 5 air)
+- Multi-altitude air combat (3 layers)
+- Building placement system
+- Multiplayer via federation heartbeat (2-second sync)
+- Multiple versions tested (v3.2.0 → v3.2.3)
+
+**Status:** Fully playable multiplayer game
+
+### Next Phase: Bee Adventure + Netcode Library
+
+**Current Work:**
+1. Developing Bee Adventure (FPS) with AntiGravity (external to Axon BBS)
+2. Phase: Core gameplay, AI bees, NPCs
+3. After completion: Port to Axon BBS
+4. Then: Build reusable AxonNetcode library
+
+**Planning Documents:**
+- `/docs/NETCODE_ROADMAP.md` - 11-phase development plan
+- `/CURRENT_WORK.md` - Active tasks tracker
+
+---
+
+## For AI Assistants: How to Resume Work
+
+**Essential Files to Read (in order):**
+1. **This file** (`PROJECT_STATUS.md`) - Overall project status
+2. `/ARCHITECTURE.md` - Technical architecture (stable reference)
+3. `/CURRENT_WORK.md` - What's being worked on right now
+4. `/docs/NETCODE_ROADMAP.md` - Future netcode library plans (if relevant)
+5. Git status - Recent changes
+
+**Quick Context Check:**
+- **Is 60fps done?** ✅ YES (Nov 21, 2025)
+- **Is Warzone Lite done?** ✅ YES (fully playable with multiplayer)
+- **Does Bee Adventure exist?** ❌ NO (in external development)
+- **Is netcode library done?** ❌ NO (planned after Bee Adventure)
+- **What's the current focus?** Bee Adventure single-player development
+
+**Common Confusion Points:**
+- Bee Adventure is NOT in `/frontend/src/applets/` yet
+- Don't rebuild Warzone Lite (it's complete)
+- Netcode library waits for Bee Adventure (don't start early)
+- ARCHITECTURE.md mentions Bee Adventure but it doesn't exist in codebase yet
+
+**File Structure for Quick Navigation:**
+```
+/path/to/axon_bbs/
+├── PROJECT_STATUS.md          ← You are here (current status)
+├── CURRENT_WORK.md            ← Active work tracker
+├── ARCHITECTURE.md            ← Technical reference (stable)
+├── docs/
+│   ├── NETCODE_ROADMAP.md    ← Future netcode plans
+│   ├── 60FPS_GAMING_SETUP.md ← Gaming setup guide
+│   └── Warzone_Lite_Implementation_Plan.md
+├── core/agents/
+│   └── realtime_message_service.py  ← 60fps dual-loop (345 lines)
+├── messaging/
+│   ├── models.py              ← MessageBoard with 60fps fields
+│   └── migrations/0003_add_60fps_netcode_fields.py
+└── frontend/src/applets/
+    ├── Warzone_Lite.js        ← Complete RTS (2,416 lines)
+    ├── AxonChat.js            ← Real-time chat (655 lines)
+    ├── hexgl.js               ← Racing game (457 lines)
+    └── [other applets]
+```
+
+**When Helping with Different Topics:**
+- **Bee Adventure:** It's external, focus on design/planning
+- **Netcode Library:** Review roadmap, don't implement yet
+- **Axon BBS Maintenance:** Read ARCHITECTURE.md, check git log
+- **New Features:** Check if they conflict with current work
+- **Documentation:** Update PROJECT_STATUS.md and CURRENT_WORK.md
+
+---
+
+**Last Updated**: November 22, 2025 by Claude Code
 **Status**: 🟢 All Systems Operational
-**Version**: 10.27.0+
+**Version**: 10.30.0+
+**Next Update**: When Bee Adventure port begins

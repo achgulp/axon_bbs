@@ -1,6 +1,6 @@
 #!/bin/bash
 # Warzone Lite - Start Gemini on Task 0
-# Run this from /home/dukejer/axon_bbs/ directory
+# Run this from /path/to/axon_bbs/ directory
 
 echo "═══════════════════════════════════════════════════"
 echo "  Starting Gemini Flash on Warzone Lite Task 0"

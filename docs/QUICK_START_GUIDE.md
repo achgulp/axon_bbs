@@ -27,7 +27,7 @@
 
 ## Files You Need
 
-All in `/home/dukejer/axon_bbs/docs/`:
+All in `/path/to/axon_bbs/docs/`:
 
 1. **`JUNIOR_DEV_ONBOARDING.md`** - Give this to junior AIs first
 2. **`JUNIOR_DEV_TASKS.md`** - Step-by-step tasks with code
@@ -67,13 +67,13 @@ All in `/home/dukejer/axon_bbs/docs/`:
 
 **Option A - Flash (recommended):**
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 ./START_GEMINI_TASK_0.sh
 ```
 
 **Option B - Pro (if you want best quality):**
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 ./START_GEMINI_TASK_0_PRO.sh
 ```
 
@@ -89,7 +89,7 @@ gemini -m "gemini-2.5-pro" -p "@docs/JUNIOR_DEV_ONBOARDING.md @docs/JUNIOR_DEV_T
 Send to me (Claude Code):
 ```
 Junior dev completed Task 0.
-Files: /home/dukejer/axon_bbs/frontend/src/applets/Test_BBS_API.js
+Files: /path/to/axon_bbs/frontend/src/applets/Test_BBS_API.js
 Please review using SENIOR_REVIEW_CHECKLIST.md
 ```
 
@@ -112,8 +112,8 @@ Start new conversation:
 Resume Warzone Lite project as senior architect.
 
 Read:
-1. /home/dukejer/axon_bbs/docs/CLAUDE_CODE_SESSION_SUMMARY.md
-2. /home/dukejer/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md
+1. /path/to/axon_bbs/docs/CLAUDE_CODE_SESSION_SUMMARY.md
+2. /path/to/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md
 
 Status: [Tell me where you are]
 Let's continue!

@@ -5,9 +5,9 @@ WARZONE LITE - QUICK RESTART (Oct 25, 2025)
 📍 CURRENT STATE: v2.0.7 - Fresh Geometry (No Cloning)
 🎯 STATUS: ⚠️ Droid assembly works but track textures fail on 2 of 3 units
 
-📁 Main File: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
-📁 Textures: /home/dukejer/axon_bbs/frontend/public/warzone_textures/
-📁 Full Docs: /home/dukejer/axon_bbs/WARZONE_LITE_RESTART_20251025.md
+📁 Main File: /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
+📁 Textures: /path/to/axon_bbs/frontend/public/warzone_textures/
+📁 Full Docs: /path/to/axon_bbs/WARZONE_LITE_RESTART_20251025.md
 
 ───────────────────────────────────────────────────────────────────
 ✅ COMPLETED (Week 1 - 100%+)
@@ -84,16 +84,16 @@ FUTURE FEATURES:
 🔧 OTHER COMMANDS
 ───────────────────────────────────────────────────────────────────
 # Syntax check
-node -c /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+node -c /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 # View current version
-grep "APPLET_VERSION" /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+grep "APPLET_VERSION" /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 # Verify textures exist
-ls -lh /home/dukejer/axon_bbs/frontend/public/warzone_textures/
+ls -lh /path/to/axon_bbs/frontend/public/warzone_textures/
 
 # View texture loading code
-sed -n '120,148p' /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+sed -n '120,148p' /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 ───────────────────────────────────────────────────────────────────
 📋 WHEN RESUMING, SAY:
@@ -102,7 +102,7 @@ sed -n '120,148p' /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 Resuming Warzone Lite development. Last session implemented texture
 system v1.8.0. Need to browser test textured units. Here's context:
-[paste /home/dukejer/axon_bbs/QUICK_RESTART.txt or full restart doc]"
+[paste /path/to/axon_bbs/QUICK_RESTART.txt or full restart doc]"
 
 ═══════════════════════════════════════════════════════════════════
 Session Summary: Oct 25, 2025 Evening - v2.0.7 Texture Debug

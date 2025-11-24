@@ -182,22 +182,22 @@ Before you write ANY code, you MUST read these files:
 
 ### Essential Documentation
 
-1. **`/home/dukejer/axon_bbs/DEVELOPER_HANDBOOK.md`**
+1. **`/path/to/axon_bbs/DEVELOPER_HANDBOOK.md`**
    - Read the entire file
    - Pay special attention to the applet sections
    - Understand the security model
 
-2. **`/home/dukejer/axon_bbs/ARCHITECTURE.md`**
+2. **`/path/to/axon_bbs/ARCHITECTURE.md`**
    - Understand the overall system architecture
    - Focus on the applet runtime sections
    - Learn how federation works
 
-3. **`/home/dukejer/axon_bbs/docs/AxonBBSAppletDevGuideforAI.txt`**
+3. **`/path/to/axon_bbs/docs/AxonBBSAppletDevGuideforAI.txt`**
    - This is YOUR bible for applet development
    - Read it multiple times
    - Reference it constantly
 
-4. **`/home/dukejer/axon_bbs/docs/Applet_Publishing_Guide.md`**
+4. **`/path/to/axon_bbs/docs/Applet_Publishing_Guide.md`**
    - How to deploy your applet when complete
    - Testing procedures
    - Publishing workflow
@@ -206,7 +206,7 @@ Before you write ANY code, you MUST read these files:
 
 **You MUST study these existing applets before writing code:**
 
-#### 1. `/home/dukejer/axon_bbs/frontend/src/applets/hexgl.js`
+#### 1. `/path/to/axon_bbs/frontend/src/applets/hexgl.js`
 **Why Study:** Perfect example of hybrid asset loading pattern
 
 **Key Sections to Understand:**
@@ -221,7 +221,7 @@ Before you write ANY code, you MUST read these files:
 - How to use JSZip library
 - Progress bar implementation
 
-#### 2. `/home/dukejer/axon_bbs/frontend/src/applets/FortressOverlord.js`
+#### 2. `/path/to/axon_bbs/frontend/src/applets/FortressOverlord.js`
 **Why Study:** Example of 3D RTS with multiplayer
 
 **Key Sections to Understand:**
@@ -237,7 +237,7 @@ Before you write ANY code, you MUST read these files:
 - Event-based multiplayer synchronization
 - How to structure a game loop
 
-#### 3. `/home/dukejer/axon_bbs/docs/archive/AxonChat_DeveloperHandoff_10.27.0.txt`
+#### 3. `/path/to/axon_bbs/docs/archive/AxonChat_DeveloperHandoff_10.27.0.txt`
 **Why Study:** Real-time federation pattern
 
 **Key Sections to Understand:**
@@ -271,13 +271,13 @@ Before you write ANY code, you MUST read these files:
 
 3. **Command Line Access**
    - You'll need to test on the actual Axon BBS
-   - Running at `/home/dukejer/axon_bbs/`
+   - Running at `/path/to/axon_bbs/`
    - Django backend must be running
 
 ### File Locations You Need to Know
 
 ```
-/home/dukejer/axon_bbs/
+/path/to/axon_bbs/
 ├── frontend/src/applets/
 │   ├── Warzone_Lite.js          ← YOU WILL CREATE THIS
 │   ├── hexgl.js                 ← STUDY THIS (hybrid pattern)

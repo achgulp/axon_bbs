@@ -9,7 +9,7 @@
 
 **Warzone Lite** is a JavaScript-native RTS game for Axon BBS, inspired by Warzone 2100. It runs in the browser using Three.js for 3D rendering.
 
-**Main File:** `/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js`
+**Main File:** `/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js`
 
 ---
 
@@ -50,14 +50,14 @@
 
 ### Game Code
 ```
-/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 ```
 - Main game file (1,160+ lines)
 - Systems: Terrain, Units, Pathfinding, Input, Rendering
 
 ### Textures (Web-Accessible)
 ```
-/home/dukejer/axon_bbs/frontend/public/warzone_textures/
+/path/to/axon_bbs/frontend/public/warzone_textures/
   ├── page-14-droid-hubs.png    (197KB, 1024x1024) - Unit bodies/hubs
   ├── page-16-droid-drives.png  (52KB) - Wheels/tracks
   └── page-17-droid-weapons.png (368KB) - Turrets/weapons
@@ -65,7 +65,7 @@
 
 ### Warzone 2100 Source Assets
 ```
-/home/dukejer/axon_bbs/frontend/src/applets/warzone2100/
+/path/to/axon_bbs/frontend/src/applets/warzone2100/
   ├── data/base/texpages/      - 133MB of texture atlases
   ├── src/astar.cpp            - A* pathfinding reference
   ├── src/map.h                - MAPTILE structure reference
@@ -74,8 +74,8 @@
 
 ### Development Tools
 ```
-/home/dukejer/axon_bbs/debug_screenshot.sh  - Optimize screenshots for Claude
-/home/dukejer/axon_bbs/START_GEMINI_SAFE.sh - Launch Gemini agents in sandbox
+/path/to/axon_bbs/debug_screenshot.sh  - Optimize screenshots for Claude
+/path/to/axon_bbs/START_GEMINI_SAFE.sh - Launch Gemini agents in sandbox
 ```
 
 ---
@@ -234,10 +234,10 @@ window.BBS_DEBUG_MODE = true;
 ### Testing Changes
 ```bash
 # Syntax check
-node -c /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+node -c /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 # Check git status
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 git status
 
 # View recent changes
@@ -257,7 +257,7 @@ tail -f /tmp/gemini_task_<task#>_output.txt
 
 # Review sandbox output
 ls -lh /tmp/gemini_sandbox_task_<task#>/
-diff /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js \
+diff /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js \
      /tmp/gemini_sandbox_task_<task#>/Warzone_Lite.js
 ```
 
@@ -305,24 +305,24 @@ git add frontend/src/applets/Warzone_Lite.js
 
 ### Verify Texture Files
 ```bash
-ls -lh /home/dukejer/axon_bbs/frontend/public/warzone_textures/
-identify /home/dukejer/axon_bbs/frontend/public/warzone_textures/page-14-droid-hubs.png
+ls -lh /path/to/axon_bbs/frontend/public/warzone_textures/
+identify /path/to/axon_bbs/frontend/public/warzone_textures/page-14-droid-hubs.png
 ```
 
 ### Check Current Version
 ```bash
-grep "APPLET_VERSION" /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+grep "APPLET_VERSION" /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 # Should show: v1.8.0 - Warzone 2100 Textured Units
 ```
 
 ### View Texture Loading Code
 ```bash
-sed -n '120,148p' /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+sed -n '120,148p' /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 ```
 
 ### View UV Mapping Code
 ```bash
-sed -n '509,546p' /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+sed -n '509,546p' /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 ```
 
 ---
@@ -341,9 +341,9 @@ sed -n '509,546p' /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
 > "I'm resuming work on Warzone Lite. Here's the restart document from our last session: [paste this file]. We just implemented texture system v1.8.0 and need to browser test it."
 
 **Files to Review on Restart:**
-- `/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js` (main file)
-- `/home/dukejer/axon_bbs/frontend/public/warzone_textures/` (texture assets)
-- This document: `/home/dukejer/axon_bbs/WARZONE_LITE_RESTART_20251025.md`
+- `/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js` (main file)
+- `/path/to/axon_bbs/frontend/public/warzone_textures/` (texture assets)
+- This document: `/path/to/axon_bbs/WARZONE_LITE_RESTART_20251025.md`
 
 ---
 

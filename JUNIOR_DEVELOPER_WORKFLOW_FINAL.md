@@ -46,7 +46,7 @@
 ### Step 1: Launch Gemini in Safe Mode
 
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 ./START_GEMINI_SAFE.sh 1.3 flash
 
 # OR with Pro model
@@ -91,7 +91,7 @@ Claude Code will:
 ```bash
 # Claude Code moves files to production
 cp /tmp/gemini_sandbox_task_1.3/Warzone_Lite.js \
-   /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+   /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 ```
 
 **If REJECTED:**
@@ -259,7 +259,7 @@ rm -rf /tmp/gemini_sandbox_task_1.3/
 
 **Command to resume:**
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 ./START_GEMINI_SAFE.sh 1.3 flash
 ```
 
@@ -296,7 +296,7 @@ node -c /tmp/test_Warzone_Lite.js
 
 # If good, deploy
 cp /tmp/test_Warzone_Lite.js \
-   /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+   /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 ```
 
 ---

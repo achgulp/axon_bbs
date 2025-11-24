@@ -20,7 +20,7 @@
 ### Option 1: Use the Background Script (Recommended)
 
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 
 # Start Gemini Flash on any task (background)
 ./START_GEMINI_BACKGROUND.sh 0 flash

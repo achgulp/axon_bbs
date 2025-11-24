@@ -22,7 +22,7 @@
 ## Task 0 Review: BBS API Test
 
 ### Code Quality
-- [ ] File exists at `/home/dukejer/axon_bbs/frontend/src/applets/Test_BBS_API.js`
+- [ ] File exists at `/path/to/axon_bbs/frontend/src/applets/Test_BBS_API.js`
 - [ ] BBS API helper is included exactly as specified
 - [ ] No syntax errors (check with ESLint or manual review)
 - [ ] Code is properly indented (2 spaces)
@@ -77,7 +77,7 @@ Please fix these issues and resubmit. Do NOT proceed to Task 1.1 until this is a
 ## Task 1.1 Review: Warzone_Lite.js Skeleton
 
 ### Code Quality
-- [ ] File exists at `/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js`
+- [ ] File exists at `/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js`
 - [ ] BBS API helper matches template exactly
 - [ ] Header comment includes copyright and GPL notice
 - [ ] Code sections are clearly labeled with STEP comments

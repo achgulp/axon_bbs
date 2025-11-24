@@ -83,14 +83,14 @@
   Deploying to production...
 
 ● Bash(cp /tmp/gemini_sandbox_task_1.4/Warzone_Lite.js
-      /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js)
+      /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js)
   ⎿  (No content)
 
 ● Bash(rm -rf /tmp/gemini_sandbox_task_1.4/)
   ⎿  (No content)
 
-● Bash(wc -l /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js)
-  ⎿  720 /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+● Bash(wc -l /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js)
+  ⎿  720 /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 ● ✅ Task 1.4 deployed successfully!
 
@@ -142,9 +142,9 @@
 
 ● Bash(ls -lh /tmp/gemini_sandbox_task_1.5/)
   ⎿  total 24K                                                     
-     drwx------ 3 dukejer dukejer  540 Oct 25 10:15 docs
-     -rw-rw-r-- 1 dukejer dukejer 2.7K Oct 25 10:15 Test_BBS_API.js
-     -rw-rw-r-- 1 dukejer dukejer  20K Oct 25 10:18 Warzone_Lite.js
+     drwx------ 3 user user  540 Oct 25 10:15 docs
+     -rw-rw-r-- 1 user user 2.7K Oct 25 10:15 Test_BBS_API.js
+     -rw-rw-r-- 1 user user  20K Oct 25 10:18 Warzone_Lite.js
 
 ● Bash(wc -l /tmp/gemini_sandbox_task_1.5/Warzone_Lite.js)
   ⎿  475 /tmp/gemini_sandbox_task_1.5/Warzone_Lite.js
@@ -168,7 +168,7 @@
 ● Bash(node -c /tmp/gemini_sandbox_task_1.5/Warzone_Lite.js)
   ⎿  (No content)
 
-● Bash(diff -u /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+● Bash(diff -u /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
       /tmp/gemini_sandbox_task_1.5/Warzone_Lite.js | grep -A 5 -B 5
       "SelectionSystem")
   ⎿       // ═══════════════════════════════════════════════════════
@@ -303,7 +303,7 @@
   Final Stats:
   - Total lines: 952
   - Production file:
-  /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+  /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
   - Syntax: ✅ Validated
   - Ready for testing in browser!
 
@@ -422,7 +422,7 @@ shrink the image and then turn it into a better tokenized debug for you like
      # Colors for output
      … +222 lines (ctrl+o to expand)
 
-● Bash(chmod +x /home/dukejer/axon_bbs/debug_screenshot.sh)
+● Bash(chmod +x /path/to/axon_bbs/debug_screenshot.sh)
   ⎿  (No content)
 
 ● Perfect! I've created debug_screenshot.sh - a tool to optimize screenshots
@@ -558,7 +558,7 @@ unit clipped with map on top.
 
 ● Now let me validate the syntax to ensure there are no errors:
 
-● Bash(node -c /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js)
+● Bash(node -c /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js)
   ⎿  (No content)
 
 ● Excellent! I've completed all the fixes for Warzone Lite. Here's what was
@@ -644,7 +644,7 @@ select it.  Here is the applet debug log.
 
 
 > I think all the warzone assets should already be in 
-/home/dukejer/axon_bbs/frontend/src/applets/warzone2100  Also maybe we 
+/path/to/axon_bbs/frontend/src/applets/warzone2100  Also maybe we 
 review some of the source code for alogorithm ideas like map terrain, 
 movement, etc. 
 
@@ -747,13 +747,13 @@ I can see the debug console is working perfectly! Looking at your
   ✅ Warzone 2100 Assets Found
 
   Unit Texture Atlases (1024x1024 PNG sprite sheets):
-  - /home/dukejer/axon_bbs/frontend/src/applets/warzone2100/data/base/texpag
+  - /path/to/axon_bbs/frontend/src/applets/warzone2100/data/base/texpag
   es/page-14-droid-hubs.png (197KB)
-  - /home/dukejer/axon_bbs/frontend/src/applets/warzone2100/data/base/texpag
+  - /path/to/axon_bbs/frontend/src/applets/warzone2100/data/base/texpag
   es/page-15-droid-hubs.png (257KB)
-  - /home/dukejer/axon_bbs/frontend/src/applets/warzone2100/data/base/texpag
+  - /path/to/axon_bbs/frontend/src/applets/warzone2100/data/base/texpag
   es/page-16-droid-drives.png (52KB) - wheels/tracks
-  - /home/dukejer/axon_bbs/frontend/src/applets/warzone2100/data/base/texpag
+  - /path/to/axon_bbs/frontend/src/applets/warzone2100/data/base/texpag
   es/page-17-droid-weapons.png (368KB) - turrets
 
   🔍 Source Code Insights
@@ -823,20 +823,20 @@ I can see the debug console is working perfectly! Looking at your
   Warzone 2100 texture decals on top. This will look much better while
   maintaining the hitboxes and 3D gameplay.
 
-● Bash(cp /home/dukejer/axon_bbs/frontend/src/applets/warzone2100/data/base/texp
+● Bash(cp /path/to/axon_bbs/frontend/src/applets/warzone2100/data/base/texp
       ages/page-14-droid-hubs.png
-      /home/dukejer/axon_bbs/frontend/public/warzone_textures/ 2>…)
+      /path/to/axon_bbs/frontend/public/warzone_textures/ 2>…)
   ⎿  (No content)
 
-● Bash(cp /home/dukejer/axon_bbs/frontend/src/applets/warzone2100/data/base/texp
+● Bash(cp /path/to/axon_bbs/frontend/src/applets/warzone2100/data/base/texp
       ages/page-17-droid-weapons.png
-      /home/dukejer/axon_bbs/frontend/public/warzone_textures/…)
+      /path/to/axon_bbs/frontend/public/warzone_textures/…)
   ⎿  (No content)
 
-● Bash(ls -lh /home/dukejer/axon_bbs/frontend/public/warzone_textures/)
+● Bash(ls -lh /path/to/axon_bbs/frontend/public/warzone_textures/)
   ⎿ total 620K                                                             
-    -rw-r--r-- 1 dukejer dukejer 197K Oct 25 11:29 page-14-droid-hubs.png
-    -rw-r--r-- 1 dukejer dukejer  52K Oct 25 11:29 page-16-droid-drives.png
+    -rw-r--r-- 1 user user 197K Oct 25 11:29 page-14-droid-hubs.png
+    -rw-r--r-- 1 user user  52K Oct 25 11:29 page-16-droid-drives.png
     … +2 lines (ctrl+o to expand)
 
   ⎿  Session limit reached ∙ resets 3pm
@@ -857,9 +857,9 @@ I can see the debug console is working perfectly! Looking at your
   ☐ Test textured units in-game
 
 
-> /home/dukejer/axon_bbs/SESSION_SUMMARY_2025_10_26_FINAL.md Here are you 
+> /path/to/axon_bbs/SESSION_SUMMARY_2025_10_26_FINAL.md Here are you 
 session notes for yesterday.  Also read QUICK_RESTART.txt and 
-/home/dukejer/axon_bbs/docs/RTS_Libraries.txt.  Is there anything in the 
+/path/to/axon_bbs/docs/RTS_Libraries.txt.  Is there anything in the 
 RTS_Libraries.txt that could help speed up or debug this project? 
 
 ● Read(SESSION_SUMMARY_2025_10_26_FINAL.md)
@@ -1023,7 +1023,7 @@ RTS_Libraries.txt that could help speed up or debug this project?
 
   If you want to experiment with Yuka.js today:
 
-  cd /home/dukejer/axon_bbs/frontend
+  cd /path/to/axon_bbs/frontend
   npm install yuka --save
 
   Then in Warzone_Lite.js:
@@ -1060,7 +1060,7 @@ RTS_Libraries.txt that could help speed up or debug this project?
   development. This will give your units professional-grade movement,
   steering behaviors, and better pathfinding.
 
-● Bash(cd /home/dukejer/axon_bbs/frontend && npm install yuka       timeout: 
+● Bash(cd /path/to/axon_bbs/frontend && npm install yuka       timeout: 
       --save)                                                       30s
   ⎿  added 1 package, and audited 1404 packages in 4s
 
@@ -1068,7 +1068,7 @@ RTS_Libraries.txt that could help speed up or debug this project?
      … +14 lines (ctrl+o to expand)
 
 ● Bash(grep -n "APPLET_VERSION\|class.*System\|function.*System"
-      /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js | head -20)
+      /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js | head -20)
   ⎿ 53:    const APPLET_VERSION = 'v3.0.2 - Week 2: Air Units with Textures
     ';
     83:      versionDiv.textContent = '=== WARZONE LITE ' + APPLET_VERSION
@@ -1136,7 +1136,7 @@ RTS_Libraries.txt that could help speed up or debug this project?
 │ ✅ Yuka.js installed via npm: `npm install yuka --save`                       │
 │                                                                              │
 │ **Files to Modify**:                                                         │
-│ - `/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js` (main file)  │
+│ - `/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js` (main file)  │
 │                                                                              │
 │ **DO NOT MODIFY**:                                                           │
 │ - Debug console system                                                       │
@@ -1317,7 +1317,7 @@ RTS_Libraries.txt that could help speed up or debug this project?
 │                                                                              │
 │ ```bash                                                                      │
 │ # Syntax check                                                               │
-│ node -c /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js          │
+│ node -c /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js          │
 │                                                                              │
 │ # Verify no errors                                                           │
 │ echo "✅ Syntax valid"                                                        │
@@ -1353,10 +1353,10 @@ RTS_Libraries.txt that could help speed up or debug this project?
      ## Objective
      … +248 lines (ctrl+o to expand)
 
-● Bash(ls -lh /home/dukejer/axon_bbs/START_GEMINI*.sh)
-  ⎿ -rwxrwxr-x 1 dukejer dukejer 3.1K Oct 24 22:45 /home/dukejer/axon_bbs/S
+● Bash(ls -lh /path/to/axon_bbs/START_GEMINI*.sh)
+  ⎿ -rwxrwxr-x 1 user user 3.1K Oct 24 22:45 /path/to/axon_bbs/S
     TART_GEMINI_BACKGROUND.sh
-    -rwxrwxr-x 1 dukejer dukejer 3.9K Oct 24 22:45 /home/dukejer/axon_bbs/S
+    -rwxrwxr-x 1 user user 3.9K Oct 24 22:45 /path/to/axon_bbs/S
     … +7 lines (ctrl+o to expand)
 
 
@@ -1381,12 +1381,12 @@ RTS_Libraries.txt that could help speed up or debug this project?
      else
      … +117 lines (ctrl+o to expand)
 
-● Bash(chmod +x /home/dukejer/axon_bbs/START_YUKA_INTEGRATION.sh)
+● Bash(chmod +x /path/to/axon_bbs/START_YUKA_INTEGRATION.sh)
   ⎿  (No content)
 
 ● Perfect! Now let's launch the Gemini Flash agent to integrate Yuka.js:
 
-● Bash(/home/dukejer/axon_bbs/START_YUKA_INTEGRATION.sh flash) timeout: 10s
+● Bash(/path/to/axon_bbs/START_YUKA_INTEGRATION.sh flash) timeout: 10s
   ⎿  ═══════════════════════════════════════════════════
        Gemini FLASH: Yuka.js Integration Task
      ═══════════════════════════════════════════════════
@@ -1403,8 +1403,8 @@ RTS_Libraries.txt that could help speed up or debug this project?
      … +5 lines (ctrl+o to expand)
 
 ● Bash(ps aux | grep -E "gemini.*yuka|106829" | grep -v grep)
-  ⎿ dukejer   106829  0.0  0.0  10320  2400 ?        S    14:38   0:00 /bin
-    /bash /home/dukejer/axon_bbs/START_YUKA_INTEGRATION.sh flash
+  ⎿ user      106829  0.0  0.0  10320  2400 ?        S    14:38   0:00 /bin
+    /bash /path/to/axon_bbs/START_YUKA_INTEGRATION.sh flash
 
 
 ● Bash(sleep 30 && cat /tmp/gemini_yuka_integration_output.txt) timeout: 35s
@@ -1438,14 +1438,14 @@ RTS_Libraries.txt that could help speed up or debug this project?
 
 
 
-● Bash(node -c /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js)
+● Bash(node -c /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js)
   ⎿  (No content)
 
-● Bash(wc -l /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js)
-  ⎿  2008 /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+● Bash(wc -l /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js)
+  ⎿  2008 /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 ● Bash(grep "APPLET_VERSION\|Yuka\|yukaEntityManager\|yukaVehicle"
-      /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js | head -20)
+      /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js | head -20)
   ⎿     const APPLET_VERSION = 'v3.1.0 - Yuka.js AI Integration';          
           versionDiv.textContent = '=== WARZONE LITE ' + APPLET_VERSION + '
      ===';
@@ -1535,7 +1535,7 @@ RTS_Libraries.txt that could help speed up or debug this project?
 
   What would you like to do?
 
-> /home/dukejer/axon_bbs/docs/Applet_Publishing_Guide.md deploy to the BBS. 
+> /path/to/axon_bbs/docs/Applet_Publishing_Guide.md deploy to the BBS. 
  Also do we need to copy Yuka.js-enhanced to the app library? 
 
 ● Read(~/axon_bbs/docs/Applet_Publishing_Guide.md)

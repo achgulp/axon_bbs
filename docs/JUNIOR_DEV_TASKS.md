@@ -31,7 +31,7 @@ Each task below includes:
 Prove you understand the BBS API and can create a basic applet.
 
 ### Files to Create
-- `/home/dukejer/axon_bbs/frontend/src/applets/Test_BBS_API.js`
+- `/path/to/axon_bbs/frontend/src/applets/Test_BBS_API.js`
 
 ### Code Template
 
@@ -133,7 +133,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 Post in chat:
 ```
 Task 0 complete! I've created Test_BBS_API.js.
-The file is at: /home/dukejer/axon_bbs/frontend/src/applets/Test_BBS_API.js
+The file is at: /path/to/axon_bbs/frontend/src/applets/Test_BBS_API.js
 Ready for senior review.
 ```
 
@@ -147,7 +147,7 @@ Ready for senior review.
 Create the main applet file with basic Three.js setup.
 
 ### Files to Create
-- `/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js`
+- `/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js`
 
 ### Code Template
 
@@ -158,7 +158,7 @@ Create the main applet file with basic Three.js setup.
 // A JavaScript-native RTS game inspired by Warzone 2100
 // Features multi-level terrain and multi-altitude air combat
 //
-// Full path: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+// Full path: /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 // --- Start of Applet API Helper (MANDATORY) ---
 window.bbs = {
@@ -397,7 +397,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 ### Implementation Steps
 
-1. Create the file: `/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js`
+1. Create the file: `/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js`
 2. Copy the entire template code above
 3. Save the file
 4. Review the code - make sure you understand each section
@@ -414,7 +414,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
 ```
 Task 1.1 complete! Created Warzone_Lite.js skeleton.
-File location: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+File location: /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 Code includes:
 - BBS API helper
 - Three.js loading

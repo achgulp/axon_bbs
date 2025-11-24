@@ -40,7 +40,7 @@ Replace the current custom pathfinding and movement system with Yuka.js professi
 ✅ Yuka.js installed via npm: `npm install yuka --save`
 
 **Files to Modify**:
-- `/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js` (main file)
+- `/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js` (main file)
 
 **DO NOT MODIFY**:
 - Debug console system
@@ -217,7 +217,7 @@ Before submitting:
 
 ```bash
 # Syntax check
-node -c /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+node -c /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 # Verify no errors
 echo "✅ Syntax valid"
@@ -248,7 +248,7 @@ echo "✅ Syntax valid"
 ## Reference
 
 - Yuka.js Docs: https://mugen87.github.io/yuka/
-- Current code: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+- Current code: /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 - Current version: v3.0.2
 - Target version: v3.1.0
 

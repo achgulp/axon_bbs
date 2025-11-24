@@ -4,7 +4,7 @@
 // A JavaScript-native RTS game inspired by Warzone 2100
 // Features multi-level terrain and multi-altitude air combat
 //
-// Full path: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+// Full path: /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 // --- Start of Applet API Helper (MANDATORY) ---
 window.bbs = {

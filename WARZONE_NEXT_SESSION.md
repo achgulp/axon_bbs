@@ -14,8 +14,8 @@ Resume Warzone Lite development - Combat Polish phase.
 IMPORTANT: Use Gemini Flash and Gemini Pro sub-agents for tasks.
 
 Read these files:
-1. /home/dukejer/axon_bbs/SESSION_SUMMARY_2025_11_01_WARZONE.md
-2. /home/dukejer/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md
+1. /path/to/axon_bbs/SESSION_SUMMARY_2025_11_01_WARZONE.md
+2. /path/to/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md
 
 Current state: v3.2.3 working perfectly
 - Ground units render with Warzone 2100 PIE models ✅
@@ -48,7 +48,7 @@ Let's start with Task 1: Visual Effects using Gemini Flash!
 ```
 Add visual effects to Warzone Lite v3.2.3.
 
-File: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+File: /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 Implement these effects:
 
@@ -92,7 +92,7 @@ Test with 3 units fighting to verify effects work correctly.
 ```
 Add audio system to Warzone Lite v3.2.3.
 
-File: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+File: /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 Implement AudioSystem with:
 
@@ -138,7 +138,7 @@ Provide free sound effect URLs (freesound.org or similar).
 ```
 Add combat balance mechanics to Warzone Lite v3.2.3.
 
-File: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+File: /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 Implement in CombatSystem.attack():
 
@@ -185,7 +185,7 @@ Verify high ground gives tactical advantage.
 ```
 Add comprehensive UI system to Warzone Lite v3.2.3.
 
-File: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+File: /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 Implement UISystem with:
 

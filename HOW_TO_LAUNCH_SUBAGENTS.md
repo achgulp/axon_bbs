@@ -22,7 +22,7 @@
 ### Basic Command
 
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 ./START_GEMINI_SAFE.sh <task_number> <model>
 ```
 
@@ -42,7 +42,7 @@ cd /home/dukejer/axon_bbs
 ### Step 1: Launch Gemini
 
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 ./START_GEMINI_SAFE.sh 1.4 flash
 ```
 
@@ -163,7 +163,7 @@ tail -50 /tmp/gemini_task_1.4_output.txt
 ls -lh /tmp/gemini_sandbox_task_1.4/
 
 # See what Gemini modified
-diff /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js \
+diff /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js \
      /tmp/gemini_sandbox_task_1.4/Warzone_Lite.js
 ```
 
@@ -300,13 +300,13 @@ cd /tmp/gemini_sandbox_task_1.4
 - ✅ Read all docs
 - ✅ Read existing code
 - ✅ Modify files in sandbox
-- ❌ Access /home/dukejer/axon_bbs/ (production)
+- ❌ Access /path/to/axon_bbs/ (production)
 
 **After review:**
 ```bash
 # If approved, Claude Code deploys:
 cp /tmp/gemini_sandbox_task_1.4/Warzone_Lite.js \
-   /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+   /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 # Clean up
 rm -rf /tmp/gemini_sandbox_task_1.4/
@@ -320,7 +320,7 @@ rm -rf /tmp/gemini_sandbox_task_1.4/
 
 **1. Launch Gemini:**
 ```bash
-$ cd /home/dukejer/axon_bbs
+$ cd /path/to/axon_bbs
 $ ./START_GEMINI_SAFE.sh 1.4 flash
 
 ✅ Gemini FLASH started in SAFE MODE!
@@ -366,8 +366,8 @@ Deploying to production...
 
 **6. Done!**
 ```bash
-$ ls -lh /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
--rw-rw-r-- 1 dukejer dukejer 22K Oct 24 23:15 Warzone_Lite.js
+$ ls -lh /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
+-rw-rw-r-- 1 user user 22K Oct 24 23:15 Warzone_Lite.js
 ```
 
 ---
@@ -415,7 +415,7 @@ cat /tmp/gemini_sandbox_task_X/Warzone_Lite.js
 node -c /tmp/gemini_sandbox_task_X/Warzone_Lite.js
 
 # Compare to original
-diff /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js \
+diff /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js \
      /tmp/gemini_sandbox_task_X/Warzone_Lite.js
 
 # If good, notify Claude Code

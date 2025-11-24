@@ -15,7 +15,7 @@ WHAT WE DECIDED
 
 DOCUMENTS CREATED
 -----------------
-Location: /home/dukejer/axon_bbs/docs/
+Location: /path/to/axon_bbs/docs/
 
 1. Warzone_Lite_Implementation_Plan.md
    - Complete 4-week technical roadmap
@@ -78,22 +78,22 @@ Output: All docs ready for development
 FILES READY TO USE
 ------------------
 Reference code (already exists):
-- /home/dukejer/axon_bbs/frontend/src/applets/hexgl.js
-- /home/dukejer/axon_bbs/frontend/src/applets/FortressOverlord.js
-- /home/dukejer/axon_bbs/frontend/src/applets/AxonChat.js
+- /path/to/axon_bbs/frontend/src/applets/hexgl.js
+- /path/to/axon_bbs/frontend/src/applets/FortressOverlord.js
+- /path/to/axon_bbs/frontend/src/applets/AxonChat.js
 
 Asset source:
-- /home/dukejer/axon_bbs/frontend/src/applets/warzone2100/data/
+- /path/to/axon_bbs/frontend/src/applets/warzone2100/data/
 
 Implementation location:
-- /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js (will be created by junior dev)
+- /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js (will be created by junior dev)
 
 HOW TO RESUME
 -------------
 New conversation with Claude Code:
 
 "Resume Warzone Lite project as senior architect.
-Read: /home/dukejer/axon_bbs/docs/CLAUDE_CODE_SESSION_SUMMARY.md
+Read: /path/to/axon_bbs/docs/CLAUDE_CODE_SESSION_SUMMARY.md
 Status: [where you are]"
 
 HOW TO START DEVELOPMENT

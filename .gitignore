@@ -66,3 +66,8 @@ node_modules/
 frontend/node_modules/
 frontend/.cache/
 docs/archive/
+
+# Personal/private documentation
+
+docs/PERSONAL_MARKETING.md
+docs/PERSONAL_MARKETING_History.md

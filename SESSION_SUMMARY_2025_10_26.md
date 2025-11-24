@@ -11,7 +11,7 @@ CURRENT STATE
 ───────────────────────────────────────────────────────────────────
 
 Version: v2.0.7 - Fresh Geometry (No Cloning)
-Main File: /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+Main File: /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 ✅ Working (100% success):
   • Droid assembly system (body + propulsion + weapon)
@@ -63,7 +63,7 @@ gemini -m "gemini-2.5-pro" -p "@frontend/src/applets/Warzone_Lite.js \
   > GEMINI_TEXTURE_ANALYSIS_20251026.txt
 ```
 
-Output File: /home/dukejer/axon_bbs/GEMINI_TEXTURE_ANALYSIS_20251026.txt
+Output File: /path/to/axon_bbs/GEMINI_TEXTURE_ANALYSIS_20251026.txt
 
 🎯 ROOT CAUSE IDENTIFIED:
 
@@ -162,18 +162,18 @@ FILES TO REFERENCE
 ───────────────────────────────────────────────────────────────────
 
 Main Code:
-  • /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+  • /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 Context Docs:
-  • /home/dukejer/axon_bbs/QUICK_RESTART.txt
-  • /home/dukejer/axon_bbs/SESSION_NOTES_v2.0.7.txt
-  • /home/dukejer/axon_bbs/WARZONE_LITE_RESTART_20251025.md
+  • /path/to/axon_bbs/QUICK_RESTART.txt
+  • /path/to/axon_bbs/SESSION_NOTES_v2.0.7.txt
+  • /path/to/axon_bbs/WARZONE_LITE_RESTART_20251025.md
 
 Gemini Analysis:
-  • /home/dukejer/axon_bbs/GEMINI_TEXTURE_ANALYSIS_20251026.txt ⭐ START HERE
+  • /path/to/axon_bbs/GEMINI_TEXTURE_ANALYSIS_20251026.txt ⭐ START HERE
 
 Textures:
-  • /home/dukejer/axon_bbs/frontend/public/warzone_textures/
+  • /path/to/axon_bbs/frontend/public/warzone_textures/
 
 ───────────────────────────────────────────────────────────────────
 QUICK START COMMANDS (Next Session)
@@ -183,16 +183,16 @@ QUICK START COMMANDS (Next Session)
 ./START_TOKEN_MONITOR.sh
 
 # Read Gemini's analysis
-cat /home/dukejer/axon_bbs/GEMINI_TEXTURE_ANALYSIS_20251026.txt
+cat /path/to/axon_bbs/GEMINI_TEXTURE_ANALYSIS_20251026.txt
 
 # View current code (texture loading)
-sed -n '120,148p' /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+sed -n '120,148p' /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 # View current code (mesh creation)
-sed -n '700,795p' /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+sed -n '700,795p' /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 # Syntax check after changes
-node -c /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+node -c /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
 
 ───────────────────────────────────────────────────────────────────
 SESSION RESUME MESSAGE

@@ -32,17 +32,17 @@ echo ""
 echo "Setting up sandbox..."
 
 # Copy documentation into sandbox
-cp -r /home/dukejer/axon_bbs/docs "$SANDBOX_DIR/"
+cp -r /path/to/axon_bbs/docs "$SANDBOX_DIR/"
 echo "  ✓ Copied docs/ to sandbox"
 
 # Copy existing code files that might be modified
-if [ -f /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js ]; then
-    cp /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js "$SANDBOX_DIR/"
+if [ -f /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js ]; then
+    cp /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js "$SANDBOX_DIR/"
     echo "  ✓ Copied Warzone_Lite.js to sandbox"
 fi
 
-if [ -f /home/dukejer/axon_bbs/frontend/src/applets/Test_BBS_API.js ]; then
-    cp /home/dukejer/axon_bbs/frontend/src/applets/Test_BBS_API.js "$SANDBOX_DIR/"
+if [ -f /path/to/axon_bbs/frontend/src/applets/Test_BBS_API.js ]; then
+    cp /path/to/axon_bbs/frontend/src/applets/Test_BBS_API.js "$SANDBOX_DIR/"
     echo "  ✓ Copied Test_BBS_API.js to sandbox"
 fi
 

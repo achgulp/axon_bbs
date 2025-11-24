@@ -157,13 +157,13 @@ Priority 5: Check Three.js Version
 FILES MODIFIED THIS SESSION
 ───────────────────────────────────────────────────────────────────
 
-/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js
+/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js
   • Line 700-737: Fresh geometry for propulsion (right + left)
   • Line 739-756: Fresh geometry for body
   • Line 758-795: Fresh geometry for weapon
   • Eliminated all geometry.clone() calls
 
-/home/dukejer/axon_bbs/QUICK_RESTART.txt
+/path/to/axon_bbs/QUICK_RESTART.txt
   • Updated to v2.0.7 status
   • Added session summary with debugging timeline
   • Updated known issues section

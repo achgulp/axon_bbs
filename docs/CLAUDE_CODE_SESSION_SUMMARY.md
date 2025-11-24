@@ -25,7 +25,7 @@ This session established a complete development workflow for building **Warzone 
 
 ### Documents Created
 
-All documentation is in `/home/dukejer/axon_bbs/docs/`:
+All documentation is in `/path/to/axon_bbs/docs/`:
 
 1. **`Warzone_Lite_Implementation_Plan.md`**
    - Complete technical specification
@@ -107,9 +107,9 @@ Start a new conversation with Claude Code and say:
 I'm resuming the Warzone Lite project. You are my senior architect.
 
 Please read these files to restore context:
-1. /home/dukejer/axon_bbs/docs/CLAUDE_CODE_SESSION_SUMMARY.md (this file)
-2. /home/dukejer/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md
-3. /home/dukejer/axon_bbs/docs/JUNIOR_DEV_ONBOARDING.md
+1. /path/to/axon_bbs/docs/CLAUDE_CODE_SESSION_SUMMARY.md (this file)
+2. /path/to/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md
+3. /path/to/axon_bbs/docs/JUNIOR_DEV_ONBOARDING.md
 
 After reading, confirm:
 - Your role as senior architect
@@ -205,7 +205,7 @@ When Claude Code resumes, it should act as:
 2. **Assign Task 0**
    ```
    Give junior AI:
-   "Read /home/dukejer/axon_bbs/docs/JUNIOR_DEV_ONBOARDING.md
+   "Read /path/to/axon_bbs/docs/JUNIOR_DEV_ONBOARDING.md
    Then complete Task 0 from JUNIOR_DEV_TASKS.md"
    ```
 
@@ -232,7 +232,7 @@ When Claude Code resumes, it should act as:
 
 ### Main Implementation
 ```
-/home/dukejer/axon_bbs/frontend/src/applets/
+/path/to/axon_bbs/frontend/src/applets/
 ├── Warzone_Lite.js          ← Junior dev will create this
 ├── hexgl.js                 ← Reference: hybrid asset loading
 ├── FortressOverlord.js      ← Reference: 3D RTS pattern
@@ -241,7 +241,7 @@ When Claude Code resumes, it should act as:
 
 ### Documentation
 ```
-/home/dukejer/axon_bbs/docs/
+/path/to/axon_bbs/docs/
 ├── Warzone_Lite_Implementation_Plan.md    ← Master plan
 ├── JUNIOR_DEV_ONBOARDING.md               ← Training guide
 ├── JUNIOR_DEV_TASKS.md                    ← Task breakdown
@@ -251,7 +251,7 @@ When Claude Code resumes, it should act as:
 
 ### Required Reading (for context restoration)
 ```
-/home/dukejer/axon_bbs/
+/path/to/axon_bbs/
 ├── DEVELOPER_HANDBOOK.md
 ├── ARCHITECTURE.md
 └── docs/
@@ -261,7 +261,7 @@ When Claude Code resumes, it should act as:
 
 ### Asset Source (for Week 3)
 ```
-/home/dukejer/axon_bbs/frontend/src/applets/warzone2100/
+/path/to/axon_bbs/frontend/src/applets/warzone2100/
 └── data/base/
     ├── texpages/    ← Textures to extract
     ├── structs/     ← 3D models (reference only)
@@ -447,8 +447,8 @@ YOUR ROLE: Senior Developer / Tech Lead
 YOUR TEAM: Junior AI developers (Grok, Gemini, etc.)
 
 Please read and understand:
-1. /home/dukejer/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md (master plan)
-2. /home/dukejer/axon_bbs/docs/SENIOR_REVIEW_CHECKLIST.md (your review guide)
+1. /path/to/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md (master plan)
+2. /path/to/axon_bbs/docs/SENIOR_REVIEW_CHECKLIST.md (your review guide)
 
 You should:
 - Make architectural decisions

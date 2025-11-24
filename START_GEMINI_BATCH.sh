@@ -1,7 +1,7 @@
 #!/bin/bash
 # Warzone Lite - Launch Multiple Gemini Tasks in Parallel
 # This script launches a batch of tasks simultaneously
-# Run from /home/dukejer/axon_bbs/ directory
+# Run from /path/to/axon_bbs/ directory
 
 # Usage: ./START_GEMINI_BATCH.sh <batch_name> <task1> <model1> <task2> <model2> ...
 # Example: ./START_GEMINI_BATCH.sh week1_batch1 1.1 flash 1.2 flash 1.3 flash

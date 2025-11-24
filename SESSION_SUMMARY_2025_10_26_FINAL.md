@@ -180,7 +180,7 @@ Lines 1851-1903: Animation Loop
 ## 📝 Week 2 Task Documentation
 
 All tasks documented in:
-- `/home/dukejer/axon_bbs/docs/JUNIOR_DEV_TASKS.md` (lines 935-1924)
+- `/path/to/axon_bbs/docs/JUNIOR_DEV_TASKS.md` (lines 935-1924)
 
 Contains detailed templates for:
 - Task 2.1: Altitude System
@@ -254,7 +254,7 @@ Contains detailed templates for:
 
 ### Quick Start Commands
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 
 # Check current version
@@ -277,11 +277,11 @@ grep "APPLET_VERSION" frontend/src/applets/Warzone_Lite.js
 
 ## 📚 Reference Files
 
-- **This Summary:** `/home/dukejer/axon_bbs/SESSION_SUMMARY_2025_10_26_FINAL.md`
-- **Task Documentation:** `/home/dukejer/axon_bbs/docs/JUNIOR_DEV_TASKS.md`
-- **Quick Restart:** `/home/dukejer/axon_bbs/QUICK_RESTART.txt`
-- **Texture Analysis:** `/home/dukejer/axon_bbs/GEMINI_TEXTURE_ANALYSIS_20251026.txt`
-- **Main Applet:** `/home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js`
+- **This Summary:** `/path/to/axon_bbs/SESSION_SUMMARY_2025_10_26_FINAL.md`
+- **Task Documentation:** `/path/to/axon_bbs/docs/JUNIOR_DEV_TASKS.md`
+- **Quick Restart:** `/path/to/axon_bbs/QUICK_RESTART.txt`
+- **Texture Analysis:** `/path/to/axon_bbs/GEMINI_TEXTURE_ANALYSIS_20251026.txt`
+- **Main Applet:** `/path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js`
 
 ---
 

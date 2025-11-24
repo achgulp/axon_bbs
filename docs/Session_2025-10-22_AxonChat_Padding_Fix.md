@@ -26,7 +26,7 @@ The sync service captures manifests at download scheduling time, causing issues 
 
 ### Code Changes (✅ Deployed to Both Machines)
 
-#### 1. `/home/dukejer/axon_bbs/messaging/admin.py` (lines 59-81)
+#### 1. `/path/to/axon_bbs/messaging/admin.py` (lines 59-81)
 **Fixed message rekey format:**
 ```python
 message_content_payload = {
@@ -44,7 +44,7 @@ message_content_payload = {
 logger.info(f"Rekeyed message '{message.subject}': {old_hash} → {new_hash}")
 ```
 
-#### 2. `/home/dukejer/axon_bbs/core/management/commands/post_applet_update.py` (lines 158-165)
+#### 2. `/path/to/axon_bbs/core/management/commands/post_applet_update.py` (lines 158-165)
 **Fixed message format for applet updates:**
 ```python
 message_content_payload = {
@@ -57,7 +57,7 @@ message_content_payload = {
 }
 ```
 
-#### 3. `/home/dukejer/axon_bbs/core/admin.py` (lines 234-293)
+#### 3. `/path/to/axon_bbs/core/admin.py` (lines 234-293)
 **Added new FileAttachment rekey admin action:**
 ```python
 @admin.action(description='Rekey selected file attachments')
@@ -76,7 +76,7 @@ class FileAttachmentAdmin(admin.ModelAdmin):
     actions = [federate_delete_action, rekey_file_attachments]  # Added rekey action
 ```
 
-#### 4. `/home/dukejer/axon_bbs/axon_project/settings.py` (lines 253-257)
+#### 4. `/path/to/axon_bbs/axon_project/settings.py` (lines 253-257)
 **Added core.admin logging:**
 ```python
 'core.admin': {

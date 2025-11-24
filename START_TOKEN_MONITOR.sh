@@ -6,7 +6,7 @@
 # Usage: ./START_TOKEN_MONITOR.sh
 #═══════════════════════════════════════════════════════════════
 
-SCRIPT_DIR="/home/dukejer/axon_bbs"
+SCRIPT_DIR="/path/to/axon_bbs"
 MONITOR_SCRIPT="$SCRIPT_DIR/TOKEN_MONITOR.sh"
 PID_FILE="/tmp/token_monitor.pid"
 LOG_FILE="/tmp/token_monitor.log"

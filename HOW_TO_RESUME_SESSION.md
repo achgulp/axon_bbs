@@ -10,7 +10,7 @@
 **FIRST: Start the token monitor (prevents running out of tokens):**
 
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 ./START_TOKEN_MONITOR.sh
 ```
 
@@ -22,8 +22,8 @@ Resume Warzone Lite project.
 IMPORTANT: Token monitor is running. When you see token check notifications, report your current usage.
 
 Read these files:
-1. /home/dukejer/axon_bbs/QUICK_RESTART.txt
-2. /home/dukejer/axon_bbs/SESSION_SUMMARY_2025_10_25_EVENING.md
+1. /path/to/axon_bbs/QUICK_RESTART.txt
+2. /path/to/axon_bbs/SESSION_SUMMARY_2025_10_25_EVENING.md
 
 Current status: v1.10.0 - PIE models working, need to fix WASD controls and white textures.
 
@@ -84,27 +84,27 @@ Notifications sent to screen session 'Claude'
 - Current status
 - Token usage
 - Problems solved
-- **Location:** `/home/dukejer/axon_bbs/SESSION_SUMMARY_2025_10_24.md`
+- **Location:** `/path/to/axon_bbs/SESSION_SUMMARY_2025_10_24.md`
 
 **2. HOW_TO_LAUNCH_SUBAGENTS.md**
 - How to work with Gemini Flash/Pro
 - Safe sandbox workflow
 - Command examples
-- **Location:** `/home/dukejer/axon_bbs/HOW_TO_LAUNCH_SUBAGENTS.md`
+- **Location:** `/path/to/axon_bbs/HOW_TO_LAUNCH_SUBAGENTS.md`
 
 ### Reference Files (When Needed)
 
 **3. JUNIOR_DEV_TASKS.md**
 - All task specifications with code templates
-- **Location:** `/home/dukejer/axon_bbs/docs/JUNIOR_DEV_TASKS.md`
+- **Location:** `/path/to/axon_bbs/docs/JUNIOR_DEV_TASKS.md`
 
 **4. SENIOR_REVIEW_CHECKLIST.md**
 - Review criteria for each task
-- **Location:** `/home/dukejer/axon_bbs/docs/SENIOR_REVIEW_CHECKLIST.md`
+- **Location:** `/path/to/axon_bbs/docs/SENIOR_REVIEW_CHECKLIST.md`
 
 **5. Warzone_Lite_Implementation_Plan.md**
 - Complete 4-week technical roadmap
-- **Location:** `/home/dukejer/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md`
+- **Location:** `/path/to/axon_bbs/docs/Warzone_Lite_Implementation_Plan.md`
 
 ---
 
@@ -140,7 +140,7 @@ Notifications sent to screen session 'Claude'
 ### Option 1: Start Next Task (Recommended)
 
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 ./START_GEMINI_SAFE.sh 1.4 flash
 ```
 
@@ -250,8 +250,8 @@ Claude will check the summary and tell you (Task 1.4).
 Resume Warzone Lite RTS development project.
 
 Please read these files to restore context:
-1. /home/dukejer/axon_bbs/SESSION_SUMMARY_2025_10_24.md
-2. /home/dukejer/axon_bbs/HOW_TO_LAUNCH_SUBAGENTS.md
+1. /path/to/axon_bbs/SESSION_SUMMARY_2025_10_24.md
+2. /path/to/axon_bbs/HOW_TO_LAUNCH_SUBAGENTS.md
 
 Current Status:
 - Tasks 0, 1.1, 1.2, 1.3 complete (75% of Week 1 done)

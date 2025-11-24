@@ -1,7 +1,7 @@
 #!/bin/bash
 # Warzone Lite - Start Gemini PRO on Task 0
 # Use this when Flash fails or for complex tasks
-# Run this from /home/dukejer/axon_bbs/ directory
+# Run this from /path/to/axon_bbs/ directory
 # NOTE: Pro model limited to 100 requests/day - use wisely!
 
 echo "═══════════════════════════════════════════════════"

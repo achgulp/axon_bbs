@@ -240,7 +240,7 @@ POLYGONS 16
 ## Resources Used
 
 - Warzone 2100 GitHub: `warzone2100/doc/PIE.md`
-- Local WZ2100 codebase: `/home/dukejer/axon_bbs/frontend/src/applets/warzone2100/`
+- Local WZ2100 codebase: `/path/to/axon_bbs/frontend/src/applets/warzone2100/`
 - PIE models: `/data/base/components/bodies/*.pie`
 - Texture atlases: `/data/base/texpages/page-*.png`
 - TCMASK textures: `/data/base/texpages/page-*_tcmask.png`

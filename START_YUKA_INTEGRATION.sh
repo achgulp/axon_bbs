@@ -30,15 +30,15 @@ echo ""
 echo "Setting up sandbox..."
 
 # Copy task specification
-cp /home/dukejer/axon_bbs/TASK_YUKA_INTEGRATION.md "$SANDBOX_DIR/"
+cp /path/to/axon_bbs/TASK_YUKA_INTEGRATION.md "$SANDBOX_DIR/"
 echo "  ✓ Copied TASK_YUKA_INTEGRATION.md to sandbox"
 
 # Copy current Warzone_Lite.js
-cp /home/dukejer/axon_bbs/frontend/src/applets/Warzone_Lite.js "$SANDBOX_DIR/"
+cp /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js "$SANDBOX_DIR/"
 echo "  ✓ Copied Warzone_Lite.js to sandbox"
 
 # Copy package.json to verify Yuka is installed
-cp /home/dukejer/axon_bbs/frontend/package.json "$SANDBOX_DIR/"
+cp /path/to/axon_bbs/frontend/package.json "$SANDBOX_DIR/"
 echo "  ✓ Copied package.json to sandbox"
 
 echo ""

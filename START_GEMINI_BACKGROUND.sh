@@ -1,7 +1,7 @@
 #!/bin/bash
 # Warzone Lite - Start Gemini in Background
 # This script runs Gemini as a background job
-# Run from /home/dukejer/axon_bbs/ directory
+# Run from /path/to/axon_bbs/ directory
 
 # Usage: ./START_GEMINI_BACKGROUND.sh <task_number> [flash|pro]
 # Example: ./START_GEMINI_BACKGROUND.sh 0 flash

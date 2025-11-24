@@ -7,9 +7,9 @@ Quick reference for common server management tasks.
 ## Server Information
 
 ### HostBBS (Development Server)
-- **Location**: `/home/dukejer/axon_bbs`
+- **Location**: `/path/to/axon_bbs`
 - **URL**: `http://127.0.0.1:8000`
-- **User**: dukejer
+- **User**: [username]
 
 ### PiBBS (Remote Server)
 - **Location**: `/home/pibbs/axon_bbs`
@@ -27,7 +27,7 @@ Quick reference for common server management tasks.
 pkill -9 -f "python.*runserver"
 
 # Start server with nohup (persists after logout)
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 nohup python manage.py runserver 0.0.0.0:8000 > /tmp/django_host.log 2>&1 &
 
@@ -111,7 +111,7 @@ ssh -p 2222 pibbs@192.168.58.7 "curl -s http://127.0.0.1:8000/health/"
 This is the **preferred method** - it handles everything automatically:
 
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 
 # Post applet update to Applet Library
@@ -239,7 +239,7 @@ git commit -m "Update YourApplet to vX"
 git push
 
 # 3. Build frontend on HostBBS
-cd /home/dukejer/axon_bbs/frontend
+cd /path/to/axon_bbs/frontend
 npm run build
 
 # 4. Deploy to PiBBS
@@ -247,7 +247,7 @@ ssh -p 2222 pibbs@192.168.58.7 "cd axon_bbs && git pull"
 ssh -p 2222 pibbs@192.168.58.7 "cd axon_bbs/frontend && npm run build"
 
 # 5. Publish applet to Applet Library
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 python manage.py post_applet_update frontend/src/applets/YourApplet.js \
   --name "YourApplet" \
@@ -267,7 +267,7 @@ ssh -p 2222 pibbs@192.168.58.7 'bash -c "cd axon_bbs && source venv/bin/activate
 ## Useful Management Commands
 
 ```bash
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 
 # Check applet manifest
@@ -307,8 +307,8 @@ lsof -i :8000
 tail -100 /tmp/django_host.log
 
 # Clear Python cache
-find /home/dukejer/axon_bbs -type d -name __pycache__ -exec rm -rf {} +
-find /home/dukejer/axon_bbs -name "*.pyc" -delete
+find /path/to/axon_bbs -type d -name __pycache__ -exec rm -rf {} +
+find /path/to/axon_bbs -name "*.pyc" -delete
 ```
 
 ### Applet not loading
@@ -322,7 +322,7 @@ print(applet.code_manifest)
 EOF
 
 # Check if BitSync chunks exist
-ls -la /home/dukejer/axon_bbs/data/bitsync_chunks/
+ls -la /path/to/axon_bbs/data/bitsync_chunks/
 ```
 
 ### BitSync chunk location mismatch
@@ -347,8 +347,8 @@ chunk_hashes = manifest['chunk_hashes']
 print(f"Fixing {len(chunk_hashes)} chunks...")
 
 for i, chunk_hash in enumerate(chunk_hashes):
-    src_file = f"/home/dukejer/axon_bbs/data/bitsync_chunks/{content_hash}/{i}.chunk"
-    dest_dir = f"/home/dukejer/axon_bbs/data/bitsync_chunks/{chunk_hash}"
+    src_file = f"/path/to/axon_bbs/data/bitsync_chunks/{content_hash}/{i}.chunk"
+    dest_dir = f"/path/to/axon_bbs/data/bitsync_chunks/{chunk_hash}"
     dest_file = f"{dest_dir}/{chunk_hash}.enc"
 
     if not os.path.exists(src_file):

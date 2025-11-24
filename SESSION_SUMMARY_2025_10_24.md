@@ -142,7 +142,7 @@
 
 ### Files Created
 
-**Documentation (all in `/home/dukejer/axon_bbs/docs/`):**
+**Documentation (all in `/path/to/axon_bbs/docs/`):**
 - Warzone_Lite_Implementation_Plan.md
 - JUNIOR_DEV_ONBOARDING.md
 - JUNIOR_DEV_TASKS.md
@@ -153,7 +153,7 @@
 - TOKEN_USAGE_LOG.md
 - GEMINI_MODEL_GUIDE.md
 
-**Workflows (in `/home/dukejer/axon_bbs/`):**
+**Workflows (in `/path/to/axon_bbs/`):**
 - START_GEMINI_SAFE.sh - ✅ RECOMMENDED (safe sandbox)
 - START_GEMINI_BACKGROUND.sh - ⚠️ UNSAFE (uses --yolo)
 - START_GEMINI_BATCH.sh - ⚠️ UNSAFE (uses --yolo)
@@ -249,7 +249,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 **1. Continue Week 1 Tasks** ✅ TASK 1.3 COMPLETE!
 ```bash
 # Next: Task 1.4 (Mouse Input & Selection)
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 ./START_GEMINI_SAFE.sh 1.4 flash
 ```
 
@@ -298,8 +298,8 @@ Current status:
 - Ready to start Task 1.3 (Ground Units)
 
 Read for context:
-- /home/dukejer/axon_bbs/SESSION_SUMMARY_2025_10_24.md
-- /home/dukejer/axon_bbs/JUNIOR_DEVELOPER_WORKFLOW_FINAL.md
+- /path/to/axon_bbs/SESSION_SUMMARY_2025_10_24.md
+- /path/to/axon_bbs/JUNIOR_DEVELOPER_WORKFLOW_FINAL.md
 
 Let's continue with Task 1.3!
 ```
@@ -406,8 +406,8 @@ ls -lh /tmp/gemini_sandbox_task_1.3/
 Resume Warzone Lite project.
 
 Read these files:
-1. /home/dukejer/axon_bbs/SESSION_SUMMARY_2025_10_24.md
-2. /home/dukejer/axon_bbs/HOW_TO_LAUNCH_SUBAGENTS.md
+1. /path/to/axon_bbs/SESSION_SUMMARY_2025_10_24.md
+2. /path/to/axon_bbs/HOW_TO_LAUNCH_SUBAGENTS.md
 
 Status: Tasks 0-1.3 complete. Ready for Task 1.4.
 ```

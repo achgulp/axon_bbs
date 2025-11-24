@@ -223,7 +223,7 @@ docs/Session_2025-10-20_AxonChat_Fixes.md  - This session notes (NEW)
 ### Restart Django (Host BBS)
 ```bash
 pkill -9 -f "python.*runserver"
-cd /home/dukejer/axon_bbs
+cd /path/to/axon_bbs
 source venv/bin/activate
 python manage.py runserver 0.0.0.0:8000 > /tmp/django_host.log 2>&1 &
 ```
@@ -241,8 +241,8 @@ EOF
 
 ### Clear Python Cache
 ```bash
-find /home/dukejer/axon_bbs -type d -name __pycache__ -exec rm -rf {} +
-find /home/dukejer/axon_bbs -name "*.pyc" -delete
+find /path/to/axon_bbs -type d -name __pycache__ -exec rm -rf {} +
+find /path/to/axon_bbs -name "*.pyc" -delete
 ```
 
 ### Test Message Post
@@ -413,7 +413,7 @@ The AxonChat applet's `code_manifest` field was pointing to the WRONG FileAttach
 - v19b message had: `d134a9a1afb7240c...` (AxonChat.js - correct v19 code)
 
 ### Investigation Process:
-1. Verified source file `/home/dukejer/axon_bbs/frontend/src/applets/AxonChat.js` contains v19 code ✓
+1. Verified source file `/path/to/axon_bbs/frontend/src/applets/AxonChat.js` contains v19 code ✓
 2. Checked git history - commit `f037cde` has v19 changes ✓
 3. Traced AppletRunner.js → fetches `/api/content/stream/{content_hash}/?for_verification`
 4. Found StreamContentView → uses `sync_service.get_manifest_by_content_hash()`
