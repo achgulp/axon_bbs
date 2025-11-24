@@ -78,3 +78,9 @@ gemini.md
 
 # Avatar design files
 docs/AvatarA7Shield*.png
+
+# Development/Session files (internal process documentation)
+SESSION_NOTES*.txt
+SESSION_SUMMARY*.md
+GEMINI_*.md
+GEMINI_*.txt
