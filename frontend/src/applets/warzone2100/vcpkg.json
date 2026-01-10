@@ -1,0 +1,111 @@
+{
+	"name": "warzone2100",
+	"version-string": "master-branch",
+	"builtin-baseline": "5300a2a461a53b76405db4fcbe6aeb0eea43935d",
+	"dependencies": [
+		"physfs",
+		"sdl2",
+		{
+			"name": "harfbuzz",
+			"platform": "!emscripten"
+		},
+		{
+			"name": "fribidi",
+			"platform": "!emscripten"
+		},
+		{
+			"name": "freetype",
+			"platform": "!emscripten"
+		},
+		"libogg",
+		"libtheora",
+		"libvorbis",
+		"opus",
+		{
+			"name": "libpng",
+			"platform": "!emscripten"
+		},
+		{
+			"name": "libspng",
+			"platform": "emscripten"
+		},
+		{
+			"name": "gettext-libintl",
+			"platform": "!emscripten"
+		},
+		{
+			"name": "openal-soft",
+			"platform": "!emscripten"
+		},
+		"zlib",
+		"sqlite3",
+		"libsodium",
+		{
+			"name": "libzip",
+			"default-features": false,
+			"features": [
+				"bzip2"
+			]
+		},
+		{
+			"$comment": "By not specifying curl[http3] feature, defaults to schannel for Windows, which is desired",
+			"name": "curl",
+			"default-features": false,
+			"features": [
+				"ssl"
+			],
+			"platform": "windows | mingw"
+		},
+		{
+			"name": "curl",
+			"default-features": false,
+			"features": [
+				"openssl",
+				"ssl"
+			],
+			"platform": "osx"
+		},
+		{
+			"name": "curl",
+			"default-features": false,
+			"features": [
+				"ssl"
+			],
+			"platform": "!windows & !mingw & !osx & !emscripten"
+		},
+		{
+			"name": "angle",
+			"platform": "windows | mingw"
+		},
+		{
+			"name": "basisu",
+			"host": true
+		},
+		{
+			"name": "protobuf",
+			"platform": "!emscripten"
+		}
+	],
+	"overrides": [
+		{ "name": "openal-soft", "version": "1.24.3" },
+		{ "name": "sqlite3", "version": "3.49.2" }
+	],
+	"default-features": [
+		"vulkan"
+	],
+	"features": {
+		"vulkan": {
+			"description": "The Vulkan backend",
+			"dependencies": [
+				{
+					"name": "sdl2",
+					"default-features": true,
+					"features": [
+						"vulkan"
+					],
+					"platform": "!emscripten"
+				}
+			]
+		}
+	}
+}

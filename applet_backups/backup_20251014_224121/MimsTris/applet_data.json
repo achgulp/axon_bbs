@@ -1,0 +1,20 @@
+[
+  {
+    "id": "4cb6d7b4-53ff-42c1-a884-a0ecb7f0d4b4",
+    "owner_username": "Achduke7",
+    "owner_pubkey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu0o8l10aVr61HrIRcEZ7\nipCKWAjifr97esU7WatNNJiNQLlSYVOVhs75LCqEb7V8Toz4JQsP0Iu8zGHhPM+a\nxuWBDep1i9XIhuythOoLpL92zYUGV43q14t/703lfiTt7M5eur9xhNbRIkzzq9mi\ngAWpiPV0Jd+LDGaupMco4YSddPtSp+Q+ZmRNzcd1t3jEGDQvHZfJhJxuZeUtyYfy\nEvrFsOJh+gsRZUrUzQpQz7S7wQBFuIEfrN5a8qyPD4O2ZVkYXz8RxGrZJNCZYQST\nzWfdm8HV/r0IDJQ01TF2z607FOYLhT5wtJjOUjdHZe/0MCUHlSphe8NDSfT/ptRY\n0wIDAQAB\n-----END PUBLIC KEY-----",
+    "data_manifest": {
+      "content_hash": "3ca85640d4c1ec69d1689d9e6812ef4bb97fa99c9195c0ed5c63cfef2cf296f7",
+      "chunk_size": 262144,
+      "chunk_hashes": [
+        "7c851988ed21ed1b256c0f8fd8ddbdf0737a7c4bbaeb4e58dfb966637cead1a0"
+      ],
+      "encryption_iv": "BX0MmD24LkOSHT8oU3xKQQ==",
+      "encrypted_aes_keys": {
+        "5852d7bbc1902d66e0c50f3d1145ed1c": "nrMFZrHsEBTJkMw9oVQjPwZOZjeCU14dO1U/q9wf+xPhHpzp9ld7G2UsSEuQzO+SuJB/XQ91VjwN5GfU2pv9mt2qVv/DQjPvw67tEGqh7TMMjDQg1zgoPq6rTC8iQFr9r4dmkOAz2BEq7AeO4AwrKj3S8z3uXud3YEctChUEud7XqQKdEze7U4wecHmU4g5gMsAeTnhtI56Y+gy1dkvKt8o4bUd3GcA9eCG4WuA76j9GB6io3mTbZeL6XQQD2WGjZxLrW4giR9+oGxq2RlAXOOhbVcbsDns6JTLcX8bi0aJYvD63ffIMSRpnk5wasMe/dwh0M4SnVPNQATKCGgvbzg==",
+        "214467155aac6beeb17ed5819cc45a0b": "R6T8GhhNWZeDVtik/dDRCit8sFGc2bPKIXOdZFF8yJKEnOlD2mu0bNleN/mVIpkADYJt8B0mN2GUDeoDdqPKzbj6D10G8Isw0da03DiCC68/kPbOhZjbCpHoF3dgMyNpWAGBJWdAXxg+osLlsfmBZaX601m8fTOofzpiY/jyP/fEvzPFbDrlmqVJ2Ry8wW5ZJEvehTuv9XOP0LlM9hjdGBpRBty0KpbnzIUpfwFVeQYi1xivKJEpu/Yfoc4/WVOAEwoVxOGjG+vcEe0mGI5dCqcnNPmOGNTm4So2wcwTGConSvjJpuGBnJBzUp1Vb1k+XL++IlrC6HXV/L1FmAAwBw=="
+      }
+    },
+    "last_updated": "2025-10-05T01:25:57.253889+00:00"
+  }
+]

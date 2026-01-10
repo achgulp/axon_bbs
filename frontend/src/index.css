@@ -1,0 +1,8 @@
+/* axon_bbs/frontend/src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-900;
+}

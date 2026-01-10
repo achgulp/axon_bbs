@@ -1,0 +1,169 @@
+WARZONE LITE PROJECT - SESSION NOTES
+=====================================
+Date: 2025-10-24
+Session: Planning & Workflow Setup
+
+WHAT WE DECIDED
+---------------
+- Build JavaScript-native RTS (not full Warzone 2100 WASM port)
+- Use orthographic 3D with simple shapes + textures
+- 64×80 terrain with 0-8 elevation levels
+- 3 air altitude layers (10/15/20)
+- 2-second heartbeat for multiplayer sync
+- Hybrid applet: loader + asset package
+- Team: You (PM) + Claude Code (Senior) + Gemini Flash (Junior) + Gemini Pro (Mid-level)
+
+DOCUMENTS CREATED
+-----------------
+Location: /path/to/axon_bbs/docs/
+
+1. Warzone_Lite_Implementation_Plan.md
+   - Complete 4-week technical roadmap
+   - Architecture, unit stats, event protocol
+   - ~20,000 words
+
+2. JUNIOR_DEV_ONBOARDING.md
+   - Training guide for junior AI developers
+   - Explains Axon BBS, BBS API, patterns
+   - ~8,000 words
+
+3. JUNIOR_DEV_TASKS.md
+   - Step-by-step tasks with code templates
+   - Task 0: BBS API test
+   - Tasks 1.1-1.3: Skeleton, terrain, units
+   - More tasks locked until checkpoint
+   - ~6,000 words
+
+4. SENIOR_REVIEW_CHECKLIST.md
+   - Code review guide for each task
+   - Acceptance criteria
+   - Approval templates
+   - ~4,000 words
+
+5. CLAUDE_CODE_SESSION_SUMMARY.md
+   - Full session restoration guide
+   - Context for resuming work
+   - ~5,000 words
+
+6. QUICK_START_GUIDE.md
+   - TL;DR version
+   - 5-minute quick reference
+
+7. SESSION_NOTES.txt
+   - This file
+   - Quick notes format
+
+8. GEMINI_MODEL_GUIDE.md
+   - Complete guide for Flash vs Pro selection
+   - Task-by-task recommendations
+   - Pro quota budget planning
+   - ~5,000 words
+
+9. TOKEN_USAGE_LOG.md
+   - Token monitoring for Claude Code
+   - Auto-save at 85% threshold
+   - Project estimates
+
+Plus Scripts:
+- START_GEMINI_TASK_0.sh (Flash model)
+- START_GEMINI_TASK_0_PRO.sh (Pro model)
+- Updated claude.md with model selection
+
+CURRENT STATUS
+--------------
+Phase: ✅ Planning Complete
+Next: Assign junior developer to Task 0
+Output: All docs ready for development
+
+FILES READY TO USE
+------------------
+Reference code (already exists):
+- /path/to/axon_bbs/frontend/src/applets/hexgl.js
+- /path/to/axon_bbs/frontend/src/applets/FortressOverlord.js
+- /path/to/axon_bbs/frontend/src/applets/AxonChat.js
+
+Asset source:
+- /path/to/axon_bbs/frontend/src/applets/warzone2100/data/
+
+Implementation location:
+- /path/to/axon_bbs/frontend/src/applets/Warzone_Lite.js (will be created by junior dev)
+
+HOW TO RESUME
+-------------
+New conversation with Claude Code:
+
+"Resume Warzone Lite project as senior architect.
+Read: /path/to/axon_bbs/docs/CLAUDE_CODE_SESSION_SUMMARY.md
+Status: [where you are]"
+
+HOW TO START DEVELOPMENT
+------------------------
+1. Run: ./START_GEMINI_TASK_0.sh (Flash model)
+   OR: ./START_GEMINI_TASK_0_PRO.sh (Pro model)
+2. Gemini implements Task 0
+3. Send output → Claude Code for review
+4. Claude approves or requests fixes
+5. Repeat until done
+
+MODEL SELECTION:
+- Use Flash (unlimited) for routine coding
+- Use Pro (100/day) for complex tasks
+- See GEMINI_MODEL_GUIDE.md for details
+
+WORKFLOW
+--------
+You (PM) → Assign task → Junior AI
+Junior AI → Implements → Submits
+You → Forward → Claude Code (Senior)
+Claude Code → Reviews → Approves/Rejects
+If approved → Next task
+If rejected → Junior fixes → Resubmit
+
+TIMELINE
+--------
+Week 1: Terrain & ground units (Tasks 1.1-1.5)
+Week 2: Air combat (Tasks 2.1-2.5)
+Week 3: Assets & polish (Tasks 3.1-3.5)
+Week 4: Multiplayer (Tasks 4.1-4.5)
+
+Total: ~100 hours over 4 weeks
+
+DELIVERABLE
+-----------
+- Warzone_Lite.js applet (~150KB)
+- Asset package (~15-20MB)
+- Working 2-4 player multiplayer
+- Federation across BBS instances
+- Multi-level terrain combat
+- Multi-altitude air combat
+
+KEY PATTERNS ESTABLISHED
+------------------------
+BBS API Helper: MUST copy exactly from templates
+Main execution: async IIFE with try/catch
+Three.js: Orthographic camera, shadows enabled
+Terrain: 64×80 PlaneGeometry with height vertices
+Units: Simple geometries with player colors
+Multiplayer: 2-second heartbeat command queue
+
+IMPORTANT NOTES
+---------------
+- All code templates are copy-paste ready
+- Junior devs MUST follow templates exactly
+- Tasks are locked - need approval to proceed
+- First checkpoint: Tasks 0-1.3
+- Code review is mandatory for every task
+- No skipping steps or rushing ahead
+
+NEXT ACTION
+-----------
+Assign junior AI developer to Task 0 (BBS API test)
+
+CONTACT
+-------
+Questions? Ask Claude Code (senior architect)
+Issues? Check SENIOR_REVIEW_CHECKLIST.md
+Stuck? Re-read JUNIOR_DEV_ONBOARDING.md
+
+END OF NOTES
+============

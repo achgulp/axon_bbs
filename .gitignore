@@ -1,0 +1,97 @@
+# axon_bbs/.gitignore
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django
+*.log
+logs/
+*.pot
+*.pyc
+__pycache__/
+local_settings.py
+db.sqlite3
+media/
+
+# Virtual environment
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables
+.env
+
+# Data and user files
+data/
+
+# Migrations (optional, regenerate on new setups)
+#migrations/
+
+# Editor directories and files
+.gemini/
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# NPM/Node.js (for frontend)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build outputs
+build/
+dist/
+
+# Other
+*.deb
+*.bak
+*.swp
+*.tmp
+#*.sh
+
+
+# Node modules and caches
+node_modules/
+.cache/
+frontend/node_modules/
+frontend/.cache/
+docs/archive/
+
+# Personal/private documentation
+
+docs/PERSONAL_MARKETING.md
+docs/PERSONAL_MARKETING_History.md
+docs/PERSONAL_MARKETING_ACHDUKE7.md
+docs/MARKETING.md
+docs/MarketingTodo.md
+docs/Retirement1.md
+docs/AI_SatelliteRefueling_x_thread.md
+docs/AI_SatelliteStarshipRefueling.md
+docs/KAIROCORTEX_NOTES.md
+avatardesign.md
+claude.md
+gemini.md
+
+# Avatar design files
+docs/AvatarA7Shield*.png
+docs/AvatarStrategicAI.png
+docs/XStrategizeAI_Banner.png
+docs/avatar*.png
+avatars*.png
+avatar.png
+
+# Development/Session files (internal process documentation)
+SESSION_NOTES*.txt
+SESSION_SUMMARY*.md
+GEMINI_*.md
+GEMINI_*.txt

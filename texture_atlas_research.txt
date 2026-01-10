@@ -1,0 +1,53 @@
+# Full path: /path/to/axon_bbs/texture_atlas_research.txt
+
+## Warzone 2100 Texture Atlas Research
+
+### 1. How WZ2100 Texture Atlases Work
+
+Warzone 2100 utilizes a texture page system where individual textures, or collections of textures, are stored in PNG files. These can function as texture atlases.
+
+*   **PIE Model Texture Expectation:** PIE model files (versions 3 and 4) expect UV coordinates in the normalized 0.0-1.0 range, effectively referencing a 256x256 pixel texture. Older PIE 2 models use integer UV coordinates ranging from 0 to 256, which directly correspond to pixel values within a 256x256 texture.
+*   **Texture Page Naming:** Texture filenames often follow a "page-NN-name.png" convention for dynamic replacement based on tileset (e.g., `page-7-barbarians-arizona.png`). Terrain textures use a "tertilecXhw-YYY/tile-ZZ.png" structure, where YYY indicates resolution (e.g., 128, 256).
+*   **Mipmap Generation:** The `texpage2mipmap.py` script indicates that larger texture pages can be split and scaled into various resolutions (16, 32, 64, 128 pixels per tile) for mipmapping, suggesting that a single texture page can contain multiple smaller, logically distinct textures.
+
+### 2. Expected Atlas Grid Structure
+
+Given a 1024x1024 texture atlas and the PIE model's expectation of 256x256 textures, the atlas is structured as a **4x4 grid** of 256x256 logical texture "slots" or "tiles".
+
+*   Each 256x256 quadrant within the 1024x1024 atlas effectively serves as an individual texture that a PIE model would reference.
+
+### 3. Whether PIE UVs Need Scaling for Larger Atlases
+
+Yes, PIE UVs need scaling and offsetting when mapping to a larger texture atlas like a 1024x1024 one, if the PIE model's UVs refer to a sub-texture within that atlas.
+
+*   **For PIE 3/4 models (UVs 0.0-1.0):** These UVs inherently refer to a 256x256 texture. To map them to a specific 256x256 region within a 1024x1024 atlas, the UVs must be scaled by a factor of `0.25` (since 256/1024 = 0.25) and then translated (offset) based on the position of that 256x256 region within the 1024x1024 atlas.
+    *   Example: If a 256x256 texture is in the top-left quadrant (0,0 to 255,255) of a 1024x1024 atlas, a PIE model's UVs (u, v) would map to (u * 0.25, v * 0.25) in the overall 1024x1024 atlas UV space.
+    *   If the texture is in the top-right quadrant (256,0 to 511,255), the mapping would be ( (u * 0.25) + 0.25, v * 0.25).
+*   **For PIE 2 models (UVs 0-256):** These integer UVs correspond to pixel coordinates within a 256x256 texture. To map them to a 1024x1024 atlas, they would first need to be normalized to the 0.0-1.0 range (by dividing by 256), and then scaled and offset as described for PIE 3/4 models.
+
+The statement "Current UV mapping only uses top-left quarter of the atlas" implies that the PIE models are currently configured to use the 256x256 region at (0,0) of the 1024x1024 atlas.
+
+### 4. Relevant Code Snippets
+
+**From `frontend/src/applets/warzone2100/doc/PIE.md`:**
+
+```
+PIE 2 uses integer coordinate values ranging from 0 to 256, corresponding to 1024 pixels for texture pages.
+For example, the coordinates 128,256 refer to pixel coordinates 512,1024.
+
+PIE 3 uses floating point UV coordinates which range from 0 to 1, usually with six digits.
+Thus, the coordinates 0.111111,1.000000 represent offset 113.777777,256 for a picture 1024x1024 pixels large.
+```
+
+**From `frontend/src/applets/warzone2100/tools/tile_texpage2mipmap_tileset/texpage2mipmap.py` (Illustrates tile splitting and resolution handling):**
+
+```python
+# ...
+resolutions = set(map(int, conf.get('resolutions', '16 32 64 128').split()))
+# ...
+tilesize, extra = divmod(w, columns)
+# ...
+args.extend(['-crop', '%ix%i' % (tilesize, tilesize)])
+args.extend([fpath, os.path.join(dirpath, 'tile-%02d.png')])
+# ...
+```

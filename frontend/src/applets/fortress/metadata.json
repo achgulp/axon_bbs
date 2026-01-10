@@ -1,0 +1,5 @@
+{
+  "name": "Fortress Overlord",
+  "description": "A real-time strategy game where two players build units to attack and destroy the opponent's fortress. Built with Three.js and Tone.js for a rich 3D and audio experience, and powered by the Axon BBS event bus for real-time multiplayer.",
+  "requestFramePermissions": []
+}

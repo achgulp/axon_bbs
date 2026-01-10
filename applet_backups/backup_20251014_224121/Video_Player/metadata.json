@@ -1,0 +1,25 @@
+{
+  "id": "e9192e42-9b12-484e-af70-038f08823226",
+  "name": "Video Player",
+  "description": "Media Player",
+  "author_pubkey": "-----BEGIN PUBLIC KEY-----\r\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnKzr3etFG1F3mQyEf5Df\r\nhiN1dwc4FbYOruUavqRvrZ2EHHup2h20f/FiSzvOoRh/hGsN4HoGSLqJPOUejBWU\r\nEJlZukutZ3qkQxcgP4YFkdvo7jhgN45iM3sFqKL36kYtd7/iTjV4ZNRxtKeGXST3\r\n3hIcAPi1buwyxn5iXjfEYMmvomDou0bRslY3qEUOqY1WzJMK4ksh4KmddaHcZ2sd\r\nuunaq0wkdKfCQpkc1nBhZxc97bxQuaGkIICe+fO3EOt4/9JMYtamZyTSGqAs5RIs\r\nS6VY7HbGpTgPOoitE+9s5XDceCe+9iP52YiOMLdpEnvZLrsj7blwDOLPPoVCMTXe\r\nvwIDAQAB\r\n-----END PUBLIC KEY-----",
+  "code_manifest": {
+    "content_hash": "fba5d2e00aaaf55c8f40f1d3a20aa9c7e849d0f6a01c1238b86be9139ad27162",
+    "chunk_size": 262144,
+    "chunk_hashes": [
+      "d241661270bd3bfd93b94907db92cebff30e4cffdee84fd09258d5eac4e5505e"
+    ],
+    "encryption_iv": "bPtHPmvoe5apXeBy+KvtMg==",
+    "encrypted_aes_keys": {
+      "214467155aac6beeb17ed5819cc45a0b": "lNYZTDf6c8ij2X+p0yvpLOhAUW3Bi6zZlHd5+ZXHp0NoNL745ZWs8ke/wz8/IA3XhlSoZkZUxVMyvC8rmU7TugHpHWFV6VUSD8MzP1inAXIp+Pptuu3G1nDNtxVeNWpwS6lHk9P3BXNF2G5GUlT+W9ydZT49IGGFkCxja8TJchV8H1gzwJwJ5disie6c8Hi+OXOI5zAu3vRey+1mrsbHp4yMTAusJ7INPppjLiPYkWVANonQy1IQXEXI87HNPw9oqqWCwBiQb/w2lWtohlCmHErosVBrCS72PTfY3EkXpddO03Q7I2IkcZrn7XMLnigokt9OB3bH0bmHiTQ2iXM40Q==",
+      "8aeedafc38d2b9daf17f088cd091d74a": "nswbtwvV/T2EwId0F2xdlRuouKDckBmh5XKguFWam+TraDHVv+6DAmuqP+P94lwxXBwMtUb24tHkYoOdpc42i5GllxwLGoUd7uMVzbHH2K5crpG8lYOhYRMsSAjBnQgOf6zV8jhw9YKKkaDarq0DFm6r2HuVzmYJH1zWRdFMghD+wOPK1A+fhQYIdYcu59eU9+vHF/96GO0axP7nOQU+7CYPvOl4rz1yZNZXJR28ev8fUf0kxvBa5kCZBvqV51cv36cM3MoUCRJu4nw1Kg2GgJYnz2H62krIbdYVYanCKQ5w0R6g0qVuUePnE6kTxD2JbyxZ+3gj5EkuamNY91hVHQ=="
+    }
+  },
+  "parameters": {},
+  "is_local": false,
+  "created_at": "2025-09-27T00:43:18.205495+00:00",
+  "category": "Multimedia",
+  "is_debug_mode": false,
+  "event_board": null,
+  "handles_mime_types": "video/mp4, video/mpeg4, video/webm"
+}

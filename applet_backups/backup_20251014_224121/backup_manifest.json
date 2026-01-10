@@ -1,0 +1,14 @@
+{
+  "backup_date": "20251014_224121",
+  "total_applets": 5,
+  "total_chunks": 5,
+  "total_data_instances": 2,
+  "total_high_scores": 0,
+  "applets": [
+    "Video Player",
+    "Axon Sheets",
+    "Pipe Dodger",
+    "MimsTris",
+    "HexGL"
+  ]
+}
