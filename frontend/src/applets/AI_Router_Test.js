@@ -34,7 +34,19 @@
 
     // ===== HTML Setup =====
     document.body.innerHTML = `
-        <div style="padding: 20px; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
+        <div style="display: flex; gap: 20px; padding: 20px; font-family: Arial, sans-serif;">
+            <!-- Left column: Brain visualization -->
+            <div style="flex: 0 0 400px;">
+                <h3 style="color: #333; margin-bottom: 10px;">🧠 Neural Activity</h3>
+                <canvas id="brain-canvas" width="400" height="300"
+                    style="border: 2px solid #333; border-radius: 10px; background: #0a0a0f;"></canvas>
+                <div id="brain-status" style="margin-top: 10px; font-size: 12px; color: #666;">
+                    Idle
+                </div>
+            </div>
+
+            <!-- Right column: Query interface -->
+            <div style="flex: 1; min-width: 400px;">
             <h2 style="color: #333; margin-bottom: 20px;">🤖 AI Router Test</h2>
 
             <div style="margin: 20px 0;">
@@ -95,8 +107,102 @@
                     (Answer will appear here)
                 </div>
             </div>
+            </div>
         </div>
     `;
+
+    // ===== Brain Visualization System =====
+    const canvas = document.getElementById('brain-canvas');
+    const ctx = canvas.getContext('2d');
+    const brainStatus = document.getElementById('brain-status');
+
+    // Brain regions with positions (x, y, radius)
+    const regions = {
+        sensory: { x: 200, y: 150, r: 30, color: '#ff8c00', label: 'Sensory', activity: 0 },
+        frontal: { x: 100, y: 80, r: 35, color: '#00ffff', label: 'Frontal', activity: 0 },
+        parietal: { x: 280, y: 80, r: 32, color: '#4169e1', label: 'Parietal', activity: 0 },
+        temporal: { x: 150, y: 200, r: 30, color: '#32cd32', label: 'Temporal', activity: 0 },
+        occipital: { x: 330, y: 200, r: 28, color: '#ff00ff', label: 'Occipital', activity: 0 },
+        motor: { x: 70, y: 150, r: 30, color: '#ffff00', label: 'Motor', activity: 0 },
+        hub: { x: 200, y: 150, r: 20, color: '#ffa500', label: 'Hub', activity: 0 }
+    };
+
+    // Render brain visualization
+    function renderBrain() {
+        // Clear canvas
+        ctx.fillStyle = '#0a0a0f';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw brain outline (simple oval)
+        ctx.strokeStyle = '#444';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(200, 150, 150, 120, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Draw regions
+        for (const [name, region] of Object.entries(regions)) {
+            // Calculate glow intensity based on activity
+            const glow = region.activity * 20;
+
+            // Draw glow if active
+            if (region.activity > 0) {
+                const gradient = ctx.createRadialGradient(
+                    region.x, region.y, region.r * 0.5,
+                    region.x, region.y, region.r + glow
+                );
+                gradient.addColorStop(0, region.color + 'ff');
+                gradient.addColorStop(0.5, region.color + '88');
+                gradient.addColorStop(1, region.color + '00');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(region.x, region.y, region.r + glow, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw region circle
+            const alpha = Math.floor((0.3 + region.activity * 0.7) * 255).toString(16).padStart(2, '0');
+            ctx.fillStyle = region.color + alpha;
+            ctx.strokeStyle = region.color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(region.x, region.y, region.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Draw label
+            ctx.fillStyle = '#fff';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(region.label, region.x, region.y + region.r + 15);
+        }
+
+        // Decay activity
+        for (const region of Object.values(regions)) {
+            region.activity *= 0.95;
+        }
+
+        requestAnimationFrame(renderBrain);
+    }
+
+    // Stimulate a brain region
+    function stimulateRegion(regionName, intensity = 1.0) {
+        if (regions[regionName]) {
+            regions[regionName].activity = Math.min(1.0, intensity);
+            brainStatus.textContent = `Active: ${regionName} (${(intensity * 100).toFixed(0)}%)`;
+        }
+    }
+
+    // Reset brain activity
+    function resetBrain() {
+        for (const region of Object.values(regions)) {
+            region.activity = 0;
+        }
+        brainStatus.textContent = 'Idle';
+    }
+
+    // Start rendering loop
+    renderBrain();
 
     // ===== State =====
     let selectedMode = 'direct';
@@ -208,6 +314,9 @@
         };
 
         try {
+            // Reset brain visualization
+            resetBrain();
+
             // Post query
             await bbs.postEvent({
                 subject: 'RouterQuery',
@@ -241,6 +350,21 @@
                 const eventsData = await bbs.readEvents();
                 // API returns array directly
                 const events = Array.isArray(eventsData) ? eventsData : [];
+
+                // Process stage updates for brain visualization
+                const stageUpdates = events.filter(e => e.subject === 'RouterStageUpdate');
+                for (const update of stageUpdates) {
+                    try {
+                        const stageData = JSON.parse(update.body);
+                        if (stageData.query_id === currentQueryId) {
+                            // Stimulate the corresponding brain region
+                            stimulateRegion(stageData.region, stageData.activity);
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse stage update:', e);
+                    }
+                }
+
                 const responses = events.filter(e =>
                     e.subject === 'RouterResponse'
                 );
