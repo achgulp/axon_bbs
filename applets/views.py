@@ -147,7 +147,8 @@ class PostAppletEventView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, applet_id, *args, **kwargs):
-        if not request.session.get('unencrypted_priv_key'):
+        # Allow agent users to bypass identity verification
+        if not request.session.get('unencrypted_priv_key') and not request.user.is_agent:
             return Response({"error": "identity_locked"}, status=status.HTTP_401_UNAUTHORIZED)
         try:
             applet = Applet.objects.get(id=applet_id)
