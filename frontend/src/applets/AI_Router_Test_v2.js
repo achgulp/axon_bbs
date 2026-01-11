@@ -241,108 +241,93 @@
     function drawBrainOutline() {
         const { x, y, width, height } = brainBounds;
 
-        ctx.strokeStyle = '#444';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 2.5;
 
-        // Detailed cerebrum outline (sagittal view)
+        // Single continuous brain outline
         ctx.beginPath();
 
-        // Start at frontal lobe base (right side)
-        ctx.moveTo(x + width * 0.88, y + height * 0.60);
+        // Start at base of frontal lobe (right side)
+        ctx.moveTo(x + width * 0.88, y + height * 0.58);
 
-        // Frontal lobe curves
+        // Frontal lobe - rounded protrusion on right
         ctx.bezierCurveTo(
-            x + width * 0.95, y + height * 0.55,
-            x + width * 1.00, y + height * 0.48,
-            x + width * 0.99, y + height * 0.40
+            x + width * 0.96, y + height * 0.52,
+            x + width * 1.00, y + height * 0.42,
+            x + width * 0.98, y + height * 0.32
         );
         ctx.bezierCurveTo(
-            x + width * 1.00, y + height * 0.32,
-            x + width * 0.96, y + height * 0.24,
-            x + width * 0.90, y + height * 0.18
-        );
-        ctx.bezierCurveTo(
-            x + width * 0.85, y + height * 0.12,
-            x + width * 0.78, y + height * 0.08,
-            x + width * 0.70, y + height * 0.05
+            x + width * 0.96, y + height * 0.22,
+            x + width * 0.88, y + height * 0.14,
+            x + width * 0.78, y + height * 0.08
         );
 
-        // Superior frontal gyrus and motor/sensory peaks
+        // Top of brain - multiple smaller curves for gyri
         ctx.bezierCurveTo(
-            x + width * 0.65, y + height * 0.03,
-            x + width * 0.58, y + height * 0.03,
-            x + width * 0.52, y + height * 0.04
+            x + width * 0.70, y + height * 0.04,
+            x + width * 0.60, y + height * 0.02,
+            x + width * 0.50, y + height * 0.03
         );
         ctx.bezierCurveTo(
-            x + width * 0.48, y + height * 0.02,
-            x + width * 0.42, y + height * 0.03,
-            x + width * 0.35, y + height * 0.06
-        );
-
-        // Parietal lobe curve
-        ctx.bezierCurveTo(
-            x + width * 0.28, y + height * 0.09,
-            x + width * 0.18, y + height * 0.15,
-            x + width * 0.10, y + height * 0.25
+            x + width * 0.42, y + height * 0.04,
+            x + width * 0.32, y + height * 0.08,
+            x + width * 0.24, y + height * 0.14
         );
 
-        // Occipital lobe
+        // Parietal curve into occipital
         ctx.bezierCurveTo(
-            x + width * 0.02, y + height * 0.35,
-            x + width * 0.01, y + height * 0.45,
-            x + width * 0.05, y + height * 0.55
+            x + width * 0.16, y + height * 0.20,
+            x + width * 0.10, y + height * 0.30,
+            x + width * 0.06, y + height * 0.42
         );
 
-        // Under-occipital area
+        // Occipital lobe - back of brain (left side)
         ctx.bezierCurveTo(
-            x + width * 0.10, y + height * 0.62,
-            x + width * 0.20, y + height * 0.65,
-            x + width * 0.30, y + height * 0.64
+            x + width * 0.04, y + height * 0.52,
+            x + width * 0.06, y + height * 0.60,
+            x + width * 0.12, y + height * 0.66
         );
 
-        // Temporal lobe
+        // Transition to brainstem/cerebellum area
         ctx.bezierCurveTo(
-            x + width * 0.35, y + height * 0.68,
-            x + width * 0.40, y + height * 0.75,
-            x + width * 0.50, y + height * 0.78
-        );
-        ctx.bezierCurveTo(
-            x + width * 0.65, y + height * 0.82,
-            x + width * 0.82, y + height * 0.78,
-            x + width * 0.90, y + height * 0.68
+            x + width * 0.18, y + height * 0.70,
+            x + width * 0.26, y + height * 0.72,
+            x + width * 0.35, y + height * 0.72
         );
 
-        // Close to frontal base
+        // Bottom curve - temporal/brainstem area
         ctx.bezierCurveTo(
-            x + width * 0.92, y + height * 0.65,
-            x + width * 0.90, y + height * 0.62,
-            x + width * 0.88, y + height * 0.60
+            x + width * 0.45, y + height * 0.76,
+            x + width * 0.55, y + height * 0.78,
+            x + width * 0.65, y + height * 0.76
         );
 
+        // Cerebellum integrated as bump (not separate)
+        ctx.bezierCurveTo(
+            x + width * 0.72, y + height * 0.74,
+            x + width * 0.78, y + height * 0.70,
+            x + width * 0.84, y + height * 0.64
+        );
+
+        // Close back to frontal base
+        ctx.bezierCurveTo(
+            x + width * 0.87, y + height * 0.61,
+            x + width * 0.88, y + height * 0.59,
+            x + width * 0.88, y + height * 0.58
+        );
+
+        ctx.closePath();
         ctx.stroke();
 
-        // Add cerebellum (bottom-right bump)
+        // Add subtle inner detail line (corpus callosum hint)
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(x + width * 0.70, y + height * 0.65);
+        ctx.moveTo(x + width * 0.30, y + height * 0.40);
         ctx.bezierCurveTo(
-            x + width * 0.75, y + height * 0.68,
-            x + width * 0.85, y + height * 0.70,
-            x + width * 0.95, y + height * 0.75
-        );
-        ctx.bezierCurveTo(
-            x + width * 1.00, y + height * 0.82,
-            x + width * 0.95, y + height * 0.92,
-            x + width * 0.85, y + height * 0.96
-        );
-        ctx.bezierCurveTo(
-            x + width * 0.75, y + height * 0.98,
-            x + width * 0.65, y + height * 0.95,
-            x + width * 0.60, y + height * 0.88
-        );
-        ctx.bezierCurveTo(
-            x + width * 0.58, y + height * 0.80,
-            x + width * 0.62, y + height * 0.72,
-            x + width * 0.70, y + height * 0.65
+            x + width * 0.45, y + height * 0.35,
+            x + width * 0.60, y + height * 0.35,
+            x + width * 0.75, y + height * 0.42
         );
         ctx.stroke();
     }

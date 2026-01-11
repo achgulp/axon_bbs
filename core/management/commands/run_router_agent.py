@@ -165,7 +165,7 @@ class Command(BaseCommand):
         cmd = ['python3', router_cli, query]
 
         if mode == 'direct' and model:
-            cmd.extend(['--direct', model])
+            cmd.extend(['-m', model])
             timeout = 60
             self._post_stage_update(applet, user, query_id, "routing", "frontal", 0.9, {"mode": "direct", "model": model})
             self._post_stage_update(applet, user, query_id, "provider_selection", "parietal", 0.8, {"provider": model})
