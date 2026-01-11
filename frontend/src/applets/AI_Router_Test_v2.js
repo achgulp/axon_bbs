@@ -697,7 +697,7 @@
             statusDiv.style.color = '#28a745';
 
             let html = `<strong>${response.answer}</strong>`;
-            html += `\n\n━━━━━━━━━━━━━━━━━━━━━━`;
+            html += `\n\n${'='.repeat(40)}`;
             html += `\n📊 Metadata:`;
             html += `\n  Mode: ${response.metadata.mode}`;
 
