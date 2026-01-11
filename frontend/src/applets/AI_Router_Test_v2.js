@@ -295,14 +295,33 @@
             x + width * 0.35, y + height * 0.72
         );
 
-        // Bottom curve - temporal/brainstem area
+        // Bottom curve leading to brainstem
         ctx.bezierCurveTo(
-            x + width * 0.45, y + height * 0.76,
-            x + width * 0.55, y + height * 0.78,
-            x + width * 0.65, y + height * 0.76
+            x + width * 0.42, y + height * 0.74,
+            x + width * 0.48, y + height * 0.76,
+            x + width * 0.54, y + height * 0.77
         );
 
-        // Cerebellum integrated as bump (not separate)
+        // Brainstem extension (downward)
+        ctx.lineTo(x + width * 0.56, y + height * 0.82);
+        ctx.bezierCurveTo(
+            x + width * 0.57, y + height * 0.86,
+            x + width * 0.58, y + height * 0.88,
+            x + width * 0.59, y + height * 0.90
+        );
+
+        // Bottom of brainstem to spinal connection
+        ctx.lineTo(x + width * 0.60, y + height * 0.92);
+
+        // Return path of brainstem
+        ctx.lineTo(x + width * 0.62, y + height * 0.90);
+        ctx.bezierCurveTo(
+            x + width * 0.63, y + height * 0.86,
+            x + width * 0.64, y + height * 0.82,
+            x + width * 0.65, y + height * 0.78
+        );
+
+        // Cerebellum integrated as bump
         ctx.bezierCurveTo(
             x + width * 0.72, y + height * 0.74,
             x + width * 0.78, y + height * 0.70,
