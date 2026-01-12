@@ -48,7 +48,7 @@ KairoCortex Backend (Rust) - Helper Orchestrator
    - egui better suited for responsive compass interactions
 
 3. **Phase 3: Rust Backend Skeleton ✅ COMPLETE**
-   - Created Cargo project: `/home/dukejer/kairocortex_backend/`
+   - Created Cargo project: `$HOME/kairocortex_backend/`
    - Configured dependencies (axum, tokio, serde, reqwest, async-trait, anyhow, tracing)
    - Implemented type system (`src/types.rs`):
      - IntentRequest, IntentResponse, HelperResponse
@@ -219,7 +219,7 @@ KairoCortex Backend (Rust) - Helper Orchestrator
 
 3. **File Locations**
    - Source code: Pi4 `/home/pibbs/axon_bbs/`
-   - Backed up to: Local `/home/dukejer/axon_bbs/`
+   - Backed up to: Local `$HOME/axon_bbs/`
    - Workflow: Edit on Pi4, test immediately, sync back to local for git
 
 ---

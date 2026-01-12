@@ -117,7 +117,7 @@
 ## Phase 3: Rust Backend Skeleton ✅ COMPLETE
 
 **Completed 2025-12-31**
-- ✅ Created `/home/dukejer/kairocortex_backend/` with Axum server on localhost:8001
+- ✅ Created `$HOME/kairocortex_backend/` with Axum server on localhost:8001
 - ✅ Implemented Helper trait system with 5 helpers (Grok, Gemini, Claude, Terminal, Llama)
 - ✅ Built Orchestrator for intent routing
 - ✅ Added benchmark endpoint with latency/bandwidth metrics (~0.8ms latency, 76 Mbps)
@@ -129,7 +129,7 @@
 
 ### 3.1: Project Setup
 - [ ] Create Cargo project
-  - [ ] cd /home/dukejer
+  - [ ] cd $HOME
   - [ ] cargo new kairocortex_backend
   - [ ] cd kairocortex_backend
 

@@ -44,14 +44,14 @@ class Command(BaseCommand):
         parser.add_argument(
             '--router-cli',
             type=str,
-            default='/home/dukejer/KairoKensei/router_cli.py',
-            help='Path to router_cli.py'
+            default=os.getenv('KAIRO_ROUTER_CLI'),
+            help='Path to router_cli.py (default: KAIRO_ROUTER_CLI env var)'
         )
         parser.add_argument(
             '--user',
             type=str,
-            default='Achduke7',
-            help='Username to post responses as (default: Achduke7)'
+            default=os.getenv('KAIRO_AGENT_USER', 'system'),
+            help='Username to post responses as (default: KAIRO_AGENT_USER env var or "system")'
         )
 
     def handle(self, *args, **options):
@@ -166,12 +166,12 @@ class Command(BaseCommand):
 
         if mode == 'direct' and model:
             cmd.extend(['-m', model])
-            timeout = 60
+            timeout = 90  # Increased from 60s
             self._post_stage_update(applet, user, query_id, "routing", "frontal", 0.9, {"mode": "direct", "model": model})
             self._post_stage_update(applet, user, query_id, "provider_selection", "parietal", 0.8, {"provider": model})
         elif mode == 'consensus':
             cmd.append('--consensus')
-            timeout = 120
+            timeout = 180  # Increased from 120s
             self._post_stage_update(applet, user, query_id, "routing", "frontal", 0.9, {"mode": "consensus"})
             providers = ["gemini-cli", "claude-cli", "grok-browser", "local"]
             self._post_stage_update(applet, user, query_id, "provider_selection", "parietal", 0.8, {"providers": providers})
@@ -181,7 +181,7 @@ class Command(BaseCommand):
                 time.sleep(0.1)
         elif mode == 'local':
             cmd.append('--local')
-            timeout = 90
+            timeout = 120  # Increased from 90s
             self._post_stage_update(applet, user, query_id, "routing", "frontal", 0.9, {"mode": "local"})
             self._post_stage_update(applet, user, query_id, "provider_selection", "parietal", 0.8, {"provider": "local-ollama"})
 

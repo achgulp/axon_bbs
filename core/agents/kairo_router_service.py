@@ -22,9 +22,12 @@ class KairoRouterService:
         self.monitor_thread = None
         self.last_processed_time = datetime.now()
 
-        # Router CLI configuration
-        self.router_cli = os.getenv('KAIRO_ROUTER_CLI', '/home/dukejer/KairoKensei/router_cli.py')
-        self.venv_python = os.getenv('KAIRO_ROUTER_VENV', '/home/dukejer/KairoKensei/.venv/bin/python')
+        # Router CLI configuration - MUST be set in environment or .env
+        self.router_cli = os.getenv('KAIRO_ROUTER_CLI')
+        self.venv_python = os.getenv('KAIRO_VENV_PYTHON')
+
+        if not self.router_cli or not self.venv_python:
+            raise ValueError("KAIRO_ROUTER_CLI and KAIRO_VENV_PYTHON must be set in environment")
 
     def start(self):
         """Start monitoring thread"""

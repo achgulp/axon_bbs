@@ -1,4 +1,5 @@
-(async function() {
+// v2.5 Update 
+(async function () {
     'use strict';
 
     // ===== BBS API Helper =====
@@ -6,7 +7,7 @@
         window.bbs = {
             _callbacks: {},
             _requestId: 0,
-            _handleMessage: function(event) {
+            _handleMessage: function (event) {
                 const { command, payload, requestId, error } = event.data;
                 if (command && command.startsWith('response_') && this._callbacks[requestId]) {
                     const { resolve, reject } = this._callbacks[requestId];
@@ -14,7 +15,7 @@
                     delete this._callbacks[requestId];
                 }
             },
-            _postMessage: function(command, payload = {}) {
+            _postMessage: function (command, payload = {}) {
                 return new Promise((resolve, reject) => {
                     const requestId = this._requestId++;
                     this._callbacks[requestId] = { resolve, reject };
@@ -26,8 +27,8 @@
                     }
                 });
             },
-            postEvent: function(eventData) { return this._postMessage('postEvent', eventData); },
-            readEvents: function() { return this._postMessage('readEvents'); }
+            postEvent: function (eventData) { return this._postMessage('postEvent', eventData); },
+            readEvents: function () { return this._postMessage('readEvents'); }
         };
         window.addEventListener('message', (event) => window.bbs._handleMessage(event));
     }
@@ -47,7 +48,7 @@
         <div style="display: flex; gap: 20px; padding: 20px; font-family: Arial, sans-serif;">
             <!-- Left column: Brain visualization -->
             <div style="flex: 0 0 500px;">
-                <h3 style="color: #ccc; margin-bottom: 10px;">🧠 Neural Activity</h3>
+                <h3 style="color: #ccc; margin-bottom: 10px;">Neural Activity</h3>
                 <canvas id="brain-canvas" width="500" height="380"
                     style="border: 2px solid #333; border-radius: 10px; background: #0a0a0f;"></canvas>
                 <div id="brain-status" style="margin-top: 10px; font-size: 12px; color: #888;">
@@ -57,7 +58,7 @@
 
             <!-- Right column: Query interface -->
             <div style="flex: 1; min-width: 400px;">
-            <h2 style="color: #333; margin-bottom: 20px;">🤖 AI Router Test</h2>
+            <h2 style="color: #333; margin-bottom: 20px;">AI Router Test</h2>
 
             <div style="margin: 20px 0;">
                 <label style="display: block; margin-bottom: 5px; font-weight: bold;">Query:</label>
@@ -126,34 +127,42 @@
     const ctx = canvas.getContext('2d');
     const brainStatus = document.getElementById('brain-status');
 
-    // Region configurations (adapted from full brain sim)
+    // Region configurations - Anatomically correct positions for RIGHT-facing brain
+    // Brain faces RIGHT: frontal on LEFT of canvas, occipital on RIGHT
     const regionConfigs = {
-        sensory: {
-            pos: { x: 0.48, y: 0.32 }, size: 0.10,
-            color: '#ff8844', label: 'Sensory'
-        },
         frontal: {
-            pos: { x: 0.78, y: 0.28 }, size: 0.14,
+            // Frontal lobe: FRONT of brain (LEFT side when facing right)
+            pos: { x: 0.25, y: 0.30 }, size: 0.16,
             color: '#00ffff', label: 'Frontal'
         },
+        motor: {
+            // Motor cortex: strip behind frontal, top area
+            pos: { x: 0.42, y: 0.18 }, size: 0.10,
+            color: '#ffff00', label: 'Motor'
+        },
+        sensory: {
+            // Somatosensory cortex: behind motor strip
+            pos: { x: 0.52, y: 0.20 }, size: 0.10,
+            color: '#ff8844', label: 'Sensory'
+        },
         parietal: {
-            pos: { x: 0.42, y: 0.18 }, size: 0.13,
+            // Parietal lobe: TOP-BACK of brain
+            pos: { x: 0.62, y: 0.25 }, size: 0.14,
             color: '#4488ff', label: 'Parietal'
         },
         temporal: {
-            pos: { x: 0.68, y: 0.55 }, size: 0.12,
+            // Temporal lobe: LOWER MIDDLE (near ear area)
+            pos: { x: 0.45, y: 0.60 }, size: 0.14,
             color: '#00ff88', label: 'Temporal'
         },
         occipital: {
-            pos: { x: 0.18, y: 0.38 }, size: 0.11,
+            // Occipital lobe: BACK of brain (RIGHT side when facing right)
+            pos: { x: 0.82, y: 0.40 }, size: 0.12,
             color: '#ff00ff', label: 'Occipital'
         },
-        motor: {
-            pos: { x: 0.58, y: 0.22 }, size: 0.10,
-            color: '#ffff00', label: 'Motor'
-        },
         hub: {
-            pos: { x: 0.52, y: 0.42 }, size: 0.07,
+            // Hub (Thalamus): CENTER of brain, deep
+            pos: { x: 0.52, y: 0.45 }, size: 0.08,
             color: '#ffaa00', label: 'Hub'
         }
     };
@@ -237,102 +246,102 @@
         }
     });
 
-    // Draw realistic brain outline
+    // Draw realistic brain outline - FACING RIGHT
     function drawBrainOutline() {
         const { x, y, width, height } = brainBounds;
 
         ctx.strokeStyle = '#555';
         ctx.lineWidth = 2.5;
 
-        // Single continuous brain outline
+        // Single continuous brain outline - MIRRORED to face RIGHT
         ctx.beginPath();
 
-        // Start at base of frontal lobe (right side)
-        ctx.moveTo(x + width * 0.88, y + height * 0.58);
+        // Start at base of frontal lobe (LEFT side - brain faces right)
+        ctx.moveTo(x + width * 0.12, y + height * 0.58);
 
-        // Frontal lobe - rounded protrusion on right
+        // Frontal lobe - rounded protrusion on LEFT
         ctx.bezierCurveTo(
-            x + width * 0.96, y + height * 0.52,
-            x + width * 1.00, y + height * 0.42,
-            x + width * 0.98, y + height * 0.32
+            x + width * 0.04, y + height * 0.52,
+            x + width * 0.00, y + height * 0.42,
+            x + width * 0.02, y + height * 0.32
         );
         ctx.bezierCurveTo(
-            x + width * 0.96, y + height * 0.22,
-            x + width * 0.88, y + height * 0.14,
-            x + width * 0.78, y + height * 0.08
+            x + width * 0.04, y + height * 0.22,
+            x + width * 0.12, y + height * 0.14,
+            x + width * 0.22, y + height * 0.08
         );
 
         // Top of brain - multiple smaller curves for gyri
         ctx.bezierCurveTo(
-            x + width * 0.70, y + height * 0.04,
-            x + width * 0.60, y + height * 0.02,
+            x + width * 0.30, y + height * 0.04,
+            x + width * 0.40, y + height * 0.02,
             x + width * 0.50, y + height * 0.03
         );
         ctx.bezierCurveTo(
-            x + width * 0.42, y + height * 0.04,
-            x + width * 0.32, y + height * 0.08,
-            x + width * 0.24, y + height * 0.14
+            x + width * 0.58, y + height * 0.04,
+            x + width * 0.68, y + height * 0.08,
+            x + width * 0.76, y + height * 0.14
         );
 
         // Parietal curve into occipital
         ctx.bezierCurveTo(
-            x + width * 0.16, y + height * 0.20,
-            x + width * 0.10, y + height * 0.30,
-            x + width * 0.06, y + height * 0.42
+            x + width * 0.84, y + height * 0.20,
+            x + width * 0.90, y + height * 0.30,
+            x + width * 0.94, y + height * 0.42
         );
 
-        // Occipital lobe - back of brain (left side)
+        // Occipital lobe - back of brain (RIGHT side)
         ctx.bezierCurveTo(
-            x + width * 0.04, y + height * 0.52,
-            x + width * 0.06, y + height * 0.60,
-            x + width * 0.12, y + height * 0.66
+            x + width * 0.96, y + height * 0.52,
+            x + width * 0.94, y + height * 0.60,
+            x + width * 0.88, y + height * 0.66
         );
 
         // Transition to brainstem/cerebellum area
         ctx.bezierCurveTo(
-            x + width * 0.18, y + height * 0.70,
-            x + width * 0.26, y + height * 0.72,
-            x + width * 0.35, y + height * 0.72
+            x + width * 0.82, y + height * 0.70,
+            x + width * 0.74, y + height * 0.72,
+            x + width * 0.65, y + height * 0.72
         );
 
         // Bottom curve leading to brainstem
         ctx.bezierCurveTo(
-            x + width * 0.42, y + height * 0.74,
-            x + width * 0.48, y + height * 0.76,
-            x + width * 0.54, y + height * 0.77
+            x + width * 0.58, y + height * 0.74,
+            x + width * 0.52, y + height * 0.76,
+            x + width * 0.46, y + height * 0.77
         );
 
         // Brainstem extension (downward)
-        ctx.lineTo(x + width * 0.56, y + height * 0.82);
+        ctx.lineTo(x + width * 0.44, y + height * 0.82);
         ctx.bezierCurveTo(
-            x + width * 0.57, y + height * 0.86,
-            x + width * 0.58, y + height * 0.88,
-            x + width * 0.59, y + height * 0.90
+            x + width * 0.43, y + height * 0.86,
+            x + width * 0.42, y + height * 0.88,
+            x + width * 0.41, y + height * 0.90
         );
 
         // Bottom of brainstem to spinal connection
-        ctx.lineTo(x + width * 0.60, y + height * 0.92);
+        ctx.lineTo(x + width * 0.40, y + height * 0.92);
 
         // Return path of brainstem
-        ctx.lineTo(x + width * 0.62, y + height * 0.90);
+        ctx.lineTo(x + width * 0.38, y + height * 0.90);
         ctx.bezierCurveTo(
-            x + width * 0.63, y + height * 0.86,
-            x + width * 0.64, y + height * 0.82,
-            x + width * 0.65, y + height * 0.78
+            x + width * 0.37, y + height * 0.86,
+            x + width * 0.36, y + height * 0.82,
+            x + width * 0.35, y + height * 0.78
         );
 
         // Cerebellum integrated as bump
         ctx.bezierCurveTo(
-            x + width * 0.72, y + height * 0.74,
-            x + width * 0.78, y + height * 0.70,
-            x + width * 0.84, y + height * 0.64
+            x + width * 0.28, y + height * 0.74,
+            x + width * 0.22, y + height * 0.70,
+            x + width * 0.16, y + height * 0.64
         );
 
         // Close back to frontal base
         ctx.bezierCurveTo(
-            x + width * 0.87, y + height * 0.61,
-            x + width * 0.88, y + height * 0.59,
-            x + width * 0.88, y + height * 0.58
+            x + width * 0.13, y + height * 0.61,
+            x + width * 0.12, y + height * 0.59,
+            x + width * 0.12, y + height * 0.58
         );
 
         ctx.closePath();
@@ -342,11 +351,11 @@
         ctx.strokeStyle = '#333';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(x + width * 0.30, y + height * 0.40);
+        ctx.moveTo(x + width * 0.70, y + height * 0.40);
         ctx.bezierCurveTo(
-            x + width * 0.45, y + height * 0.35,
-            x + width * 0.60, y + height * 0.35,
-            x + width * 0.75, y + height * 0.42
+            x + width * 0.55, y + height * 0.35,
+            x + width * 0.40, y + height * 0.35,
+            x + width * 0.25, y + height * 0.42
         );
         ctx.stroke();
     }
@@ -532,16 +541,25 @@
             btnConsensus.style.color = 'white';
             btnConsensus.style.fontWeight = 'bold';
             modelSelector.style.display = 'none';
+            // Grok available in consensus only
+            btnGrok.style.display = 'inline-block';
         } else if (mode === 'local') {
             btnLocal.style.background = '#28a745';
             btnLocal.style.color = 'white';
             btnLocal.style.fontWeight = 'bold';
             modelSelector.style.display = 'none';
+            btnGrok.style.display = 'inline-block';
         } else {
+            // Direct mode - hide Grok (only works via browser in Consensus)
             btnDirect.style.background = '#ffc107';
             btnDirect.style.color = '#000';
             btnDirect.style.fontWeight = 'bold';
             modelSelector.style.display = 'block';
+            btnGrok.style.display = 'none';
+            // If Grok was selected, switch to Gemini
+            if (selectedModel === 'grok') {
+                selectModel('gemini');
+            }
         }
     }
 
@@ -693,12 +711,12 @@
     function displayResponse(response) {
         if (response.status === 'success') {
             const time = response.metadata.processing_time.toFixed(1);
-            statusDiv.textContent = `✅ Complete (${time}s)`;
+            statusDiv.textContent = `[COMPLETE] (${time}s)`;
             statusDiv.style.color = '#28a745';
 
             let html = `<strong>${response.answer}</strong>`;
             html += `\n\n${'='.repeat(40)}`;
-            html += `\n📊 Metadata:`;
+            html += `\n[v2.5] Metadata:`;
             html += `\n  Mode: ${response.metadata.mode}`;
 
             if (response.metadata.model) {
