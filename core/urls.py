@@ -21,6 +21,7 @@ from core.views.applet_events import applet_event_stream, chat_event_stream
 from core.views.realtime_board_events import realtime_board_events
 from core.views.realtime_federation_api import RealtimeRoomMessagesView
 from core.views.kairo_api import post_intent, cortex_events
+from core.views.upload_api import upload_recording
 
 urlpatterns = [
     # AxonChat SSE stream (new realtime implementation)
@@ -38,4 +39,7 @@ urlpatterns = [
     # KairoCortex API endpoints
     path('kairo/intent/', post_intent, name='kairo_post_intent'),
     path('kairo/events/', cortex_events, name='kairo_cortex_events'),
+    
+    # Recording Upload
+    path('upload_recording/', upload_recording, name='upload_recording'),
 ]

@@ -221,10 +221,12 @@ class Command(BaseCommand):
             if result.returncode == 0:
                 try:
                     output = json.loads(result.stdout)
+                    # Try 'text' first (local/consensus modes), then 'answer' (direct mode)
+                    answer_text = output.get('text', output.get('answer', ''))
                     response_data = {
                         'query_id': query_id,
                         'status': 'success',
-                        'answer': output.get('answer', ''),
+                        'answer': answer_text,
                         'metadata': {
                             'mode': mode,
                             'model': model,

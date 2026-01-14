@@ -1,0 +1,41 @@
+
+        // Red Robot (The Sniper)
+        // Camps near walls and uses Lidar. Recharges aggressively.
+        function robotScript(api) {
+            // 1. Check Energy First
+            if (api.ENERGY < 800) {
+                const home = api.HOME;
+                const dx = home.x - api.loc_x();
+                const dy = home.y - api.loc_y();
+                if (Math.sqrt(dx * dx + dy * dy) < 80) {
+                    api.PAUSE(30); // Quick recharge
+                    return;
+                }
+                const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                api.drive(angle, 100);
+                return;
+            }
+
+            // 2. Long Range Scan (Lidar)
+            // Scan a 60 degree arc in front
+            const heading = api.heading();
+            for (let i = -30; i <= 30; i += 5) {
+                const angle = (heading + i + 360) % 360;
+                const range = api.lidar(angle);
+                if (range > 0 && range < 600) {
+                    api.cannon(angle, range);
+                    return;
+                }
+            }
+
+            // 3. Move unpredictably
+            if (Math.random() < 0.05) {
+                // Change direction
+                const dest = {
+                    x: 100 + Math.random() * 800,
+                    y: 100 + Math.random() * 800
+                };
+                const angle = Math.atan2(dest.y - api.loc_y(), dest.x - api.loc_x()) * (180 / Math.PI);
+                api.drive(angle, 40);
+            }
+        } 
