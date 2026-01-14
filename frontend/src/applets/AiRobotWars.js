@@ -47,7 +47,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- Main Applet Execution ---
 (async function () {
     try {
-        const APPLET_VERSION = 'v2.5.8 - Recording Fix';
+        const APPLET_VERSION = 'v2.6.0 - Tournament Mode';
 
         // ═══════════════════════════════════════════════════════
         // Debug Console
@@ -202,7 +202,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             damageDealt: [0, 0],
             distanceTraveled: [0, 0],
             minesDropped: [0, 0],
-            isDraw: false
+            isDraw: false,
+            winner: null,
+            winnerSponsor: null
         };
 
         // Initialize Session Stats (Persistent across matches)
@@ -210,6 +212,18 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             blueWins: 0,
             redWins: 0,
             draws: 0
+        };
+
+        // Tournament Mode (v2.6)
+        const TOURNAMENT_ROUNDS = 7;
+        let tournamentMode = false;
+        let tournamentRound = 0;
+        let tournamentScores = { blue: 0, red: 0 };
+
+        // Robot Sponsors (parsed from script comments)
+        let robotSponsors = {
+            robot1: 'Blue Team',
+            robot2: 'Red Team'
         };
 
         let mines = [];      // Active mines on the field
@@ -482,9 +496,13 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     return;
                 }
             }
-            const winner = robots[0].damage >= 100 ? 'Red' : 'Blue';
-            const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
-            const filename = 'AIRobotWars_' + winner + 'Wins_' + timestamp + '.webm';
+            // Determine winner and get sponsor name for filename
+            const winnerIdx = robots[0].damage >= 100 ? 1 : 0;
+            const winner = winnerIdx === 0 ? 'Blue' : 'Red';
+            const winnerSponsor = battleStats.winnerSponsor || (winnerIdx === 0 ? robotSponsors.robot1 : robotSponsors.robot2);
+            // Sanitize sponsor name for filename (remove special chars)
+            const safeSponsor = winnerSponsor.replace(/[^a-zA-Z0-9]/g, '');
+            const filename = 'AiRobotWar-Winner-' + safeSponsor + '.webm';
 
             const formData = new FormData();
             formData.append('recording', recordedBlob, filename);
@@ -1209,6 +1227,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         // Default script templates
 
         const DEFAULT_SCRIPT_1 = `
+        // #Sponsor: BlueBot Industries
         // Blue Robot (The Hunter)
         // Uses Sonar for close combat and PAUSE to recharge
         function robotScript(api) {
@@ -1264,6 +1283,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         } `;
 
         const DEFAULT_SCRIPT_2 = `
+        // #Sponsor: RedBot Corp
         // Red Robot (The Sniper)
         // Camps near walls and uses Lidar. Recharges aggressively.
         function robotScript(api) {
@@ -1305,7 +1325,11 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             }
         } `;
 
-        const SCRIPT_GUIDE = `=== AI ROBOT WARS SCRIPT GUIDE(v2.3) ===
+        const SCRIPT_GUIDE = `=== AI ROBOT WARS SCRIPT GUIDE(v2.6) ===
+
+            // SPONSOR TAG (for Tournaments):
+            // #Sponsor: YourSponsorName
+            // Add at top of script to identify your team!
 
             // NEW IN V2.3:
             // - api.PAUSE(ticks): Sleep/Recharge (60 ticks = 1s)
@@ -1341,18 +1365,36 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         };
         // Initialize active scripts by compiling defaults (Synchronous)
         // Helper to safely compile or return a dummy
-        function safeCompile(code) {
-            const res = compileScript(code);
+        function safeCompile(code, robotKey) {
+            const res = compileScript(code, robotKey);
             return res.success ? res.fn : function (api) { };
         }
 
         let activeScripts = {
-            robot1: safeCompile(DEFAULT_SCRIPT_1),
-            robot2: safeCompile(DEFAULT_SCRIPT_2)
+            robot1: safeCompile(DEFAULT_SCRIPT_1, 'robot1'),
+            robot2: safeCompile(DEFAULT_SCRIPT_2, 'robot2')
         };
 
-        function compileScript(scriptCode) {
+        // Parse sponsor name from script comments
+        function parseSponsorFromScript(scriptCode) {
+            const match = scriptCode.match(/#Sponsor:\s*([^\n\r]+)/i);
+            if (match && match[1]) {
+                return match[1].trim();
+            }
+            return null;
+        }
+
+        function compileScript(scriptCode, robotKey = null) {
             try {
+                // Parse sponsor from script
+                if (robotKey) {
+                    const sponsor = parseSponsorFromScript(scriptCode);
+                    if (sponsor) {
+                        robotSponsors[robotKey] = sponsor;
+                        debugLog(`Sponsor for ${robotKey}: ${sponsor}`);
+                    }
+                }
+
                 // Create a function from the script text
                 const wrappedCode = scriptCode + '\n; return robotScript;';
                 const factory = new Function(wrappedCode);
@@ -1421,13 +1463,14 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
             document.getElementById('compile-script').onclick = function () {
                 const code = document.getElementById('script-textarea').value;
-                const result = compileScript(code);
+                const result = compileScript(code, scriptKey);
                 const statusEl = document.getElementById('compile-status');
 
                 if (result.success) {
                     customScripts[scriptKey] = code;
                     activeScripts[scriptKey] = result.fn;
-                    statusEl.innerHTML = '<span style="color:#22c55e;">Compiled successfully! Script will be used in next battle.</span>';
+                    const sponsor = robotSponsors[scriptKey];
+                    statusEl.innerHTML = `<span style="color:#22c55e;">Compiled successfully! Sponsor: ${sponsor}</span>`;
                     statusEl.style.background = 'rgba(34, 197, 94, 0.2)';
                 } else {
                     statusEl.innerHTML = '<span style="color:#ef4444;">Compile Error: ' + result.error + '</span>';
@@ -1971,12 +2014,18 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             <button id="edit-robot1" style="background:#3b82f6;border:none;padding:8px 16px;font-size:12px;color:white;border-radius:5px;cursor:pointer;margin-right:10px;">[Edit Robot 1]</button>
             <button id="edit-robot2" style="background:#ef4444;border:none;padding:8px 16px;font-size:12px;color:white;border-radius:5px;cursor:pointer;">[Edit Robot 2]</button>
           </div>
-          <button id="start-btn" style="background:#22c55e;border:none;padding:15px 40px;font-size:18px;color:white;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:bold;">
-            START BATTLE
-          </button>
-          <p style="margin:10px 0 0;font-size:12px;color:#6b7280;">Robot 1 (Blue) vs Robot 2 (Red)</p>
+          <div style="display:flex;gap:10px;margin-bottom:10px;">
+            <button id="start-btn" style="background:#22c55e;border:none;padding:15px 30px;font-size:16px;color:white;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:bold;">
+              SINGLE BATTLE
+            </button>
+            <button id="tournament-btn" style="background:#f59e0b;border:none;padding:15px 30px;font-size:16px;color:white;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:bold;">
+              TOURNAMENT (7)
+            </button>
+          </div>
+          <p style="margin:5px 0 0;font-size:11px;color:#6b7280;">${robotSponsors.robot1} (Blue) vs ${robotSponsors.robot2} (Red)</p>
         `;
                 document.getElementById('start-btn').onclick = startGame;
+                document.getElementById('tournament-btn').onclick = startTournament;
                 document.getElementById('edit-robot1').onclick = function () { showScriptEditor(1); };
                 document.getElementById('edit-robot2').onclick = function () { showScriptEditor(2); };
             } else if (currentState === GameState.PLAYING) {
@@ -2055,6 +2104,14 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         // ═══════════════════════════════════════════════════════
         // Game Loop
         // ═══════════════════════════════════════════════════════
+
+        function startTournament() {
+            debugLog('Starting Tournament Mode (7 rounds)...');
+            tournamentMode = true;
+            tournamentRound = 0;
+            tournamentScores = { blue: 0, red: 0 };
+            startGame();
+        }
 
         function startGame() {
             debugLog('Starting new game...');
@@ -2227,16 +2284,23 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 if (robots[0].damage >= 100) {
                     winner = 1; // Red wins (Blue destroyed)
                     sessionStats.redWins++;
+                    if (tournamentMode) tournamentScores.red++;
                 } else if (robots[1].damage >= 100) {
                     winner = 0; // Blue wins (Red destroyed)
                     sessionStats.blueWins++;
+                    if (tournamentMode) tournamentScores.blue++;
                 } else if (robots[0].damage < robots[1].damage) {
                     winner = 0; // Blue has more health (both out of energy)
                     sessionStats.blueWins++;
+                    if (tournamentMode) tournamentScores.blue++;
                 } else {
                     winner = 1; // Red has more health or equal
                     sessionStats.redWins++;
+                    if (tournamentMode) tournamentScores.red++;
                 }
+                // Store winner sponsor for recording filename
+                battleStats.winner = winner;
+                battleStats.winnerSponsor = winner === 0 ? robotSponsors.robot1 : robotSponsors.robot2;
             } else {
                 sessionStats.draws++;
             }
@@ -2275,6 +2339,25 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     clearInterval(endScreenInterval);
                     stopRecording();
                     debugLog('Game over! ' + (isDraw ? 'DRAW' : 'Winner decided'));
+
+                    // Tournament Mode: Auto-continue if rounds remaining
+                    if (tournamentMode) {
+                        tournamentRound++;
+                        if (tournamentRound < TOURNAMENT_ROUNDS) {
+                            debugLog(`Tournament Round ${tournamentRound + 1}/${TOURNAMENT_ROUNDS}`);
+                            // Auto-start next match after 3 seconds
+                            setTimeout(() => {
+                                startGame();
+                            }, 3000);
+                        } else {
+                            // Tournament Complete!
+                            tournamentMode = false;
+                            const tournamentWinner = tournamentScores.blue > tournamentScores.red ? 'Blue' : 'Red';
+                            const tournamentWinnerSponsor = tournamentScores.blue > tournamentScores.red ? robotSponsors.robot1 : robotSponsors.robot2;
+                            debugLog(`TOURNAMENT COMPLETE! Winner: ${tournamentWinnerSponsor} (${tournamentScores.blue}-${tournamentScores.red})`);
+                            alert(`TOURNAMENT COMPLETE!\n\nWinner: ${tournamentWinnerSponsor}\nFinal Score: ${tournamentScores.blue} - ${tournamentScores.red}`);
+                        }
+                    }
                 }
             }, 1000 / 60);
         }
@@ -2467,8 +2550,19 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             // Instructions (edit buttons are HTML overlay)
             ctx.fillStyle = '#6b7280';
             ctx.font = '12px monospace';
-            ctx.fillText('Blue vs Red • Last robot standing wins!', w / 2, 170);
-            ctx.fillText('Use buttons below to edit robot scripts', w / 2, 190);
+            ctx.fillText('Last robot standing wins!', w / 2, 170);
+
+            // Sponsor names
+            ctx.fillStyle = '#60a5fa';
+            ctx.textAlign = 'left';
+            ctx.fillText('Blue: ' + robotSponsors.robot1, 30, 200);
+            ctx.fillStyle = '#f87171';
+            ctx.textAlign = 'right';
+            ctx.fillText('Red: ' + robotSponsors.robot2, w - 30, 200);
+
+            ctx.fillStyle = '#f59e0b';
+            ctx.textAlign = 'center';
+            ctx.fillText('Tournament Mode: 7 Rounds', w / 2, 230);
 
             menuMesh.texture.needsUpdate = true;
         }
@@ -2550,13 +2644,21 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             ctx.lineWidth = 4;
             ctx.strokeRect(4, 4, w - 8, h - 8);
 
-            // Victory Header
+            // Victory Header - show sponsor name for winner
             ctx.fillStyle = isDraw ? '#fbbf24' : (winnerName === 'Blue' ? '#60a5fa' : '#f87171');
-            ctx.font = 'bold 32px monospace';
+            ctx.font = 'bold 28px monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
-            const headerText = isDraw ? "DRAW!" : `${winnerName.toUpperCase()} WINS!`;
-            ctx.fillText(headerText, w / 2, 15);
+            const winnerSponsor = winnerName === 'Blue' ? robotSponsors.robot1 : robotSponsors.robot2;
+            const headerText = isDraw ? "DRAW!" : `${winnerSponsor} WINS!`;
+            ctx.fillText(headerText, w / 2, 12);
+
+            // Tournament progress if active
+            if (tournamentMode) {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = '12px monospace';
+                ctx.fillText(`Round ${tournamentRound + 1}/${TOURNAMENT_ROUNDS}`, w / 2, 42);
+            }
 
             // Session Stats Bar
             ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
