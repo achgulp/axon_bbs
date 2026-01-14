@@ -1,0 +1,116 @@
+function robotScript(api) {
+    // 1. Core Data & Persistence
+    if (this.tick === undefined) this.tick = 0;
+    this.tick++;
+
+    const x = api.loc_x(); // 
+    const y = api.loc_y(); // 
+    const hp = api.HEALTH; // 
+    const en = api.ENERGY; // 
+    const home = api.HOME; // 
+    const enemyBase = api.ENEMY; // 
+
+    // Persistent Memory
+    if (this.state === undefined) this.state = 'STARTUP';
+    if (this.stuckTicks === undefined) this.stuckTicks = 0;
+    if (this.evasionTicks === undefined) this.evasionTicks = 0;
+    if (this.lastHP === undefined) this.lastHP = hp;
+    if (this.loopAngle === undefined) this.loopAngle = 0;
+    
+    // 2. STICKY RECHARGE: Force Return Home below 45% Energy
+    if (en < 45 || hp < 35) this.state = 'RETREAT'; // 
+
+    if (this.state === 'RETREAT' || this.state === 'STARTUP') {
+        const dHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+        if (dHome < 50) {
+            api.drive(0, 0); // 
+            api.PAUSE(60); // Rapid recharge 
+            // DO NOT LEAVE until 100% full
+            if (en >= 99 && hp >= 95) {
+                this.state = Math.random() < 0.33 ? 'HUNT' : 'DEFEND';
+            }
+            return;
+        }
+        api.drive(Math.atan2(home.y - y, home.x - x) * (180 / Math.PI), 100); // 
+        return;
+    }
+
+    // 3. ANTI-STUCK & WALL AVOIDANCE (Safe Zone)
+    // If within 100 units of a wall, steer hard toward center
+    if (x < 100 || x > 900 || y < 100 || y > 900) {
+        api.drive(Math.atan2(500 - y, 500 - x) * (180 / Math.PI), 100); // 
+        return;
+    }
+
+    // 4. HIT DETECTION: Zig-Zag Defense
+    if (hp < this.lastHP) this.evasionTicks = 120; // 2 seconds
+    this.lastHP = hp;
+
+    if (this.evasionTicks > 0) {
+        this.evasionTicks--;
+        const jitter = (this.tick % 20 < 10) ? 60 : -60;
+        api.drive(api.heading() + jitter, 100); // 
+        const qTarget = api.sonar(); // 
+        if (qTarget) api.cannon(qTarget.angle, qTarget.distance); // 
+        return;
+    }
+
+    // 5. ENERGY CONSERVATION: "Move-Stop-Move"
+    // Move for 30 ticks, Stop for 30 ticks (reduces movement cost by 50%)
+    const isMovingTick = (this.tick % 60 < 30);
+    const moveSpeed = isMovingTick ? 80 : 0;
+
+    // 6. TARGETING & SABOTAGE (Constant Scanning)
+    let target = api.sonar(); // Nearby check 
+    let angleToEnemy = 0;
+    let distToEnemy = 0;
+
+    if (target) {
+        angleToEnemy = target.angle;
+        distToEnemy = target.distance;
+    } else {
+        // Broad Lidar Sweep to find Red (Checks 4 angles per tick)
+        for (let i = 0; i < 4; i++) {
+            this.scanAngle = (this.scanAngle + 25) % 360;
+            const res = api.lidar(this.scanAngle); // 
+            if (res > 0) {
+                angleToEnemy = this.scanAngle;
+                distToEnemy = res;
+                target = true;
+                break;
+            }
+        }
+    }
+
+    if (target) {
+        api.cannon(angleToEnemy, distToEnemy); // 
+        // Reactive Mines near Enemy Base 
+        if (Math.sqrt((enemyBase.x - x)**2 + (enemyBase.y - y)**2) < 300) api.dropMine(); // 
+        
+        // Combat Stance (75% / 50% Rule)
+        if (hp > 75 && en > 75) {
+            api.drive(angleToEnemy + 90, 40); // Aggressive tanking 
+        } else {
+            api.drive(angleToEnemy + 180, 100); // Evasive retreat 
+        }
+        return;
+    }
+
+    // 7. NAVIGATION: Defensive Loops vs Hunting
+    if (this.state === 'DEFEND') {
+        const dHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+        if (this.tick % 60 === 0 || dHome > 400) {
+            const aHome = Math.atan2(home.y - y, home.x - x) * (180 / Math.PI);
+            this.loopAngle = (aHome + (Math.random() * 160 - 80)) % 360;
+        }
+        api.drive(this.loopAngle, moveSpeed); // 
+    } else {
+        // HUNT: Pulse Lidar at Red's base
+        const aRed = Math.atan2(enemyBase.y - y, enemyBase.x - x) * (180 / Math.PI);
+        api.drive(aRed, moveSpeed); // 
+        if (this.tick % 10 === 0) {
+            const range = api.lidar(aRed); // 
+            if (range > 0) api.cannon(aRed, range); // 
+        }
+    }
+}

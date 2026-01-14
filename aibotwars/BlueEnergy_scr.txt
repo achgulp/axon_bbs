@@ -1,0 +1,114 @@
+function robotScript(api) {
+    // 1. Initialise Persistent Memory
+    if (this.tick === undefined) this.tick = 0;
+    this.tick++;
+
+    const x = api.loc_x();
+    const y = api.loc_y();
+    const en = api.ENERGY; // Current Energy (0-100)
+    const hp = api.HEALTH; // Current Health (0-100)
+    const home = api.HOME;
+    const enemyBase = api.ENEMY;
+
+    // Persist variables for state, stuck detection, and scanning
+    if (this.state === undefined) this.state = 'STARTUP';
+    if (this.stuckTicks === undefined) this.stuckTicks = 0;
+    if (this.evasionTicks === undefined) this.evasionTicks = 0;
+    if (this.lastHP === undefined) this.lastHP = hp;
+    if (this.searchAngle === undefined) this.searchAngle = 0;
+
+    // 2. CRITICAL PRIORITY: Energy & Health Management
+    // Trigger retreat if energy drops below 45% or health is low
+    if (en < 45 || hp < 40) {
+        this.state = 'RETREAT';
+    }
+
+    if (this.state === 'RETREAT' || this.state === 'STARTUP') {
+        const dToHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+        if (dToHome < 50) {
+            api.drive(0, 0);
+            api.PAUSE(60); // Use v2.3 faster recharge mechanic
+            // STAY UNTIL FULL: Do not leave until 100/100
+            if (en >= 99 && hp >= 99) {
+                this.state = Math.random() < 0.33 ? 'HUNT' : 'DEFEND';
+            }
+            return;
+        }
+        api.drive(Math.atan2(home.y - y, home.x - x) * (180 / Math.PI), 100);
+        return;
+    }
+
+    // 3. SECONDARY PRIORITY: Collision & Wall Avoidance
+    // Stuck Detection: Check position progress every 10 ticks
+    if (this.lastCheck === undefined) this.lastCheck = { x: x, y: y, t: this.tick };
+    if (this.tick > this.lastCheck.t + 10) {
+        const dMoved = Math.sqrt((x - this.lastCheck.x)**2 + (y - this.lastCheck.y)**2);
+        if (api.speed() > 10 && dMoved < 3) {
+            this.stuckTicks = 40; 
+            this.escapeAngle = (api.heading() + 160 + Math.random() * 40) % 360;
+        }
+        this.lastCheck = { x: x, y: y, t: this.tick };
+    }
+
+    if (this.stuckTicks > 0) {
+        this.stuckTicks--;
+        api.drive(this.escapeAngle, 100);
+        return;
+    }
+
+    // Safe Zone: Keep 120 units away from all walls (0-1000 arena)
+    if (x < 120 || x > 880 || y < 120 || y > 880) {
+        api.drive(Math.atan2(500 - y, 500 - x) * (180 / Math.PI), 100);
+        return;
+    }
+
+    // 4. TERTIARY PRIORITY: Combat & Evasion
+    // Hit Detection Zig-Zag
+    if (hp < this.lastHP) this.evasionTicks = 180;
+    this.lastHP = hp;
+
+    if (this.evasionTicks > 0) {
+        this.evasionTicks--;
+        const jitter = (this.tick % 20 < 10) ? 65 : -65;
+        api.drive(api.heading() + jitter, 100);
+        const qTarget = api.sonar();
+        if (qTarget) api.cannon(qTarget.angle, qTarget.distance);
+        return;
+    }
+
+    // 5. ENERGY CONSERVATION: Move-Stop-Move
+    // Move for 40 ticks, stop for 20 ticks
+    const isMoving = (this.tick % 60 < 40);
+    const mSpeed = isMoving ? 80 : 0;
+
+    // 6. TARGETING: Advanced Scanning & Mining
+    const target = api.sonar();
+    if (target) {
+        api.cannon(target.angle, target.distance);
+        // Sabotage: Drop mine if combat is near enemy base or target is close
+        const dEnemy = Math.sqrt((enemyBase.x - x)**2 + (enemyBase.y - y)**2);
+        if (dEnemy < 350 || target.distance < 200) api.dropMine();
+        api.drive(target.angle + 90, 80);
+        return;
+    } else {
+        // Honing Search: Pulse Lidar toward Red's camping zone
+        const aToEnemy = Math.atan2(enemyBase.y - y, enemyBase.x - x) * (180 / Math.PI);
+        if (this.tick % 10 === 0) {
+            const range = api.lidar(aToEnemy);
+            if (range > 0) api.cannon(aToEnemy, range);
+        }
+    }
+
+    // 7. PATROL NAVIGATION (2/3 Defense, 1/3 Hunt)
+    if (this.state === 'DEFEND') {
+        const dHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+        if (this.tick % 60 === 0 || dHome > 400) {
+            const aHome = Math.atan2(home.y - y, home.x - x) * (180 / Math.PI);
+            this.loopAngle = (aHome + (Math.random() * 160 - 80)) % 360;
+        }
+        api.drive(this.loopAngle, mSpeed);
+    } else {
+        const aRed = Math.atan2(enemyBase.y - y, enemyBase.x - x) * (180 / Math.PI);
+        api.drive(aRed, mSpeed);
+    }
+}

@@ -1,0 +1,54 @@
+
+        // Blue Robot (The Hunter)
+        // Uses Sonar for close combat and PAUSE to recharge
+        function robotScript(api) {
+            const myX = api.loc_x();
+            const myY = api.loc_y();
+            const home = api.HOME;
+
+            // 1. Survival: Go Home if low energy or high damage
+            // Max Energy is 2500, so < 500 is very low (~20%)
+            if (api.ENERGY < 500 || api.HEALTH < 40) {
+                const dx = home.x - myX;
+                const dy = home.y - myY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < 80) {
+                    api.drive(0, 0); // Stop
+                    api.PAUSE(60);   // Power Nap (1 sec)
+                    return;
+                }
+
+                const angleToHome = Math.atan2(dy, dx) * (180 / Math.PI);
+                api.drive(angleToHome, 100);
+                return;
+            }
+
+            // 2. Combat: Check Sonar (Cheap & Fast)
+            const target = api.sonar();
+            if (target) {
+                api.cannon(target.angle, target.distance);
+                if (target.distance < 200) api.dropMine();
+                // Strafe
+                api.drive(target.angle + 90, 80);
+                return;
+            }
+
+            // 3. Hunt: Move towards enemy base but keep distance
+            const enemyBase = api.ENEMY;
+            const distToEnemy = Math.sqrt((myX - enemyBase.x) ** 2 + (myY - enemyBase.y) ** 2);
+
+            if (distToEnemy > 600) {
+                const angle = Math.atan2(enemyBase.y - myY, enemyBase.x - myX) * (180 / Math.PI);
+                api.drive(angle, 60);
+            } else {
+                // Circle behavior
+                api.drive(api.heading() + 2, 40);
+                // Random Lidar Potshots
+                if (Math.random() < 0.1) {
+                    const scanAngle = (api.heading() - 45 + Math.random() * 90) % 360;
+                    const range = api.lidar(scanAngle);
+                    if (range > 0) api.cannon(scanAngle, range);
+                }
+            }
+        } 

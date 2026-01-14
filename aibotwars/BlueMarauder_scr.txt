@@ -1,0 +1,106 @@
+function robotScript(api) {
+    // 1. Memory Initialization (NaN Protection & State)
+    if (this.tick === undefined) this.tick = 0;
+    this.tick++;
+
+    const x = api.loc_x();
+    const y = api.loc_y();
+    const energy = api.ENERGY;
+    const health = api.HEALTH;
+    const home = api.HOME;
+    const enemyBase = api.ENEMY;
+
+    if (this.state === undefined) this.state = 'STARTUP';
+    if (this.stuckTicks === undefined) this.stuckTicks = 0;
+    if (this.evasionTicks === undefined) this.evasionTicks = 0;
+    if (this.lastHealth === undefined) this.lastHealth = health;
+    if (this.loopAngle === undefined) this.loopAngle = 0;
+    
+    // 2. Robust Stuck & Boundary Detection
+    // Check progress every 15 ticks. If stationary while driving, we are stuck.
+    if (this.lastCheck === undefined) this.lastCheck = { x: x, y: y, t: this.tick };
+    if (this.tick > this.lastCheck.t + 15) {
+        const d = Math.sqrt((x - this.lastCheck.x)**2 + (y - this.lastCheck.y)**2);
+        if (api.speed() > 10 && d < 3) {
+            this.stuckTicks = 50; // Reverse and pivot sequence
+            this.escapeAngle = (api.heading() + 160 + (Math.random() * 40)) % 360;
+        }
+        this.lastCheck = { x: x, y: y, t: this.tick };
+    }
+
+    if (this.stuckTicks > 0) {
+        this.stuckTicks--;
+        api.drive(this.escapeAngle, 100);
+        return;
+    }
+
+    // Boundary Protection: If near walls, force steer toward center (500,500)
+    if (x < 60 || x > 940 || y < 60 || y > 940) {
+        api.drive(Math.atan2(500 - y, 500 - x) * (180 / Math.PI), 100);
+        // Reset loopAngle so we don't head right back into the wall
+        this.loopAngle = (Math.atan2(500 - y, 500 - x) * (180 / Math.PI)); 
+        return;
+    }
+
+    // 3. High-Priority: Emergency Energy & Refuelling
+    // Hard Return: If energy < 30% or health < 30%, stop everything and go HOME 
+    if (energy < 30 || health < 30) this.state = 'RETURN_HOME';
+
+    if (this.state === 'RETURN_HOME' || this.state === 'STARTUP') {
+        const dHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+        if (dHome < 50) {
+            api.drive(0, 0);
+            api.PAUSE(60); // Use v2.3 faster recharge 
+            // Stay on the pad until 100/100
+            if (energy >= 99 && health >= 99) {
+                this.state = Math.random() < 0.33 ? 'HUNT' : 'DEFENSIVE_LOOP';
+            }
+            return;
+        }
+        api.drive(Math.atan2(home.y - y, home.x - x) * (180 / Math.PI), 100);
+        return;
+    }
+
+    // 4. Reactive Evasion (Hit Detection)
+    if (health < this.lastHealth) this.evasionTicks = 180; // 3 seconds of zig-zag
+    this.lastHealth = health;
+
+    if (this.evasionTicks > 0) {
+        this.evasionTicks--;
+        const jitter = (this.tick % 20 < 10) ? 60 : -60;
+        api.drive(api.heading() + jitter, 100);
+        const qTarget = api.sonar(); // Instant lock 
+        if (qTarget) api.cannon(qTarget.angle, qTarget.distance);
+        return;
+    }
+
+    // 5. Reactive Sabotage (Always Active)
+    // Drop mines if near enemy base regardless of state 
+    const dEnemyBase = Math.sqrt((enemyBase.x - x)**2 + (enemyBase.y - y)**2);
+    if (dEnemyBase < 350) api.dropMine();
+
+    // 6. Combat & Navigation Execution
+    const target = api.sonar(); 
+    if (target) {
+        api.cannon(target.angle, target.distance);
+        const strafe = (this.tick % 40 < 20) ? 90 : -90;
+        api.drive(target.angle + strafe, 100);
+    } else if (this.state === 'DEFENSIVE_LOOP') {
+        // 2/3 of the time: Large erratic loops near HOME base
+        const dHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+        if (this.tick % 60 === 0 || dHome > 500) {
+            const aHome = Math.atan2(home.y - y, home.x - x) * (180 / Math.PI);
+            this.loopAngle = (aHome + (Math.random() * 200 - 100)) % 360;
+        }
+        api.drive(this.loopAngle, 100);
+    } else {
+        // 1/3 of the time: Hunt Red's base
+        const aRed = Math.atan2(enemyBase.y - y, enemyBase.x - x) * (180 / Math.PI);
+        api.drive(aRed, 75);
+        // Fast, accurate Lidar sweeps 
+        if (this.tick % 10 === 0) {
+            const range = api.lidar(aRed); 
+            if (range > 0) api.cannon(aRed, range);
+        }
+    }
+}

@@ -1,0 +1,130 @@
+function robotScript(api) {
+    // 1. Core Data & Persistence
+    if (this.tick === undefined) this.tick = 0;
+    this.tick++;
+
+    const x = api.loc_x();
+    const y = api.loc_y();
+    const hp = api.HEALTH;
+    const en = api.ENERGY;
+    const home = api.HOME;
+    const enemyBase = api.ENEMY;
+
+    // Initialize State & Memory
+    if (this.state === undefined) this.state = 'STARTUP';
+    if (this.stuckTicks === undefined) this.stuckTicks = 0;
+    if (this.evasionTicks === undefined) this.evasionTicks = 0;
+    if (this.lastHP === undefined) this.lastHP = hp;
+    if (this.scanAngle === undefined) this.scanAngle = 0;
+    if (this.loopAngle === undefined) this.loopAngle = 0;
+    
+    // 2. High-Speed Stuck & Wall Recovery
+    // Check progress every 10 ticks (0.16s) to clear corners immediately
+    if (this.lastCheck === undefined) this.lastCheck = { x: x, y: y, t: this.tick };
+    if (this.tick > this.lastCheck.t + 10) {
+        const d = Math.sqrt((x - this.lastCheck.x)**2 + (y - this.lastCheck.y)**2);
+        if (api.speed() > 15 && d < 4) {
+            this.stuckTicks = 40; 
+            this.escapeAngle = (api.heading() + 145 + Math.random() * 50) % 360;
+        }
+        this.lastCheck = { x: x, y: y, t: this.tick };
+    }
+
+    if (this.stuckTicks > 0) {
+        this.stuckTicks--;
+        api.drive(this.escapeAngle, 100);
+        return;
+    }
+
+    // Boundary Shield: Hard turn toward center if near walls
+    if (x < 70 || x > 930 || y < 70 || y > 930) {
+        api.drive(Math.atan2(500 - y, 500 - x) * (180 / Math.PI), 100);
+        return;
+    }
+
+    // 3. Emergency & Evasion Triggers
+    if (en < 30 || hp < 30) this.state = 'RETREAT';
+    if (hp < this.lastHP) this.evasionTicks = 150; // 2.5s zig-zag on hit
+    this.lastHP = hp;
+
+    // 4. Combat States (Home vs. Hunt)
+    const distHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+
+    if (this.state === 'STARTUP' || this.state === 'RETREAT') {
+        if (distHome < 60) {
+            api.drive(0, 0);
+            api.PAUSE(40); // Recharge at base 
+            if (en >= 98 && hp >= 95) {
+                this.state = Math.random() < 0.33 ? 'HUNT' : 'DEFEND';
+            }
+            return;
+        }
+        api.drive(Math.atan2(home.y - y, home.x - x) * (180 / Math.PI), 100);
+        return;
+    }
+
+    // 5. Targeting Engine (Sonar + Multi-Sweep Lidar)
+    let foundTarget = false;
+    let targetAngle = 0;
+    let targetDist = 0;
+
+    const sTarget = api.sonar(); // Instant nearby check 
+    if (sTarget) {
+        foundTarget = true;
+        targetAngle = sTarget.angle;
+        targetDist = sTarget.distance;
+    } else {
+        // Systemic Sweep: Check 3 angles per tick to find Red faster
+        for (let i = 0; i < 3; i++) {
+            this.scanAngle = (this.scanAngle + 20) % 360;
+            const res = api.lidar(this.scanAngle); // 
+            if (res > 0) {
+                foundTarget = true;
+                targetAngle = this.scanAngle;
+                targetDist = res;
+                break;
+            }
+        }
+    }
+
+    // 6. Adaptive Combat & Reactive Mining
+    if (foundTarget) {
+        api.cannon(targetAngle, targetDist); // 
+        
+        // Reactive Sabotage: Drop mine if combat is near ENEMY base or target is close 
+        const dEnemy = Math.sqrt((api.ENEMY.x - x)**2 + (api.ENEMY.y - y)**2);
+        if (dEnemy < 350 || targetDist < 200) api.dropMine();
+
+        // User Requested Threshold Logic
+        if (hp > 75 && en > 75) {
+            // Aggressive: return fire, slow strafe for stability
+            api.drive(targetAngle + 90, 40);
+        } else if (hp < 50 || en < 50 || this.evasionTicks > 0) {
+            // Evasive: High-speed zig-zag toward safety
+            this.evasionTicks--;
+            const zig = (this.tick % 30 < 15) ? 65 : -65;
+            api.drive(targetAngle + 180 + zig, 100);
+        } else {
+            // Normal Combat: Fast strafe
+            api.drive(targetAngle + 95, 100);
+        }
+        return;
+    }
+
+    // 7. Navigation
+    if (this.state === 'DEFEND') {
+        // Wide erratic defensive loops (Stay within 400 of HOME)
+        if (this.tick % 50 === 0 || distHome > 400) {
+            const aHome = Math.atan2(home.y - y, home.x - x) * (180 / Math.PI);
+            this.loopAngle = (aHome + (Math.random() * 180 - 90)) % 360;
+        }
+        api.drive(this.loopAngle, 100);
+    } else {
+        // HUNT: Cautious advance toward enemy base
+        const aRed = Math.atan2(api.ENEMY.y - y, api.ENEMY.x - x) * (180 / Math.PI);
+        api.drive(aRed, 70);
+        // Pulse Lidar at Red's base location
+        const basePing = api.lidar(aRed);
+        if (basePing > 0) api.cannon(aRed, basePing);
+    }
+}

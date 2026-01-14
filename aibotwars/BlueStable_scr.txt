@@ -1,0 +1,105 @@
+// #Sponsor: StrategizeAI
+// Blue Robot (Marauder 6.1) - Fixed NaN bug
+function robotScript(api) {
+    // 1. Core Data & Persistence
+    if (this.tick === undefined) this.tick = 0;
+    this.tick++;
+
+    const x = api.loc_x();
+    const y = api.loc_y();
+    const energy = api.ENERGY;
+    const health = api.HEALTH;
+    const home = api.HOME;
+    const enemyBase = api.ENEMY;
+
+    // Initialization - FIX: Initialize loopAngle to prevent NaN
+    if (this.state === undefined) this.state = 'STARTUP';
+    if (this.stuckTicks === undefined) this.stuckTicks = 0;
+    if (this.evasionTicks === undefined) this.evasionTicks = 0;
+    if (this.lastHealth === undefined) this.lastHealth = health;
+    if (this.loopAngle === undefined) this.loopAngle = Math.random() * 360; // FIX: Initialize!
+    
+    if (this.lastCheckTick === undefined) {
+        this.lastCheckTick = this.tick;
+        this.checkPos = { x: x, y: y };
+    }
+
+    if (this.tick > this.lastCheckTick + 15) {
+        const d = Math.sqrt((x - this.checkPos.x)**2 + (y - this.checkPos.y)**2);
+        if (api.speed() > 20 && d < 5) {
+            this.stuckTicks = 45;
+            this.escapeAngle = (api.heading() + 140 + Math.random() * 80) % 360;
+        }
+        this.checkPos = { x: x, y: y };
+        this.lastCheckTick = this.tick;
+    }
+
+    // 2. High-Priority Overrides (Wall & Stuck)
+    if (this.stuckTicks > 0) {
+        this.stuckTicks--;
+        api.drive(this.escapeAngle, 100);
+        return;
+    }
+
+    // Boundary Protection
+    if (x < 70 || x > 930 || y < 70 || y > 930) {
+        api.drive(Math.atan2(500 - y, 500 - x) * (180 / Math.PI), 100);
+        return;
+    }
+
+    // 3. Emergency Logic
+    if (energy < 30 || health < 30) this.state = 'RETURN_HOME';
+
+    if (this.state === 'RETURN_HOME' || this.state === 'STARTUP') {
+        const dHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+        if (dHome < 60) {
+            api.drive(0, 0);
+            api.PAUSE(60);
+            if (energy >= 98 && health >= 90) {
+                this.state = Math.random() < 0.33 ? 'HUNT' : 'DEFENSIVE_LOOP';
+            }
+            return;
+        }
+        api.drive(Math.atan2(home.y - y, home.x - x) * (180 / Math.PI), 100);
+        return;
+    }
+
+    // 4. Hit Detection: Zig-Zag Defense
+    if (health < this.lastHealth) this.evasionTicks = 180;
+    this.lastHealth = health;
+
+    if (this.evasionTicks > 0) {
+        this.evasionTicks--;
+        const jitter = (this.tick % 20 < 10) ? 70 : -70;
+        api.drive(api.heading() + jitter, 100);
+        const qTarget = api.sonar();
+        if (qTarget) api.cannon(qTarget.angle, qTarget.distance);
+        return;
+    }
+
+    // 5. Reactive Sabotage
+    const dEnemy = Math.sqrt((enemyBase.x - x)**2 + (enemyBase.y - y)**2);
+    if (dEnemy < 280) api.dropMine();
+
+    // 6. Primary Combat & Navigation
+    const target = api.sonar();
+    if (target) {
+        api.cannon(target.angle, target.distance);
+        const strafe = (this.tick % 40 < 20) ? 90 : -90;
+        api.drive(target.angle + strafe, 100);
+    } else if (this.state === 'DEFENSIVE_LOOP') {
+        const dHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+        if (this.tick % 60 === 0 || dHome > 450) {
+            const aHome = Math.atan2(home.y - y, home.x - x) * (180 / Math.PI);
+            this.loopAngle = (aHome + (Math.random() * 160 - 80)) % 360;
+        }
+        api.drive(this.loopAngle, 100);
+    } else {
+        const aRed = Math.atan2(enemyBase.y - y, enemyBase.x - x) * (180 / Math.PI);
+        api.drive(aRed, 70);
+        if (this.tick % 15 === 0) {
+            const range = api.lidar(aRed);
+            if (range > 0) api.cannon(aRed, range);
+        }
+    }
+}

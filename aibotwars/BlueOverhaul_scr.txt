@@ -1,0 +1,117 @@
+function robotScript(api) {
+    // 1. Data Initialization & Persistence
+    if (this.tick === undefined) this.tick = 0;
+    this.tick++;
+
+    const x = api.loc_x();
+    const y = api.loc_y();
+    const energy = api.ENERGY;
+    const health = api.HEALTH;
+    const home = api.HOME;
+    const enemyBase = api.ENEMY;
+
+    // Persistent State Variables
+    if (this.state === undefined) this.state = 'STARTUP';
+    if (this.stuckTicks === undefined) this.stuckTicks = 0;
+    if (this.evasionTicks === undefined) this.evasionTicks = 0;
+    if (this.lastHealth === undefined) this.lastHealth = health;
+    if (this.loopHeading === undefined) this.loopHeading = Math.random() * 360;
+
+    // 2. High-Speed Stuck Recovery (Faster Detection)
+    if (this.lastCheck === undefined) this.lastCheck = { x: x, y: y, t: this.tick };
+    // Check every 8 ticks (~0.13s) for movement to clear corners immediately
+    if (this.tick > this.lastCheck.t + 8) {
+        const d = Math.sqrt((x - this.lastCheck.x)**2 + (y - this.lastCheck.y)**2);
+        if (api.speed() > 10 && d < 2) {
+            this.stuckTicks = 35; // Reverse and hard pivot
+            this.escapeAngle = (api.heading() + 180 + (Math.random() * 60 - 30)) % 360;
+        }
+        this.lastCheck = { x: x, y: y, t: this.tick };
+    }
+
+    if (this.stuckTicks > 0) {
+        this.stuckTicks--;
+        api.drive(this.escapeAngle, 100);
+        return;
+    }
+
+    // Wall Buffer: Keep a safe distance (100 units) from all boundaries
+    if (x < 100 || x > 900 || y < 100 || y > 900) {
+        api.drive(Math.atan2(500 - y, 500 - x) * (180 / Math.PI), 100);
+        return;
+    }
+
+    // 3. Emergency Energy & Deep Recharge
+    // Emergency Return at 30% energy or 35% health
+    if (energy < 30 || health < 35) this.state = 'RETREAT';
+
+    if (this.state === 'RETREAT' || this.state === 'STARTUP') {
+        const distToHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+        if (distToHome < 50) {
+            api.drive(0, 0);
+            api.PAUSE(30); // Accelerated v2.3 recharge
+            // STAY UNTIL FULL: Do not leave until energy and health are topped off
+            if (energy >= 99 && health >= 95) {
+                // 2/3 Defense Loops, 1/3 Hunt
+                this.state = Math.random() < 0.33 ? 'HUNT' : 'DEFENSE_LOOP';
+            }
+            return;
+        }
+        api.drive(Math.atan2(home.y - y, home.x - x) * (180 / Math.PI), 100);
+        return;
+    }
+
+    // 4. Hit Detection: Reactive Zig-Zag Defense
+    if (health < this.lastHealth) this.evasionTicks = 180; // 3 second jitter
+    this.lastHealth = health;
+
+    if (this.evasionTicks > 0) {
+        this.evasionTicks--;
+        const jitter = (this.tick % 20 < 10) ? 45 : -45;
+        api.drive(api.heading() + jitter, 100);
+        const qTarget = api.sonar();
+        if (qTarget) api.cannon(qTarget.angle, qTarget.distance);
+        return;
+    }
+
+    // 5. Combat & Reactive Sabotage
+    const target = api.sonar();
+    if (target) {
+        api.cannon(target.angle, target.distance);
+        
+        // Reactive Mines: Only drop if combat brings us near Red base
+        const distToEnemy = Math.sqrt((enemyBase.x - x)**2 + (enemyBase.y - y)**2);
+        if (distToEnemy < 350) api.dropMine();
+
+        const strafe = (this.tick % 40 < 20) ? 90 : -90;
+        api.drive(target.angle + strafe, 100);
+        return;
+    }
+
+    // 6. Navigation: The "Strict Leash" Loops
+    const distFromHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+
+    if (this.state === 'DEFENSIVE_LOOP') {
+        // Stay within 350 units of home (The Leash)
+        if (this.tick % 50 === 0 || distFromHome > 350) {
+            const angleToHome = Math.atan2(home.y - y, home.x - x) * (180 / Math.PI);
+            // Randomly pick a direction generally biased toward home to stay close
+            this.loopHeading = (angleToHome + (Math.random() * 180 - 90)) % 360;
+        }
+        api.drive(this.loopHeading, 100);
+    } 
+    else if (this.state === 'HUNT') {
+        // Cautious advance toward the enemy base
+        const angleToRed = Math.atan2(enemyBase.y - y, enemyBase.x - x) * (180 / Math.PI);
+        api.drive(angleToRed, 75);
+        
+        // Accurate Firing: Lidar pulses every 10 ticks toward their known camp
+        if (this.tick % 10 === 0) {
+            const range = api.lidar(angleToRed);
+            if (range > 0) api.cannon(angleToRed, range);
+        }
+        
+        // If we wander too far during a hunt (> 600 units), go back to check battery
+        if (distFromHome > 600) this.state = 'RETREAT';
+    }
+}

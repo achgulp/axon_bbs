@@ -47,7 +47,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- Main Applet Execution ---
 (async function () {
     try {
-        const APPLET_VERSION = 'v2.6.0 - Tournament Mode';
+        const APPLET_VERSION = 'v2.8.5';
 
         // ═══════════════════════════════════════════════════════
         // Debug Console
@@ -692,6 +692,27 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             }
 
             updatePosition() {
+                // Validate position and heading before updating mesh
+                if (isNaN(this.x) || isNaN(this.y) || !isFinite(this.x) || !isFinite(this.y)) {
+                    debugLog('ERROR: Robot ' + this.id + ' has invalid position! x=' + this.x + ' y=' + this.y + ' - RESETTING TO BASE');
+                    const base = BASES[this.id];
+                    this.x = base.x;
+                    this.y = base.y;
+                    this.speed = 0;
+                    this.targetSpeed = 0;
+                }
+
+                // Also validate heading
+                if (isNaN(this.heading) || !isFinite(this.heading)) {
+                    debugLog('ERROR: Robot ' + this.id + ' has invalid heading! heading=' + this.heading + ' - RESETTING');
+                    this.heading = 0;
+                    this.targetHeading = 0;
+                }
+
+                // Clamp to arena bounds (safety net)
+                this.x = Math.max(ROBOT_SIZE, Math.min(ARENA_SIZE - ROBOT_SIZE, this.x));
+                this.y = Math.max(ROBOT_SIZE, Math.min(ARENA_SIZE - ROBOT_SIZE, this.y));
+
                 // Convert game coordinates to 3D world coordinates
                 // Arena center is at (0,0), scale to world units
                 const scale = 0.1; // 1000 arena units = 100 world units
@@ -699,6 +720,16 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 this.mesh.position.z = (this.y - ARENA_SIZE / 2) * scale;
                 this.mesh.position.y = 0.5;
                 this.mesh.rotation.y = -this.heading * (Math.PI / 180);
+
+                // Ensure mesh is visible and in scene
+                if (!this.mesh.visible) {
+                    debugLog('WARNING: Robot ' + this.id + ' mesh was invisible, making visible');
+                    this.mesh.visible = true;
+                }
+                if (!this.mesh.parent) {
+                    debugLog('WARNING: Robot ' + this.id + ' mesh was not in scene, re-adding');
+                    scene.add(this.mesh);
+                }
             }
 
             // Robot API methods
@@ -832,6 +863,16 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             }
 
             cannon(degree, distance) {
+                // Validate inputs - reject NaN which would create invisible missiles
+                if (isNaN(degree) || !isFinite(degree)) {
+                    debugLog('WARNING: Robot ' + this.id + ' cannon() received NaN degree, ignoring');
+                    return false;
+                }
+                if (isNaN(distance) || !isFinite(distance) || distance <= 0) {
+                    debugLog('WARNING: Robot ' + this.id + ' cannon() received invalid distance, ignoring');
+                    return false;
+                }
+
                 const now = Date.now();
                 if (now - this.lastCannonTime < CANNON_COOLDOWN) {
                     return false; // Still cooling down
@@ -889,6 +930,15 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             }
 
             drive(degree, speed) {
+                // Validate inputs - reject NaN which can corrupt position
+                if (isNaN(degree) || !isFinite(degree)) {
+                    debugLog('WARNING: Robot ' + this.id + ' drive() received NaN degree, ignoring');
+                    return;
+                }
+                if (isNaN(speed) || !isFinite(speed)) {
+                    debugLog('WARNING: Robot ' + this.id + ' drive() received NaN speed, ignoring');
+                    return;
+                }
                 this.targetHeading = (degree + 360) % 360;
                 this.targetSpeed = Math.max(0, Math.min(MAX_SPEED, speed));
             }
@@ -1041,7 +1091,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     // Treat obstacles as circles of radius size/1.5 for simplicity
                     const minDist = ROBOT_SIZE + obs.size * 0.6;
 
-                    if (dist < minDist) {
+                    if (dist < minDist && dist > 0.1) { // Prevent div-by-zero
                         // Bounce/Slide
                         const overlap = minDist - dist;
                         const nx = dx / dist;
@@ -1060,7 +1110,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     const dx = other.x - this.x;
                     const dy = other.y - this.y;
                     const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist < ROBOT_SIZE * 2) {
+                    if (dist < ROBOT_SIZE * 2 && dist > 0.1) { // Prevent div-by-zero
                         // Push apart
                         const overlap = ROBOT_SIZE * 2 - dist;
                         const nx = dx / dist;
@@ -1073,6 +1123,19 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                         this.damage += 0.5;
                         other.damage += 0.5;
                     }
+                }
+
+                // FINAL bounds check after all collisions (v2.8.1 fix)
+                // This prevents robots from being pushed out of bounds
+                this.x = Math.max(ROBOT_SIZE, Math.min(ARENA_SIZE - ROBOT_SIZE, this.x));
+                this.y = Math.max(ROBOT_SIZE, Math.min(ARENA_SIZE - ROBOT_SIZE, this.y));
+
+                // Safety check for NaN positions (shouldn't happen now, but just in case)
+                if (isNaN(this.x) || isNaN(this.y)) {
+                    debugLog('WARNING: Robot ' + this.id + ' had NaN position, resetting to base');
+                    const base = BASES[this.id];
+                    this.x = base.x;
+                    this.y = base.y;
                 }
 
                 // Update engine sound based on speed
@@ -1363,6 +1426,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             robot1: DEFAULT_SCRIPT_1,
             robot2: DEFAULT_SCRIPT_2
         };
+
         // Initialize active scripts by compiling defaults (Synchronous)
         // Helper to safely compile or return a dummy
         function safeCompile(code, robotKey) {
@@ -1374,6 +1438,54 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             robot1: safeCompile(DEFAULT_SCRIPT_1, 'robot1'),
             robot2: safeCompile(DEFAULT_SCRIPT_2, 'robot2')
         };
+
+        // Load saved scripts from BBS storage
+        async function loadSavedScripts() {
+            try {
+                const savedData = await window.bbs.getData();
+                if (savedData && savedData.scripts) {
+                    debugLog('Loading saved scripts...');
+                    if (savedData.scripts.robot1) {
+                        customScripts.robot1 = savedData.scripts.robot1;
+                        const result = compileScript(savedData.scripts.robot1, 'robot1');
+                        if (result.success) {
+                            activeScripts.robot1 = result.fn;
+                            debugLog('Loaded Blue script: ' + robotSponsors.robot1);
+                        }
+                    }
+                    if (savedData.scripts.robot2) {
+                        customScripts.robot2 = savedData.scripts.robot2;
+                        const result = compileScript(savedData.scripts.robot2, 'robot2');
+                        if (result.success) {
+                            activeScripts.robot2 = result.fn;
+                            debugLog('Loaded Red script: ' + robotSponsors.robot2);
+                        }
+                    }
+                    // Update menu overlay with loaded sponsor names
+                    if (menuMesh) updateMenuOverlay();
+                    debugLog('✅ Scripts loaded from storage');
+                } else {
+                    debugLog('No saved scripts found, using defaults');
+                }
+            } catch (e) {
+                debugLog('Error loading scripts: ' + e.message);
+            }
+        }
+
+        // Save scripts to BBS storage
+        async function saveScriptsToStorage() {
+            try {
+                await window.bbs.saveData({
+                    scripts: {
+                        robot1: customScripts.robot1,
+                        robot2: customScripts.robot2
+                    }
+                });
+                debugLog('✅ Scripts saved to storage');
+            } catch (e) {
+                debugLog('Error saving scripts: ' + e.message);
+            }
+        }
 
         // Parse sponsor name from script comments
         function parseSponsorFromScript(scriptCode) {
@@ -1470,8 +1582,12 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     customScripts[scriptKey] = code;
                     activeScripts[scriptKey] = result.fn;
                     const sponsor = robotSponsors[scriptKey];
-                    statusEl.innerHTML = `<span style="color:#22c55e;">Compiled successfully! Sponsor: ${sponsor}</span>`;
+                    statusEl.innerHTML = `<span style="color:#22c55e;">Compiled & Saved! Sponsor: ${sponsor}</span>`;
                     statusEl.style.background = 'rgba(34, 197, 94, 0.2)';
+                    // Save to persistent storage
+                    saveScriptsToStorage();
+                    // Update menu to show new sponsor names
+                    if (menuMesh) updateMenuOverlay();
                 } else {
                     statusEl.innerHTML = '<span style="color:#ef4444;">Compile Error: ' + result.error + '</span>';
                     statusEl.style.background = 'rgba(239, 68, 68, 0.2)';
@@ -2011,21 +2127,15 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             if (currentState === GameState.MENU) {
                 panel.innerHTML = `
             <div style = "margin-bottom:15px;" >
-            <button id="edit-robot1" style="background:#3b82f6;border:none;padding:8px 16px;font-size:12px;color:white;border-radius:5px;cursor:pointer;margin-right:10px;">[Edit Robot 1]</button>
-            <button id="edit-robot2" style="background:#ef4444;border:none;padding:8px 16px;font-size:12px;color:white;border-radius:5px;cursor:pointer;">[Edit Robot 2]</button>
+            <button id="edit-robot1" style="background:#3b82f6;border:none;padding:8px 16px;font-size:12px;color:white;border-radius:5px;cursor:pointer;margin-right:10px;">[Edit Blue Script]</button>
+            <button id="edit-robot2" style="background:#ef4444;border:none;padding:8px 16px;font-size:12px;color:white;border-radius:5px;cursor:pointer;">[Edit Red Script]</button>
           </div>
-          <div style="display:flex;gap:10px;margin-bottom:10px;">
-            <button id="start-btn" style="background:#22c55e;border:none;padding:15px 30px;font-size:16px;color:white;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:bold;">
-              SINGLE BATTLE
-            </button>
-            <button id="tournament-btn" style="background:#f59e0b;border:none;padding:15px 30px;font-size:16px;color:white;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:bold;">
-              TOURNAMENT (7)
-            </button>
-          </div>
-          <p style="margin:5px 0 0;font-size:11px;color:#6b7280;">${robotSponsors.robot1} (Blue) vs ${robotSponsors.robot2} (Red)</p>
+          <button id="start-btn" style="background:#22c55e;border:none;padding:15px 40px;font-size:18px;color:white;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:bold;">
+            START (7 Rounds)
+          </button>
+          <p style="margin:8px 0 0;font-size:11px;color:#6b7280;">${robotSponsors.robot1} (Blue) vs ${robotSponsors.robot2} (Red)</p>
         `;
                 document.getElementById('start-btn').onclick = startGame;
-                document.getElementById('tournament-btn').onclick = startTournament;
                 document.getElementById('edit-robot1').onclick = function () { showScriptEditor(1); };
                 document.getElementById('edit-robot2').onclick = function () { showScriptEditor(2); };
             } else if (currentState === GameState.PLAYING) {
@@ -2105,16 +2215,21 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         // Game Loop
         // ═══════════════════════════════════════════════════════
 
-        function startTournament() {
-            debugLog('Starting Tournament Mode (7 rounds)...');
-            tournamentMode = true;
-            tournamentRound = 0;
-            tournamentScores = { blue: 0, red: 0 };
-            startGame();
-        }
-
         function startGame() {
-            debugLog('Starting new game...');
+            // First call initializes the 7-round session
+            if (!tournamentMode) {
+                debugLog('Starting 7-Round Battle...');
+                tournamentMode = true;
+                tournamentRound = 0;
+                tournamentScores = { blue: 0, red: 0 };
+
+                // Start recording once for entire session
+                initAudio();
+                startRecording();
+                debugLog('🔴 Recording started (7 rounds)');
+            }
+
+            debugLog(`Round ${tournamentRound + 1}/${TOURNAMENT_ROUNDS}...`);
 
             // Hide 3D overlays and HTML edit buttons
             if (winOverlay) winOverlay.visible = false;
@@ -2182,13 +2297,12 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
             updateControlPanel();
 
-            // Initialize audio and start engine sounds
-            initAudio();
+            // Audio already initialized in first call
+            if (tournamentRound === 0) {
+                initAudio();
+            }
             startEngineSound(0);
             startEngineSound(1);
-
-            // Start video recording automatically
-            startRecording();
 
             // Start game loop
             if (gameLoop) clearInterval(gameLoop);
@@ -2329,33 +2443,38 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             // Render the win screen first so it gets captured in the recording
             renderer.render(scene, camera);
 
-            // Keep rendering the win screen for 2 seconds before stopping recording
-            // This ensures the end screen is captured in the video
+            // Keep rendering the win screen for 2 seconds before proceeding
             let endScreenFrames = 0;
             const endScreenInterval = setInterval(() => {
                 renderer.render(scene, camera);
                 endScreenFrames++;
                 if (endScreenFrames >= 120) { // ~2 seconds at 60fps
                     clearInterval(endScreenInterval);
-                    stopRecording();
-                    debugLog('Game over! ' + (isDraw ? 'DRAW' : 'Winner decided'));
 
                     // Tournament Mode: Auto-continue if rounds remaining
                     if (tournamentMode) {
                         tournamentRound++;
                         if (tournamentRound < TOURNAMENT_ROUNDS) {
                             debugLog(`Tournament Round ${tournamentRound + 1}/${TOURNAMENT_ROUNDS}`);
-                            // Auto-start next match after 3 seconds
+                            // Auto-start next match after 1 second (shorter pause)
                             setTimeout(() => {
                                 startGame();
-                            }, 3000);
+                            }, 1000);
                         } else {
-                            // Tournament Complete!
-                            tournamentMode = false;
+                            // Tournament Complete! Stop recording now
                             const tournamentWinner = tournamentScores.blue > tournamentScores.red ? 'Blue' : 'Red';
                             const tournamentWinnerSponsor = tournamentScores.blue > tournamentScores.red ? robotSponsors.robot1 : robotSponsors.robot2;
+
+                            // Store tournament winner for filename
+                            battleStats.winnerSponsor = tournamentWinnerSponsor;
+
                             debugLog(`TOURNAMENT COMPLETE! Winner: ${tournamentWinnerSponsor} (${tournamentScores.blue}-${tournamentScores.red})`);
-                            alert(`TOURNAMENT COMPLETE!\n\nWinner: ${tournamentWinnerSponsor}\nFinal Score: ${tournamentScores.blue} - ${tournamentScores.red}`);
+
+                            // Now stop recording (covers all 7 matches)
+                            stopRecording();
+                            tournamentMode = false;
+
+                            alert(`BATTLE COMPLETE!\n\nWinner: ${tournamentWinnerSponsor}\nFinal Score: ${tournamentScores.blue} - ${tournamentScores.red}`);
                         }
                     }
                 }
@@ -2416,7 +2535,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             ctx.font = 'bold 32px monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('AI ROBOT WARS v2.4', 256, 32);
+            ctx.fillText('AI ROBOT WARS ' + APPLET_VERSION, 256, 32);
 
             const titleTex = new THREE.CanvasTexture(titleCanvas);
             const titleMat = new THREE.MeshBasicMaterial({
@@ -2544,8 +2663,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             ctx.strokeRect(w / 2 - 100, 90, 200, 50);
 
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 20px monospace';
-            ctx.fillText('START BATTLE', w / 2, 120);
+            ctx.font = 'bold 18px monospace';
+            ctx.fillText('START (7 Rounds)', w / 2, 120);
 
             // Instructions (edit buttons are HTML overlay)
             ctx.fillStyle = '#6b7280';
@@ -2740,13 +2859,15 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         initScene();
         createUI(); // Initialize HTML UI overlay (health bars, control panel)
 
+        // Load saved scripts from storage
+        await loadSavedScripts();
 
         // Initial render
         renderer.render(scene, camera);
 
         debugLog('✅ AI Robot Wars ready!');
         console.log('═══════════════════════════════════════════════════');
-        console.log('🤖 Ready to battle! Click START BATTLE to begin.');
+        console.log('🤖 Ready to battle! Click START to begin.');
         console.log('═══════════════════════════════════════════════════');
 
     } catch (err) {

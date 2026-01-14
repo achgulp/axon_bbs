@@ -1,0 +1,123 @@
+// #Sponsor: StrategizeAI
+// Blue Robot (Fortress 7.0) - Defensive Base Guardian
+
+// Feature	   Old Script	          New Script
+// Territory	   Wandered everywhere	  Stays within 300 units of home
+// Attack Trigger  Random 33%	          Only at 90%+ health AND energy
+// Return Home	   At 30% health/energy	  At 70% health or 50% energy
+// After Mining	   Kept exploring	  Immediately returns home
+// Base Orbit	   Erratic loops	  Controlled patrol pattern
+//This "turtle" strategy means Blue will:
+// Stay near its base where it can quickly recharge
+// Only venture out for attack runs when fully topped up
+// Immediately retreat when taking damage or low on resources
+
+
+
+function robotScript(api) {
+    // Initialization
+    if (this.tick === undefined) this.tick = 0;
+    this.tick++;
+    
+    if (this.state === undefined) this.state = 'PATROL';
+    if (this.patrolAngle === undefined) this.patrolAngle = Math.random() * 360;
+    if (this.lastHealth === undefined) this.lastHealth = api.HEALTH;
+    if (this.evasionTicks === undefined) this.evasionTicks = 0;
+
+    const x = api.loc_x();
+    const y = api.loc_y();
+    const energy = api.ENERGY;
+    const health = api.HEALTH;
+    const home = api.HOME;
+    const enemyBase = api.ENEMY;
+    
+    // Distance calculations
+    const dHome = Math.sqrt((home.x - x)**2 + (home.y - y)**2);
+    const dEnemy = Math.sqrt((enemyBase.x - x)**2 + (enemyBase.y - y)**2);
+    const angleToHome = Math.atan2(home.y - y, home.x - x) * (180 / Math.PI);
+    const angleToEnemy = Math.atan2(enemyBase.y - y, enemyBase.x - x) * (180 / Math.PI);
+    
+    // === TERRITORY LIMIT: Stay within 1/3 of map from home ===
+    const MAX_RANGE = 300; // ~1/3 of map diagonal
+    const ATTACK_RANGE = 500; // Only go further when attacking
+    
+    // === PRIORITY 1: Return home if damaged or low energy ===
+    if (health < 70 || energy < 50) {
+        this.state = 'RETURN';
+    }
+    
+    // === PRIORITY 2: Evasion when hit ===
+    if (health < this.lastHealth) {
+        this.evasionTicks = 30; // Quick dodge
+    }
+    this.lastHealth = health;
+    
+    if (this.evasionTicks > 0) {
+        this.evasionTicks--;
+        const jitter = (this.tick % 10 < 5) ? 60 : -60;
+        api.drive(api.heading() + jitter, 100);
+        const target = api.sonar();
+        if (target) api.cannon(target.angle, target.distance);
+        return;
+    }
+    
+    // === STATE: RETURN HOME ===
+    if (this.state === 'RETURN') {
+        if (dHome < 50) {
+            api.drive(0, 0);
+            api.PAUSE(30); // Recharge
+            if (energy >= 95 && health >= 95) {
+                // Fully charged - decide next action
+                this.state = Math.random() < 0.2 ? 'ATTACK' : 'PATROL';
+            }
+            return;
+        }
+        api.drive(angleToHome, 100);
+        return;
+    }
+    
+    // === STATE: ATTACK (only when fully charged) ===
+    if (this.state === 'ATTACK' && energy >= 90 && health >= 90) {
+        // Go mine enemy base, but return if taking damage
+        if (dEnemy < 150) {
+            api.dropMine();
+            this.state = 'RETURN'; // Mission complete, go home
+            return;
+        }
+        if (dHome > ATTACK_RANGE) {
+            this.state = 'RETURN'; // Too far, abort
+            return;
+        }
+        api.drive(angleToEnemy, 80);
+        const target = api.sonar();
+        if (target) api.cannon(target.angle, target.distance);
+        return;
+    }
+    
+    // === STATE: PATROL (default - guard home territory) ===
+    // Stay within MAX_RANGE of home base
+    if (dHome > MAX_RANGE) {
+        // Too far from home, return toward base
+        api.drive(angleToHome, 80);
+    } else {
+        // Orbit around home base
+        if (this.tick % 90 === 0) {
+            this.patrolAngle = (this.patrolAngle + 45 + Math.random() * 30) % 360;
+        }
+        api.drive(this.patrolAngle, 60);
+    }
+    
+    // Always scan and fire at enemies in range
+    const target = api.sonar();
+    if (target) {
+        api.cannon(target.angle, target.distance);
+        // Face enemy while strafing
+        const strafe = (this.tick % 30 < 15) ? 45 : -45;
+        api.drive(target.angle + strafe, 70);
+    }
+    
+    // Boundary protection
+    if (x < 80 || x > 920 || y < 80 || y > 920) {
+        api.drive(Math.atan2(500 - y, 500 - x) * (180 / Math.PI), 100);
+    }
+}
