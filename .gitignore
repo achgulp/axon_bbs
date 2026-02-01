@@ -59,6 +59,7 @@ dist/
 *.bak
 *.swp
 *.tmp
+nohup.out
 #*.sh
 
 
