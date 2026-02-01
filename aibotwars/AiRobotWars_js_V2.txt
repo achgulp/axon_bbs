@@ -1,0 +1,3325 @@
+// AiRobotWars v1.0 - AI vs AI Robot Battle Simulation
+// Copyright (C) 2025 - Licensed under GPL v3
+//
+// A C-Robots style game where AI models compete by writing robot control scripts
+// Features birds-eye 3D view using Three.js
+
+// --- Start of Applet API Helper (MANDATORY) ---
+window.bbs = {
+    _callbacks: {},
+    _requestId: 0,
+    _handleMessage: function (event) {
+        const { command, payload, requestId, error } = event.data;
+        if (command && command.startsWith('response_') && this._callbacks[requestId]) {
+            const { resolve, reject } = this._callbacks[requestId];
+            if (error) { reject(new Error(error)); } else { resolve(payload); }
+            delete this._callbacks[requestId];
+        }
+    },
+    _postMessage: function (command, payload = {}) {
+        return new Promise((resolve, reject) => {
+            const requestId = this._requestId++;
+            this._callbacks[requestId] = { resolve, reject };
+            if (window.parent !== window) {
+                window.parent.postMessage({ command, payload, requestId }, '*');
+            } else {
+                console.warn("BBS API: Not running in a frame.");
+                if (command === 'getUserInfo') {
+                    resolve({ username: 'test', nickname: 'Test', pubkey: 'test123' });
+                } else if (command === 'getAppletInfo') {
+                    resolve({ id: 'test', name: 'AiRobotWars', parameters: {} });
+                } else {
+                    resolve({});
+                }
+            }
+        });
+    },
+    getUserInfo: function () { return this._postMessage('getUserInfo'); },
+    getData: function () { return this._postMessage('getData'); },
+    saveData: function (newData) { return this._postMessage('saveData', newData); },
+    getAppletInfo: function () { return this._postMessage('getAppletInfo'); },
+    postEvent: function (eventData) { return this._postMessage('postEvent', eventData); },
+    readEvents: function () { return this._postMessage('readEvents'); }
+};
+window.addEventListener('message', (event) => window.bbs._handleMessage(event));
+// --- End of Applet API Helper ---
+
+// --- Main Applet Execution ---
+(async function () {
+    try {
+        const APPLET_VERSION = 'v2.8.5';
+
+        // ═══════════════════════════════════════════════════════
+        // Debug Console
+        // ═══════════════════════════════════════════════════════
+
+        function debugLog(msg) {
+            if (!window.BBS_DEBUG_MODE) return;
+            const ts = new Date().toISOString().split('T')[1].slice(0, -1);
+            const log = '[RW ' + ts + '] ' + msg;
+            console.log(log);
+            const panel = document.getElementById('debug-panel');
+            if (panel) {
+                const e = document.createElement('div');
+                e.textContent = log;
+                e.style.cssText = 'font-size:0.7rem;color:#32cd32;margin:2px 0;font-family:monospace;';
+                panel.appendChild(e);
+                panel.scrollTop = panel.scrollHeight;
+            }
+        }
+
+        if (window.BBS_DEBUG_MODE) {
+            const dp = document.createElement('div');
+            dp.id = 'debug-panel';
+            dp.style.cssText = 'position:fixed;bottom:0;right:0;width:400px;max-height:200px;background:rgba(0,0,0,0.9);border:1px solid #32cd32;overflow-y:auto;padding:10px;z-index:9999;font-size:0.7rem;color:#32cd32;font-family:monospace;';
+            document.body.appendChild(dp);
+            const versionDiv = document.createElement('div');
+            versionDiv.textContent = '=== AI ROBOT WARS ' + APPLET_VERSION + ' ===';
+            versionDiv.style.cssText = 'font-size:0.8rem;color:#ffff00;font-weight:bold;margin-bottom:5px;border-bottom:1px solid #32cd32;padding-bottom:3px;';
+            dp.appendChild(versionDiv);
+        }
+
+        console.log('═══════════════════════════════════════════════════');
+        console.log(`🤖 AI Robot Wars ${APPLET_VERSION}`);
+        console.log('═══════════════════════════════════════════════════');
+        debugLog('Starting applet...');
+
+        // ═══════════════════════════════════════════════════════
+        // Load External Libraries
+        // ═══════════════════════════════════════════════════════
+
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.crossOrigin = 'anonymous';
+                script.onload = () => {
+                    console.log(`Loaded: ${src.split('/').pop()}`);
+                    resolve();
+                };
+                script.onerror = () => reject(new Error(`Failed to load: ${src}`));
+                document.head.appendChild(script);
+            });
+        }
+
+        debugLog('Loading Three.js...');
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+
+        if (!window.THREE) {
+            throw new Error('Three.js failed to load');
+        }
+
+        debugLog('✅ Three.js loaded successfully');
+
+        // ═══════════════════════════════════════════════════════
+        // Game Constants
+        // ═══════════════════════════════════════════════════════
+
+        const ARENA_SIZE = 1000;
+        const ROBOT_SIZE = 80; // Collision radius (Increased for tank models)
+        const GAME_SPEED = 60; // FPS (approx)
+
+        // Game Balance Constants (v2.0)
+        const MAX_ENERGY = 2500; // Reduced from 5000 (Vampire Mode)
+        const ENERGY_DRAIN_IDLE = 0.5; // High "Vampire" drain (was 0.01)
+        const ENERGY_DRAIN_MOVE = 0.05; // Per unit of speed
+        const ENERGY_DRAIN_FIRE = 5; // Firing costs energy
+        const ENERGY_DRAIN_MINE = 15; // Mines are expensive
+        const ENERGY_DRAIN_SCAN = 0.2; // Scanning costs energy
+
+        // Base Stations (v2.0)
+        const BASE_RADIUS = 80;
+        const BASE_RECHARGE_RATE = 60; // Energy per tick (Buffed v2.2.1)
+        const BASE_REPAIR_RATE = 1.0; // Health per tick (Buffed v2.2.1)
+        const BASES = [
+            { x: 100, y: 100, color: 0x60a5fa }, // Blue Base (Top-Left)
+            { x: 900, y: 900, color: 0xf87171 }  // Red Base (Bottom-Right)
+        ];
+
+        const TICK_RATE = 60;             // 60 ticks per second
+        const TICK_INTERVAL = 1000 / TICK_RATE;
+        const CANNON_COOLDOWN = 500;      // 500ms between shots
+        const MISSILE_SPEED = 10;         // Units per tick
+        const MISSILE_DAMAGE = 10;        // Damage per hit
+        const SPLASH_RADIUS = 30;         // Explosion splash radius
+        const MAX_SPEED = 100;            // Maximum robot speed
+        const ROBOT_SCALE = 4;             // Visual scale multiplier for bigger robots
+        const ROBOT_COLORS = [0x007bff, 0xff4136]; // Blue vs Red
+
+        // Sensor ranges
+        const SCAN_RANGE = 400;            // Standard scanner range
+        const LIDAR_RANGE = 600;           // Lidar: long range, narrow beam (2 degrees)
+        const SONAR_RANGE = 200;           // Sonar: short range, 360 degree sweep
+
+        // Mine settings
+        const MINE_COOLDOWN = 2000;        // 2 seconds between mine drops
+        const MINE_TRIGGER_RADIUS = 40;    // Proximity trigger distance
+        const MINE_DAMAGE = 25;            // Damage from mine explosion
+        const MAX_MINES_PER_ROBOT = 5;     // Max mines each robot can have active
+
+        debugLog('Game constants initialized');
+
+        // ═══════════════════════════════════════════════════════
+        // Initialize Container
+        // ═══════════════════════════════════════════════════════
+
+        const appletContainer = document.getElementById('applet-root');
+        if (!appletContainer) {
+            throw new Error('Applet root element not found');
+        }
+
+        appletContainer.innerHTML = '';
+        appletContainer.style.cssText = 'margin:0;padding:0;width:100%;height:100vh;overflow:hidden;background:#1a2e40;position:relative;';
+
+        // Create game container
+        const gameContainer = document.createElement('div');
+        gameContainer.id = 'game-container';
+        gameContainer.style.cssText = 'width:100%;height:100%;';
+        appletContainer.appendChild(gameContainer);
+
+        debugLog('✅ Container initialized');
+
+        // ═══════════════════════════════════════════════════════
+        // Game State
+        // ═══════════════════════════════════════════════════════
+
+        const GameState = {
+            MENU: 'MENU',
+            PLAYING: 'PLAYING',
+            GAME_OVER: 'GAME_OVER'
+        };
+
+        let currentState = GameState.MENU;
+        let gameLoop = null;
+        let scene, camera, renderer;
+        let robots = [];
+        let missiles = [];
+        let obstacles = []; // v2.1 Obstacles
+        let explosions = [];
+        let battleStats = {
+            shotsFired: [0, 0],
+            shotsHit: [0, 0],
+            damageDealt: [0, 0],
+            distanceTraveled: [0, 0],
+            minesDropped: [0, 0],
+            isDraw: false,
+            winner: null,
+            winnerSponsor: null
+        };
+
+        // Initialize Session Stats (Persistent across matches)
+        const sessionStats = {
+            blueWins: 0,
+            redWins: 0,
+            draws: 0
+        };
+
+        // Tournament Mode (v2.6)
+        const TOURNAMENT_ROUNDS = 7;
+        let tournamentMode = false;
+        let tournamentRound = 0;
+        let tournamentScores = { blue: 0, red: 0 };
+
+        // Robot Sponsors (parsed from script comments)
+        let robotSponsors = {
+            robot1: 'Blue Team',
+            robot2: 'Red Team'
+        };
+
+        let mines = [];      // Active mines on the field
+        let debris = [];     // Death explosion debris particles
+
+        // ═══════════════════════════════════════════════════════
+        // Sound Effects System (Web Audio API)
+        // ═══════════════════════════════════════════════════════
+
+        let audioContext;
+        let masterGain;
+        let recordingDest; // Node to capture audio for stream
+        let engineOscillators = {};
+
+        function initAudio() {
+            if (audioContext) return;
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioContext = new AudioContext();
+
+            // Create a Master Gain to control volume
+            masterGain = audioContext.createGain();
+            masterGain.gain.value = 0.5;
+            masterGain.connect(audioContext.destination);
+
+            // Create a Destination for Recording (Stream)
+            recordingDest = audioContext.createMediaStreamDestination();
+            masterGain.connect(recordingDest); // Connect output to recorder too
+
+            debugLog('Audio initialized (Recording Ready)');
+            if (audioContext.state === 'suspended') {
+                audioContext.resume().then(() => debugLog('Audio Context Resumed'));
+            }
+        }
+
+        function playSound(type) {
+            // Helper logic if needed, but we use specific functions
+        }
+
+        function playShootSound() {
+            if (!audioContext) return;
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            osc.connect(gain);
+            gain.connect(masterGain); // Connect to Master (which goes to speakers + recorder)
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(440, audioContext.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(110, audioContext.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            osc.start(audioContext.currentTime);
+            osc.stop(audioContext.currentTime + 0.1);
+        }
+
+        function playExplosionSound() {
+            if (!audioContext) return;
+            // Noise buffer for explosion
+            const duration = 0.5;
+            const bufferSize = audioContext.sampleRate * duration;
+            const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            const noise = audioContext.createBufferSource();
+            noise.buffer = buffer;
+            const gain = audioContext.createGain();
+            noise.connect(gain);
+            gain.connect(masterGain);
+            gain.gain.setValueAtTime(0.5, audioContext.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+            noise.start(audioContext.currentTime);
+        }
+
+        function playDamageSound() {
+            if (!audioContext) return;
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(150, audioContext.currentTime);
+            osc.frequency.setValueAtTime(100, audioContext.currentTime + 0.05);
+            osc.frequency.setValueAtTime(80, audioContext.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+            osc.start(audioContext.currentTime);
+            osc.stop(audioContext.currentTime + 0.2);
+        }
+
+        function playVictorySound() {
+            if (!audioContext) return;
+            // Victory fanfare - ascending notes
+            const notes = [262, 330, 392, 523]; // C E G C
+            notes.forEach((freq, i) => {
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, audioContext.currentTime + i * 0.15);
+                gain.gain.setValueAtTime(0.3, audioContext.currentTime + i * 0.15);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + i * 0.15 + 0.3);
+                osc.start(audioContext.currentTime + i * 0.15);
+                osc.stop(audioContext.currentTime + i * 0.15 + 0.3);
+            });
+        }
+
+        function startEngineSound(robotId) {
+            if (!audioContext || engineOscillators[robotId]) return;
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            osc.connect(gain);
+            gain.connect(masterGain);
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(30 + robotId * 5, audioContext.currentTime); // Slightly different pitch per robot
+            gain.gain.setValueAtTime(0.05, audioContext.currentTime);
+            osc.start();
+            engineOscillators[robotId] = { osc, gain };
+        }
+
+        function updateEngineSound(robotId, speed) {
+            if (!engineOscillators[robotId]) return;
+            const { osc, gain } = engineOscillators[robotId];
+            // Vary frequency and volume based on speed
+            const baseFreq = 30 + robotId * 5;
+            osc.frequency.setValueAtTime(baseFreq + speed * 0.5, audioContext.currentTime);
+            gain.gain.setValueAtTime(0.02 + speed * 0.001, audioContext.currentTime);
+        }
+
+        function stopEngineSound(robotId) {
+            if (!engineOscillators[robotId]) return;
+            engineOscillators[robotId].osc.stop();
+            engineOscillators[robotId] = null;
+        }
+
+        function stopAllEngineSounds() {
+            stopEngineSound(0);
+            stopEngineSound(1);
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // Video Recording System (for X.com sharing)
+        // ═══════════════════════════════════════════════════════
+
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let recordedBlob = null;
+        let isRecording = false;
+
+        function startRecording() {
+            if (!renderer || !renderer.domElement) {
+                debugLog('Cannot record: renderer not ready');
+                return false;
+            }
+
+            try {
+                const canvas = renderer.domElement;
+                const canvasStream = canvas.captureStream(30); // 30 fps
+
+                // Add Audio Track if available!
+                let finalStream = canvasStream;
+                if (recordingDest && recordingDest.stream.getAudioTracks().length > 0) {
+                    debugLog('Adding audio track to recording...');
+                    finalStream = new MediaStream([
+                        ...canvasStream.getVideoTracks(),
+                        ...recordingDest.stream.getAudioTracks()
+                    ]);
+                } else {
+                    debugLog('No audio track available for recording.');
+                }
+
+                // Try WebM first (best support), fallback to MP4
+                const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+                    ? 'video/webm;codecs=vp9'
+                    : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+                        ? 'video/webm;codecs=vp8'
+                        : MediaRecorder.isTypeSupported('video/webm')
+                            ? 'video/webm'
+                            : 'video/mp4';
+
+                debugLog('Using mime type: ' + mimeType);
+
+                mediaRecorder = new MediaRecorder(finalStream, {
+                    mimeType: mimeType,
+                    videoBitsPerSecond: 2500000 // 2.5 Mbps for good quality
+                });
+
+                recordedChunks = [];
+                recordedBlob = null;
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data && event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                        debugLog('Recorded chunk: ' + (event.data.size / 1024).toFixed(1) + ' KB');
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    debugLog('MediaRecorder stopped. Chunks: ' + recordedChunks.length);
+                    if (recordedChunks.length === 0) {
+                        debugLog('ERROR: No recorded chunks!');
+                        return;
+                    }
+                    recordedBlob = new Blob(recordedChunks, { type: mimeType });
+                    debugLog(`Recording saved: ${(recordedBlob.size / 1024 / 1024).toFixed(2)} MB`);
+                    isRecording = false;
+                    updateRecordingIndicator();
+
+                    // AUTO-UPLOAD: Trigger save immediately upon game end
+                    setTimeout(downloadRecording, 500);
+                };
+
+                mediaRecorder.onerror = (event) => {
+                    debugLog('MediaRecorder error: ' + event.error);
+                    console.error('MediaRecorder error:', event);
+                };
+
+                // Start continuous recording (no timeslice for better container integrity)
+                mediaRecorder.start();
+                isRecording = true;
+                updateRecordingIndicator();
+                debugLog('🔴 Recording started (continuous mode)');
+                return true;
+            } catch (e) {
+                console.error('Recording error:', e);
+                debugLog('Recording failed: ' + e.message);
+                alert('Recording Failed to Start: ' + e.message); // Explicit alert
+                return false;
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                debugLog('Stopping MediaRecorder (state: ' + mediaRecorder.state + ')');
+                // Request any remaining data before stopping
+                try {
+                    mediaRecorder.requestData();
+                } catch (e) {
+                    debugLog('requestData failed: ' + e.message);
+                }
+                // Small delay to ensure data is captured
+                setTimeout(() => {
+                    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                        mediaRecorder.stop();
+                        debugLog('⏹️ Recording stopped');
+                    }
+                }, 100);
+            }
+        }
+
+        function downloadRecording() {
+            console.log('Download requested, recordedBlob:', recordedBlob);
+
+            if (!recordedBlob) {
+                // If currently recording, stop it first
+                if (isRecording && mediaRecorder && mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                    debugLog('Stopping recording for download...');
+                    // Wait for onstop event
+                    setTimeout(downloadRecording, 200);
+                    return;
+                }
+
+                // Check if we have chunks from a finished recording
+                if (recordedChunks.length > 0) {
+                    const mimeType = 'video/webm';
+                    recordedBlob = new Blob(recordedChunks, { type: mimeType });
+                } else {
+                    alert('No recording found. Play a game first!');
+                    return;
+                }
+            }
+            // Determine winner and get sponsor name for filename
+            const winnerIdx = robots[0].damage >= 100 ? 1 : 0;
+            const winner = winnerIdx === 0 ? 'Blue' : 'Red';
+            const winnerSponsor = battleStats.winnerSponsor || (winnerIdx === 0 ? robotSponsors.robot1 : robotSponsors.robot2);
+            // Sanitize sponsor name for filename (remove special chars)
+            const safeSponsor = winnerSponsor.replace(/[^a-zA-Z0-9]/g, '');
+            const filename = 'AiRobotWar-Winner-' + safeSponsor + '.webm';
+
+            const formData = new FormData();
+            formData.append('recording', recordedBlob, filename);
+            formData.append('filename', filename);
+
+            debugLog('Saving to server folder...');
+
+            fetch('/api/upload_recording/', {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        debugLog('✅ Saved: ' + filename);
+                        alert('Recording saved to server:\n' + data.path);
+                    } else {
+                        debugLog('❌ Error: ' + data.message);
+                        alert('Save failed: ' + data.message);
+                    }
+                })
+                .catch(e => {
+                    debugLog('❌ Upload Failed: ' + e);
+                    console.error(e);
+                });
+        }
+
+        function updateRecordingIndicator() {
+            const indicator = document.getElementById('recording-indicator');
+            if (indicator) {
+                indicator.style.display = isRecording ? 'flex' : 'none';
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // Robot Class
+        // ═══════════════════════════════════════════════════════
+
+        class Robot {
+            constructor(id, x, y, color, controlScript) {
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.heading = id === 0 ? 0 : 180; // Face each other
+                this.speed = 0;
+                this.targetSpeed = 0;
+                this.targetHeading = this.heading;
+                this.damage = 0;
+                this.energy = MAX_ENERGY;     // Battery level
+                this.color = color;
+                this.lastCannonTime = 0;
+                this.lastMineTime = 0;
+                this.turretAngle = 0;         // Turret angle relative to body
+                this.targetTurretAngle = 0;   // Where turret is trying to aim
+                this.controlScript = controlScript;
+                this.mesh = null;
+                this.turretMesh = null;
+                this.scanMesh = null;
+                this.lastScanAngle = 0;
+                this.lastScanResolution = 10;
+                this.pauseTicks = 0; // v2.3 Timer for PAUSE command
+
+                // Create 3D mesh
+                this.createMesh();
+            }
+
+            createMesh() {
+                // ═══════════════════════════════════════════════════════
+                // NEW TRACKED TANK DESIGN - Industrial Battle Robot
+                // ═══════════════════════════════════════════════════════
+
+                // Scale factors for the tank parts
+                const S = ROBOT_SCALE * 0.8; // Overall scale
+
+                // === MATERIALS ===
+                const chassisMat = new THREE.MeshStandardMaterial({
+                    color: 0x3d4852, // Dark gunmetal
+                    roughness: 0.4,
+                    metalness: 0.7
+                });
+                const trackMat = new THREE.MeshStandardMaterial({
+                    color: 0x1a1a1a, // Very dark (rubber/metal tracks)
+                    roughness: 0.8,
+                    metalness: 0.3
+                });
+                const turretMat = new THREE.MeshStandardMaterial({
+                    color: 0x4a5568, // Slightly lighter gunmetal
+                    roughness: 0.3,
+                    metalness: 0.8
+                });
+                const teamGlowMat = new THREE.MeshStandardMaterial({
+                    color: this.color,
+                    emissive: this.color,
+                    emissiveIntensity: 0.6,
+                    roughness: 0.3,
+                    metalness: 0.5
+                });
+                const barrelMat = new THREE.MeshStandardMaterial({
+                    color: 0x2d2d2d,
+                    roughness: 0.2,
+                    metalness: 0.9
+                });
+
+                // === ROOT GROUP (main mesh) ===
+                this.mesh = new THREE.Group();
+                this.mesh.castShadow = true;
+
+                // === CHASSIS (Main body - rectangular box) ===
+                const chassisW = 1.8 * S; // width
+                const chassisH = 0.5 * S; // height
+                const chassisD = 2.5 * S; // depth (length)
+                const chassisGeo = new THREE.BoxGeometry(chassisW, chassisH, chassisD);
+                const chassis = new THREE.Mesh(chassisGeo, chassisMat);
+                chassis.position.y = 0.3 * S;
+                chassis.castShadow = true;
+                this.mesh.add(chassis);
+
+                // === TRACK ASSEMBLIES (left and right side) ===
+                const trackW = 0.4 * S;
+                const trackH = 0.6 * S;
+                const trackD = chassisD * 1.1;
+                const trackGeo = new THREE.BoxGeometry(trackW, trackH, trackD);
+
+                // Left track
+                const leftTrack = new THREE.Mesh(trackGeo, trackMat);
+                leftTrack.position.set(-chassisW / 2 - trackW / 2 + 0.1 * S, 0.15 * S, 0);
+                leftTrack.castShadow = true;
+                this.mesh.add(leftTrack);
+
+                // Right track
+                const rightTrack = new THREE.Mesh(trackGeo, trackMat);
+                rightTrack.position.set(chassisW / 2 + trackW / 2 - 0.1 * S, 0.15 * S, 0);
+                rightTrack.castShadow = true;
+                this.mesh.add(rightTrack);
+
+                // Track wheels (front and back on each side)
+                const wheelRadius = 0.25 * S;
+                const wheelWidth = trackW * 0.9;
+                const wheelGeo = new THREE.CylinderGeometry(wheelRadius, wheelRadius, wheelWidth, 12);
+                wheelGeo.rotateZ(Math.PI / 2); // Orient horizontally
+                const wheelMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.6, metalness: 0.4 });
+
+                const wheelPositions = [
+                    [-chassisW / 2 - trackW / 2 + 0.1 * S, 0.1 * S, trackD / 2 - wheelRadius * 1.5],  // Left front
+                    [-chassisW / 2 - trackW / 2 + 0.1 * S, 0.1 * S, -trackD / 2 + wheelRadius * 1.5], // Left back
+                    [chassisW / 2 + trackW / 2 - 0.1 * S, 0.1 * S, trackD / 2 - wheelRadius * 1.5],   // Right front
+                    [chassisW / 2 + trackW / 2 - 0.1 * S, 0.1 * S, -trackD / 2 + wheelRadius * 1.5],  // Right back
+                ];
+                wheelPositions.forEach(pos => {
+                    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+                    wheel.position.set(...pos);
+                    this.mesh.add(wheel);
+                });
+
+                // === TEAM COLOR STRIPE (on chassis sides) ===
+                const stripeGeo = new THREE.BoxGeometry(0.1 * S, 0.15 * S, chassisD * 0.8);
+                const leftStripe = new THREE.Mesh(stripeGeo, teamGlowMat);
+                leftStripe.position.set(-chassisW / 2 - 0.05 * S, 0.35 * S, 0);
+                this.mesh.add(leftStripe);
+                const rightStripe = new THREE.Mesh(stripeGeo, teamGlowMat);
+                rightStripe.position.set(chassisW / 2 + 0.05 * S, 0.35 * S, 0);
+                this.mesh.add(rightStripe);
+
+                // === TURRET GROUP (rotates independently) ===
+                this.turretGroup = new THREE.Group();
+                this.turretGroup.position.y = chassisH + 0.1 * S; // On top of chassis
+                this.mesh.add(this.turretGroup);
+
+                // Turret platform (cylinder)
+                const turretRadius = 0.7 * S;
+                const turretHeight = 0.4 * S;
+                const turretGeo = new THREE.CylinderGeometry(turretRadius, turretRadius * 1.1, turretHeight, 16);
+                const turret = new THREE.Mesh(turretGeo, turretMat);
+                turret.castShadow = true;
+                this.turretGroup.add(turret);
+
+                // Turret top ring (team color glow)
+                const turretRingGeo = new THREE.TorusGeometry(turretRadius * 0.85, 0.06 * S, 8, 24);
+                const turretRing = new THREE.Mesh(turretRingGeo, teamGlowMat);
+                turretRing.rotation.x = Math.PI / 2;
+                turretRing.position.y = turretHeight / 2 + 0.02 * S;
+                this.turretGroup.add(turretRing);
+
+                // === CANNON BARREL ===
+                const barrelRadius = 0.12 * S;
+                const barrelLength = 2.0 * S;
+                const barrelGeo = new THREE.CylinderGeometry(barrelRadius, barrelRadius * 1.1, barrelLength, 12);
+                barrelGeo.rotateX(Math.PI / 2); // Point forward
+                const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+                barrel.position.set(0, 0, turretRadius + barrelLength / 2 - 0.2 * S);
+                barrel.castShadow = true;
+                this.turretGroup.add(barrel);
+
+                // Barrel muzzle (team color ring) - store reference for firing
+                const muzzleGeo = new THREE.TorusGeometry(barrelRadius * 1.3, 0.04 * S, 6, 16);
+                this.muzzleMesh = new THREE.Mesh(muzzleGeo, teamGlowMat);
+                this.muzzleMesh.position.set(0, 0, turretRadius + barrelLength - 0.15 * S);
+                this.turretGroup.add(this.muzzleMesh);
+
+                // === SCANNER DISH (on chassis, independent of turret) ===
+                this.scannerGroup = new THREE.Group();
+                // Position on back-left of chassis, above the turret level
+                this.scannerGroup.position.set(-chassisW * 0.3, chassisH + turretHeight + 0.3 * S, -chassisD * 0.2);
+                this.mesh.add(this.scannerGroup); // Add to chassis, not turret!
+
+                // Scanner mount post (taller)
+                const scanPostGeo = new THREE.CylinderGeometry(0.04 * S, 0.06 * S, 0.4 * S, 8);
+                const scanPost = new THREE.Mesh(scanPostGeo, chassisMat);
+                this.scannerGroup.add(scanPost);
+
+                // Scanner dish (satellite dish style - parabolic shape)
+                const dishRadius = 0.25 * S;
+                const dishGeo = new THREE.SphereGeometry(dishRadius, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+                const dishMat = new THREE.MeshStandardMaterial({
+                    color: 0xaabbcc,
+                    roughness: 0.2,
+                    metalness: 0.9,
+                    side: THREE.DoubleSide
+                });
+                const dish = new THREE.Mesh(dishGeo, dishMat);
+                dish.rotation.x = Math.PI / 2 + 0.3; // Tilt slightly forward
+                dish.position.y = 0.25 * S;
+                this.scannerGroup.add(dish);
+
+                // Scanner feed horn (small cone in center of dish)
+                const feedGeo = new THREE.ConeGeometry(0.04 * S, 0.15 * S, 6);
+                const feed = new THREE.Mesh(feedGeo, teamGlowMat);
+                feed.rotation.x = -Math.PI / 2 - 0.3;
+                feed.position.set(0, 0.25 * S, dishRadius * 0.5);
+                this.scannerGroup.add(feed);
+
+                // Scanner active indicator (glowing sphere, hidden by default)
+                const indicatorGeo = new THREE.SphereGeometry(0.06 * S, 8, 8);
+                const indicatorMat = new THREE.MeshBasicMaterial({
+                    color: this.color,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                this.scannerIndicator = new THREE.Mesh(indicatorGeo, indicatorMat);
+                this.scannerIndicator.position.y = 0.45 * S;
+                this.scannerIndicator.visible = false;
+                this.scannerGroup.add(this.scannerIndicator);
+
+                // === SCAN CONE (small, attached to scanner) ===
+                const scanGeometry = new THREE.ConeGeometry(
+                    4,   // Radius at base (wide end)
+                    15,  // Length
+                    8
+                );
+                const scanMaterial = new THREE.MeshBasicMaterial({
+                    color: this.color,
+                    transparent: true,
+                    opacity: 0.2,
+                    side: THREE.DoubleSide
+                });
+                this.scanMesh = new THREE.Mesh(scanGeometry, scanMaterial);
+                this.scanMesh.visible = false;
+                // Rotate so cone points horizontally with WIDE end outward
+                this.scanMesh.rotation.x = -Math.PI / 2; // Flipped to put wide end outward
+                this.scanMesh.position.z = 8; // Offset forward from scanner
+                this.scannerGroup.add(this.scanMesh); // Add to scanner, not turret
+
+                // Scanner animation state
+                this.isScanning = false;
+                this.scanAnimationTime = 0;
+
+                this.updatePosition();
+
+                // 3D UI Bars
+                this.createUI();
+
+                scene.add(this.mesh);
+            }
+
+            createUI() {
+                // UI container above robot
+                this.uiMesh = new THREE.Group();
+                this.uiMesh.position.y = 2.0; // Float above
+                this.uiMesh.rotation.y = Math.PI / 4; // Angled to camera usually
+                this.mesh.add(this.uiMesh);
+
+                // Health Bar Back
+                const barWidth = 1.5;
+                const barHeight = 0.2;
+                const backGeo = new THREE.PlaneGeometry(barWidth, barHeight);
+                const backMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+
+                // HP Bar
+                const hpBack = new THREE.Mesh(backGeo, backMat);
+                hpBack.position.y = 0.3;
+                this.uiMesh.add(hpBack);
+
+                const hpFrontGeo = new THREE.PlaneGeometry(barWidth, barHeight);
+                hpFrontGeo.translate(barWidth / 2, 0, 0); // Anchor left
+                const hpFrontMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+                this.hpBar = new THREE.Mesh(hpFrontGeo, hpFrontMat);
+                this.hpBar.position.x = -barWidth / 2;
+                this.hpBar.position.y = 0.3;
+                this.hpBar.position.z = 0.01; // Front
+                this.uiMesh.add(this.hpBar);
+
+                // Energy Bar
+                const enBack = new THREE.Mesh(backGeo, backMat);
+                enBack.position.y = 0;
+                this.uiMesh.add(enBack);
+
+                const enFrontGeo = new THREE.PlaneGeometry(barWidth, barHeight);
+                enFrontGeo.translate(barWidth / 2, 0, 0); // Anchor left
+                const enFrontMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6 });
+                this.enBar = new THREE.Mesh(enFrontGeo, enFrontMat);
+                this.enBar.position.x = -barWidth / 2;
+                this.enBar.position.y = 0;
+                this.enBar.position.z = 0.01;
+                this.uiMesh.add(this.enBar);
+            }
+
+            updateUI() {
+                // Billboard effect (face camera)
+                this.uiMesh.lookAt(camera.position);
+
+                // Update scales
+                const hpScale = Math.max(0, (100 - this.damage) / 100);
+                this.hpBar.scale.x = hpScale;
+                this.hpBar.material.color.setHex(hpScale < 0.3 ? 0xef4444 : 0x22c55e);
+
+                const enScale = Math.max(0, this.energy / MAX_ENERGY);
+                this.enBar.scale.x = enScale;
+                this.enBar.material.color.setHex(enScale < 0.2 ? 0xf59e0b : 0x3b82f6);
+            }
+
+            updatePosition() {
+                // Validate position and heading before updating mesh
+                if (isNaN(this.x) || isNaN(this.y) || !isFinite(this.x) || !isFinite(this.y)) {
+                    debugLog('ERROR: Robot ' + this.id + ' has invalid position! x=' + this.x + ' y=' + this.y + ' - RESETTING TO BASE');
+                    const base = BASES[this.id];
+                    this.x = base.x;
+                    this.y = base.y;
+                    this.speed = 0;
+                    this.targetSpeed = 0;
+                }
+
+                // Also validate heading
+                if (isNaN(this.heading) || !isFinite(this.heading)) {
+                    debugLog('ERROR: Robot ' + this.id + ' has invalid heading! heading=' + this.heading + ' - RESETTING');
+                    this.heading = 0;
+                    this.targetHeading = 0;
+                }
+
+                // Clamp to arena bounds with wall collision (safety net)
+                const wallMargin = ROBOT_SIZE + 10; // Extra margin to prevent wall clipping
+                this.x = Math.max(wallMargin, Math.min(ARENA_SIZE - wallMargin, this.x));
+                this.y = Math.max(wallMargin, Math.min(ARENA_SIZE - wallMargin, this.y));
+
+                // Check obstacle collisions and push robot out
+                for (const obs of obstacles) {
+                    const dx = this.x - obs.x;
+                    const dy = this.y - obs.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const minDist = ROBOT_SIZE + obs.size * 0.8; // Bigger collision radius // Robot radius + obstacle radius
+
+                    if (dist < minDist && dist > 0) {
+                        // Push robot away from obstacle
+                        const pushX = (dx / dist) * (minDist - dist + 1);
+                        const pushY = (dy / dist) * (minDist - dist + 1);
+                        this.x += pushX;
+                        this.y += pushY;
+                    }
+                }
+
+                // Convert game coordinates to 3D world coordinates
+                // Arena center is at (0,0), scale to world units
+                const scale = 0.1; // 1000 arena units = 100 world units
+                this.mesh.position.x = (this.x - ARENA_SIZE / 2) * scale;
+                this.mesh.position.z = (this.y - ARENA_SIZE / 2) * scale;
+                this.mesh.position.y = 0.5;
+                // Update mesh rotation (Y-axis is vertical)
+                // 3D Rot Y is Counter-Clockwise. Game Heading is Clockwise.
+                // 0 heading (Right) -> 90 deg rotation (Right) from +Z (Forward)
+                // So RotY = -Heading + 90 degrees
+                this.mesh.rotation.y = (-this.heading * (Math.PI / 180)) + (Math.PI / 2);
+
+                // Ensure mesh is visible and in scene
+                if (!this.mesh.visible) {
+                    debugLog('WARNING: Robot ' + this.id + ' mesh was invisible, making visible');
+                    this.mesh.visible = true;
+                }
+                if (!this.mesh.parent) {
+                    debugLog('WARNING: Robot ' + this.id + ' mesh was not in scene, re-adding');
+                    scene.add(this.mesh);
+                }
+            }
+
+            // Robot API methods
+            scan(degree, resolution) {
+                // Drain energy for scanning
+                this.energy -= ENERGY_DRAIN_SCAN;
+
+                resolution = Math.max(1, Math.min(40, resolution));
+                // API uses absolute angles
+                const startAngle = (degree - resolution / 2 + 360) % 360;
+                const endAngle = (degree + resolution / 2 + 360) % 360;
+
+                // Update scan visualization
+                this.lastScanAngle = degree;
+                this.lastScanResolution = resolution;
+                this.showScan(degree, resolution);
+
+                let closestDistance = 0;
+
+                for (const robot of robots) {
+                    if (robot.id === this.id) continue;
+
+                    const dx = robot.x - this.x;
+                    const dy = robot.y - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                    angle = (angle + 360) % 360;
+
+                    // Check if angle is within scan arc
+                    let inArc = false;
+                    if (startAngle <= endAngle) {
+                        inArc = angle >= startAngle && angle <= endAngle;
+                    } else {
+                        inArc = angle >= startAngle || angle <= endAngle;
+                    }
+
+                    if (inArc) {
+                        // Check if within scan range
+                        if (distance <= SCAN_RANGE) {
+                            if (closestDistance === 0 || distance < closestDistance) {
+                                closestDistance = distance;
+                            }
+                        }
+                    }
+                }
+
+                return Math.floor(closestDistance);
+            }
+
+            // LIDAR: Narrow beam (2 degrees), long range (600)
+            lidar(degree) {
+                const scanAngle = (degree + 360) % 360; // Absolute angle
+
+                // Visualize the beam (narrow)
+                this.showScan(degree, 2);
+
+                let closestDistance = 0;
+
+                for (const robot of robots) {
+                    if (robot.id === this.id) continue;
+
+                    const dx = robot.x - this.x;
+                    const dy = robot.y - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance > LIDAR_RANGE) continue; // Optimization
+
+                    // Check if obstacles block line of sight
+                    let blocked = false;
+                    for (const obs of obstacles) {
+                        // Simple check: Is obstacle closer and generally in the way?
+                        // Improve with ray check later if needed
+                        const dObs = Math.sqrt((obs.x - this.x) ** 2 + (obs.y - this.y) ** 2);
+                        if (dObs < distance && dObs < LIDAR_RANGE) {
+                            // Check if angle to obstacle is close to angle to robot
+                            const angleToObs = Math.atan2(obs.y - this.y, obs.x - this.x) * (180 / Math.PI);
+                            const angleToBot = Math.atan2(dy, dx) * (180 / Math.PI);
+                            let diff = Math.abs(angleToObs - angleToBot);
+                            if (diff > 180) diff = 360 - diff;
+
+                            const obsAngularWidth = (Math.atan2(obs.size / 2, dObs) * (180 / Math.PI)) * 2;
+
+                            if (diff < obsAngularWidth) {
+                                blocked = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (blocked) continue; // Can't see robot through obstacle
+
+                    let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                    angle = (angle + 360) % 360;
+
+                    // Very narrow beam - 2 degrees
+                    const angleDiff = Math.abs(angle - scanAngle);
+                    const normalizedDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
+
+                    if (normalizedDiff <= 1) {
+                        if (closestDistance === 0 || distance < closestDistance) {
+                            closestDistance = distance;
+                        }
+                    }
+                }
+
+                return Math.floor(closestDistance);
+            }
+
+            // SONAR: 360 degree sweep, short range (200), returns direction to closest enemy
+            sonar() {
+                let closestDistance = SONAR_RANGE + 1;
+                let closestAngle = -1;
+
+                for (const robot of robots) {
+                    if (robot.id === this.id) continue;
+
+                    const dx = robot.x - this.x;
+                    const dy = robot.y - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance <= SONAR_RANGE && distance < closestDistance) {
+                        closestDistance = distance;
+                        closestAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+                        closestAngle = (closestAngle + 360) % 360;
+                    }
+                }
+
+                // Returns object with angle and distance, or null if nothing found
+                if (closestAngle >= 0) {
+                    return { angle: Math.floor(closestAngle), distance: Math.floor(closestDistance) };
+                }
+                return null;
+            }
+
+            cannon(degree, distance) {
+                // Validate inputs - reject NaN which would create invisible missiles
+                if (isNaN(degree) || !isFinite(degree)) {
+                    debugLog('WARNING: Robot ' + this.id + ' cannon() received NaN degree, ignoring');
+                    return false;
+                }
+                if (isNaN(distance) || !isFinite(distance) || distance <= 0) {
+                    debugLog('WARNING: Robot ' + this.id + ' cannon() received invalid distance, ignoring');
+                    return false;
+                }
+
+                const now = Date.now();
+                if (now - this.lastCannonTime < CANNON_COOLDOWN) {
+                    return false; // Still cooling down
+                }
+
+                // Check energy
+                if (this.energy < ENERGY_DRAIN_FIRE) {
+                    return false; // Not enough energy
+                }
+
+                // Set turret to aim at target and immediately rotate turret visually
+                // Store the absolute world fire angle for locking
+                const fireAngleRad = degree * (Math.PI / 180);
+                this.lastFireAngle = fireAngleRad;
+
+                // Immediately rotate turret to firing direction
+                if (this.turretGroup) {
+                    // Calculate required local rotation to face fireAngleRad in world space
+                    // The robot's mesh.rotation.y is (-heading + PI/2)
+                    // So, the robot's current world heading is (PI/2 - mesh.rotation.y)
+                    const robotWorldHeading = Math.PI / 2 - this.mesh.rotation.y;
+                    // The turret's local rotation should be the difference between the desired fire angle and the robot's world heading
+                    let targetLocal = fireAngleRad - robotWorldHeading;
+
+                    // Normalize to -PI..PI
+                    targetLocal = Math.atan2(Math.sin(targetLocal), Math.cos(targetLocal));
+
+                    this.turretGroup.rotation.y = targetLocal;
+
+                    // Force update of matrices so getWorldPosition works correctly immediately
+                    this.turretGroup.updateMatrixWorld(true);
+                }
+
+                // Drain energy and fire
+                this.energy -= ENERGY_DRAIN_FIRE;
+                this.lastCannonTime = now;
+                battleStats.shotsFired[this.id]++;
+
+                // Fire from requested angle (Absolute)
+                const fireAngle = degree * (Math.PI / 180);
+                const targetX = this.x + Math.cos(fireAngle) * distance;
+                const targetY = this.y + Math.sin(fireAngle) * distance;
+
+                // Get actual barrel tip world position from the muzzle mesh
+                let spawnX, spawnY, spawnHeight;
+                if (this.muzzleMesh) {
+                    // Use actual 3D world position of muzzle
+                    const worldPos = new THREE.Vector3();
+                    this.muzzleMesh.getWorldPosition(worldPos);
+                    // Convert 3D world coords back to game coords
+                    spawnX = (worldPos.x / 0.1) + ARENA_SIZE / 2;
+                    spawnY = (worldPos.z / 0.1) + ARENA_SIZE / 2;
+                    spawnHeight = worldPos.y; // Correct visual height
+                } else {
+                    // Fallback
+                    const S = ROBOT_SCALE * 0.8;
+                    const turretRadius = 0.7 * S;
+                    const barrelLength = 2.0 * S;
+                    const barrelTipWorld = turretRadius + barrelLength - 0.15 * S;
+                    const barrelOffset = barrelTipWorld * 10 + 15;
+                    spawnX = this.x + Math.cos(fireAngle) * barrelOffset;
+                    spawnY = this.y + Math.sin(fireAngle) * barrelOffset;
+                    spawnHeight = 2.0; // Fallback height
+                }
+
+                missiles.push({
+                    ownerId: this.id,
+                    x: spawnX,
+                    y: spawnY,
+                    height: spawnHeight, // Store correct height
+                    targetX: Math.max(0, Math.min(ARENA_SIZE, targetX)),
+                    targetY: Math.max(0, Math.min(ARENA_SIZE, targetY)),
+                    angle: fireAngle,
+                    totalDistance: distance,
+                    traveledDistance: 0,
+                    mesh: this.createMissileMesh()
+                });
+
+                // Play shoot sound
+                playShootSound();
+
+                return true;
+            }
+
+            aimTurret(degree) {
+                this.targetTurretAngle = degree;
+            }
+
+            createMissileMesh() {
+                const geometry = new THREE.SphereGeometry(0.15, 8, 8);
+                const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+                const mesh = new THREE.Mesh(geometry, material);
+                scene.add(mesh);
+                return mesh;
+            }
+
+            drive(degree, speed) {
+                // Validate inputs - reject NaN which can corrupt position
+                if (isNaN(degree) || !isFinite(degree)) {
+                    debugLog('WARNING: Robot ' + this.id + ' drive() received NaN degree, ignoring');
+                    return;
+                }
+                if (isNaN(speed) || !isFinite(speed)) {
+                    debugLog('WARNING: Robot ' + this.id + ' drive() received NaN speed, ignoring');
+                    return;
+                }
+                this.targetHeading = (degree + 360) % 360;
+                this.targetSpeed = Math.max(0, Math.min(MAX_SPEED, speed));
+            }
+
+            // Status methods
+            getDamage() { return this.damage; }
+            getEnergy() { return this.energy; }
+            getLocX() { return this.x; }
+            getLocY() { return this.y; }
+            getSpeed() { return this.speed; }
+
+            showScan(degree, resolution) {
+                if (!this.scanMesh) return;
+
+                this.scanMesh.visible = true;
+
+                // Calculate local rotation to face absolute degree
+                // The robot's mesh.rotation.y is (-heading + PI/2)
+                // So, the robot's current world heading is (PI/2 - mesh.rotation.y)
+                const robotWorldHeading = Math.PI / 2 - this.mesh.rotation.y;
+                // The turret's local rotation should be the difference between the desired scan angle and the robot's world heading
+                let targetLocal = degree * (Math.PI / 180) - robotWorldHeading;
+
+                // Normalize to -PI..PI
+                targetLocal = Math.atan2(Math.sin(targetLocal), Math.cos(targetLocal));
+
+                // Rotate the turret to face scan direction
+                if (this.turretGroup) {
+                    this.turretGroup.rotation.y = targetLocal;
+                }
+
+                // Position scan cone on turret
+                this.scanMesh.rotation.y = 0; // Turret already rotated
+
+                // Scale cone based on resolution
+                const scale = resolution / 20;
+                this.scanMesh.scale.x = scale;
+
+                // Activate scanner indicator and dish animation
+                this.isScanning = true;
+                this.scanAnimationTime = Date.now();
+                if (this.scannerIndicator) {
+                    this.scannerIndicator.visible = true;
+                }
+
+                // Hide scan cone and indicator after short delay
+                setTimeout(() => {
+                    if (this.scanMesh) this.scanMesh.visible = false;
+                    this.isScanning = false;
+                    if (this.scannerIndicator) this.scannerIndicator.visible = false;
+                }, 150);
+            }
+
+            dropMine() {
+                const now = Date.now();
+                if (now - this.lastMineTime < MINE_COOLDOWN) {
+                    return false; // Still cooling down
+                }
+
+                // Check energy
+                if (this.energy < ENERGY_DRAIN_MINE) {
+                    return false; // Not enough energy
+                }
+
+                // Check max mines
+                const myMines = mines.filter(m => m.ownerId === this.id);
+                if (myMines.length >= MAX_MINES_PER_ROBOT) {
+                    return false; // Too many mines
+                }
+
+                // Drain energy
+                this.energy -= ENERGY_DRAIN_MINE;
+                this.lastMineTime = now;
+                battleStats.minesDropped[this.id]++;
+
+                // Create mine mesh
+                const scale = 0.1;
+                const geometry = new THREE.CylinderGeometry(0.3, 0.4, 0.15, 8);
+                const material = new THREE.MeshStandardMaterial({
+                    color: this.color,
+                    emissive: this.color,
+                    emissiveIntensity: 0.3
+                });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.x = (this.x - ARENA_SIZE / 2) * scale;
+                mesh.position.z = (this.y - ARENA_SIZE / 2) * scale;
+                mesh.position.y = 0.1;
+                scene.add(mesh);
+
+                mines.push({
+                    ownerId: this.id,
+                    x: this.x,
+                    y: this.y,
+                    mesh: mesh,
+                    armed: false,
+                    armTime: now + 500 // Arm after 500ms so you can escape
+                });
+
+                debugLog('Mine dropped by Robot ' + this.id);
+                return true;
+            }
+
+            update() {
+                // If out of energy, stop!
+                if (this.energy <= 0) {
+                    this.targetSpeed = 0;
+                }
+
+                // Gradually adjust heading toward target
+                let headingDiff = this.targetHeading - this.heading;
+                if (headingDiff > 180) headingDiff -= 360;
+                if (headingDiff < -180) headingDiff += 360;
+
+                // Turn rate decreases with speed
+                const turnRate = Math.max(1, 10 - this.speed * 0.08);
+                if (Math.abs(headingDiff) > turnRate) {
+                    this.heading += Math.sign(headingDiff) * turnRate;
+                } else {
+                    this.heading = this.targetHeading;
+                }
+                this.heading = (this.heading + 360) % 360;
+
+                this.heading = (this.heading + 360) % 360;
+
+                // Turret Logic Removed (v2.1) - Guns fixed forward
+                this.turretAngle = 0; // Always 0 relative to body
+
+                // Base Recharge Mechanics (v2.0)
+                const base = BASES[this.id];
+                const dx = this.x - base.x;
+                const dy = this.y - base.y;
+                if (Math.sqrt(dx * dx + dy * dy) < BASE_RADIUS) {
+                    // In base! Recharge and Repair.
+                    this.energy = Math.min(MAX_ENERGY, this.energy + BASE_RECHARGE_RATE);
+                    this.damage = Math.max(0, this.damage - BASE_REPAIR_RATE);
+                }
+
+                // Update health/energy UI (3D)
+                if (this.uiMesh) this.updateUI();
+
+                // Turret behavior: point forward by default, only aim when firing
+                if (this.turretGroup) {
+                    // Check if we recently fired (within last 30 ticks = 0.5 seconds)
+                    const now = performance.now();
+                    const recentlyFired = (now - this.lastCannonTime) < 2000; // 2 second pause after firing
+
+                    if (recentlyFired && this.lastFireAngle !== undefined) {
+                        // Lock turret to world aim direction (compensate for tank turning)
+                        // The robot's mesh.rotation.y is (-heading + PI/2)
+                        // So, the robot's current world heading is (PI/2 - mesh.rotation.y)
+                        const robotWorldHeading = Math.PI / 2 - this.mesh.rotation.y;
+                        let targetLocal = this.lastFireAngle - robotWorldHeading;
+
+                        // Normalize
+                        targetLocal = Math.atan2(Math.sin(targetLocal), Math.cos(targetLocal));
+
+                        // Smooth rotation toward target
+                        const currentAngle = this.turretGroup.rotation.y;
+                        let diff = targetLocal - currentAngle;
+                        // Normalize diff
+                        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+
+                        const maxRotation = 0.25; // Very fast turret rotation for locking
+                        // Instant lock to target (prevents aim drift/slinging visual)
+                        this.turretGroup.rotation.y = targetLocal;
+                    } else {
+                        // Return turret to forward facing (0 rotation)
+                        const currentAngle = this.turretGroup.rotation.y;
+                        if (Math.abs(currentAngle) > 0.05) {
+                            this.turretGroup.rotation.y -= Math.sign(currentAngle) * 0.08; // Slow return
+                        } else {
+                            this.turretGroup.rotation.y = 0;
+                        }
+                    }
+                }
+
+                // Scanner dish animation - slow rotation when scanning
+                if (this.scannerGroup && this.isScanning) {
+                    this.scannerGroup.rotation.y += 0.05; // Slow spin effect (was 0.3)
+                }
+
+                // Gradually adjust speed
+                if (this.speed < this.targetSpeed) {
+                    this.speed = Math.min(this.targetSpeed, this.speed + 2);
+                } else if (this.speed > this.targetSpeed) {
+                    this.speed = Math.max(this.targetSpeed, this.speed - 2);
+                }
+
+                // Move robot
+                if (this.speed > 0) {
+                    const radians = this.heading * (Math.PI / 180);
+                    const dx = Math.cos(radians) * this.speed * 0.1;
+                    const dy = Math.sin(radians) * this.speed * 0.1;
+
+                    this.x += dx;
+                    this.y += dy;
+
+                    battleStats.distanceTraveled[this.id] += Math.sqrt(dx * dx + dy * dy);
+
+                    // Wall collision (large margin to prevent clipping)
+                    const wallMargin = ROBOT_SIZE + 35;
+                    if (this.x < wallMargin) { this.x = wallMargin; this.damage += 0.1; this.speed *= 0.3; }
+                    if (this.x > ARENA_SIZE - wallMargin) { this.x = ARENA_SIZE - wallMargin; this.damage += 0.1; this.speed *= 0.3; }
+                    if (this.y < wallMargin) { this.y = wallMargin; this.damage += 0.1; this.speed *= 0.3; }
+                    if (this.y > ARENA_SIZE - wallMargin) { this.y = ARENA_SIZE - wallMargin; this.damage += 0.1; this.speed *= 0.3; }
+                }
+
+                // Obstacle Collision (v2.1)
+                for (const obs of obstacles) {
+                    const dx = obs.x - this.x;
+                    const dy = obs.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    // Approximate collision (Circle vs Circle/Box)
+                    // Treat obstacles as circles of radius size/1.5 for simplicity
+                    const minDist = ROBOT_SIZE + obs.size * 0.8; // Bigger collision radius
+
+                    if (dist < minDist && dist > 0.1) { // Prevent div-by-zero
+                        // Bounce/Slide
+                        const overlap = minDist - dist;
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+
+                        this.x -= nx * overlap;
+                        this.y -= ny * overlap;
+                        // Reduce speed on hit
+                        this.speed *= 0.5;
+                    }
+                }
+
+                // Robot collision
+                for (const other of robots) {
+                    if (other.id === this.id) continue;
+                    const dx = other.x - this.x;
+                    const dy = other.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < ROBOT_SIZE * 2 && dist > 0.1) { // Prevent div-by-zero
+                        // Push apart
+                        const overlap = ROBOT_SIZE * 2 - dist;
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+                        this.x -= nx * overlap / 2;
+                        this.y -= ny * overlap / 2;
+                        other.x += nx * overlap / 2;
+                        other.y += ny * overlap / 2;
+                        // Damage from collision
+                        this.damage += 0.5;
+                        other.damage += 0.5;
+                    }
+                }
+
+                // FINAL bounds check after all collisions (v2.8.1 fix)
+                // This prevents robots from being pushed out of bounds
+                this.x = Math.max(ROBOT_SIZE, Math.min(ARENA_SIZE - ROBOT_SIZE, this.x));
+                this.y = Math.max(ROBOT_SIZE, Math.min(ARENA_SIZE - ROBOT_SIZE, this.y));
+
+                // Safety check for NaN positions (shouldn't happen now, but just in case)
+                if (isNaN(this.x) || isNaN(this.y)) {
+                    debugLog('WARNING: Robot ' + this.id + ' had NaN position, resetting to base');
+                    const base = BASES[this.id];
+                    this.x = base.x;
+                    this.y = base.y;
+                }
+
+                // Update engine sound based on speed
+                updateEngineSound(this.id, this.speed);
+
+                // Drain energy (idle drains less, moving drains more)
+                this.energy -= ENERGY_DRAIN_IDLE;
+                if (this.speed > 0) {
+                    this.energy -= this.speed * ENERGY_DRAIN_MOVE;
+                }
+                this.energy = Math.max(0, this.energy);
+
+                this.updatePosition();
+            }
+
+            executeAI() {
+                if (this.damage >= 100) return;
+
+                // Handle PAUSE command
+                if (this.pauseTicks > 0) {
+                    this.pauseTicks--;
+                    return; // Skip AI execution this tick
+                }
+
+                if (this.energy <= 0) return; // Out of energy, can't execute AI
+
+                // Create API object for AI script
+                const api = {
+                    // Variables (approximate directly accessible values)
+                    HEALTH: Math.max(0, 100 - this.damage),
+                    ENERGY: this.energy,
+                    HOME: BASES[this.id],
+                    ENEMY: BASES[(this.id + 1) % 2],
+
+                    // Commands
+                    PAUSE: (ticks) => { this.pauseTicks = ticks; }, // Logic: stop for N ticks
+
+                    // Standard API
+                    scan: (deg, res) => this.scan(deg, res),
+                    lidar: (deg) => this.lidar(deg),
+                    sonar: () => this.sonar(),
+                    cannon: (deg, dist) => this.cannon(deg, dist),
+                    dropMine: () => this.dropMine(),
+                    drive: (deg, spd) => this.drive(deg, spd),
+                    damage: () => this.getDamage(),
+                    energy: () => this.getEnergy(),
+                    loc_x: () => this.x,
+                    loc_y: () => this.y,
+                    speed: () => this.getSpeed(),
+                    heading: () => this.heading, // Expose heading
+                    log: (msg) => debugLog(`🤖 Bot ${this.id + 1}: ${msg}`), // Expose logging
+                    // Bases (v2.0)
+                    base: () => BASES[this.id],
+                    enemy_base: () => BASES[(this.id + 1) % 2]
+                };
+
+                try {
+                    this.controlScript(api);
+                } catch (e) {
+                    console.error(`Robot ${this.id} AI error:`, e);
+                    // Automatic loss for crashing the interpreter
+                    this.damage = 100;
+                    debugLog(`❌ ROBOT ${this.id + 1} SCRIPT CRASHED! Auto-Destruct initiated.`);
+                    debugLog(`Error: ${e.message}`);
+                }
+            }
+
+            destroy() {
+                if (this.mesh) {
+                    scene.remove(this.mesh);
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // AI Scripts (Hardcoded for V1)
+        // ═══════════════════════════════════════════════════════
+
+        // Aggressive Hunter AI - actively seeks and destroys
+        function aggressiveAI(api) {
+            const myX = api.loc_x();
+            const myY = api.loc_y();
+
+            // Scan in current direction
+            let range = api.scan(0, 10);
+
+            // If nothing found, rotate scan
+            if (range === 0) {
+                for (let angle = 0; angle < 360; angle += 20) {
+                    range = api.scan(angle, 10);
+                    if (range > 0) {
+                        api.drive(angle, 80);
+                        if (range < 200) {
+                            api.cannon(angle, range);
+                        }
+                        return;
+                    }
+                }
+                // Random movement if nothing found
+                api.drive(Math.random() * 360, 50);
+            } else {
+                // Target found - attack!
+                api.drive(0, 60);
+                api.cannon(0, range);
+            }
+        }
+
+        // Defensive Sniper AI - keeps distance, precise shots
+        function defensiveAI(api) {
+            const myX = api.loc_x();
+            const myY = api.loc_y();
+            const damage = api.damage();
+
+            // Stay near center but move unpredictably
+            const centerX = 500;
+            const centerY = 500;
+            const distFromCenter = Math.sqrt((myX - centerX) ** 2 + (myY - centerY) ** 2);
+
+            // Scan all directions
+            for (let angle = 0; angle < 360; angle += 15) {
+                const range = api.scan(angle, 8);
+                if (range > 0) {
+                    // Fire at detected enemy
+                    api.cannon(angle, range);
+
+                    // If too close, back away
+                    if (range < 300) {
+                        const retreatAngle = (angle + 180) % 360;
+                        api.drive(retreatAngle, 70);
+                    } else {
+                        // Circle strafe
+                        api.drive((angle + 90) % 360, 40);
+                    }
+                    return;
+                }
+            }
+
+            // If too far from center, move back
+            if (distFromCenter > 300) {
+                const angleToCenter = Math.atan2(centerY - myY, centerX - myX) * (180 / Math.PI);
+                api.drive(angleToCenter, 30);
+            } else {
+                // Random patrol
+                api.drive(Math.random() * 360, 25);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // Custom Script System
+        // Default script templates
+
+        const DEFAULT_SCRIPT_1 = `
+        // #Sponsor: BlueBot Industries
+        // Blue Robot (The Hunter)
+        // Uses Sonar for close combat and PAUSE to recharge
+        function robotScript(api) {
+            const myX = api.loc_x();
+            const myY = api.loc_y();
+            const home = api.HOME;
+
+            // 1. Survival: Go Home if low energy
+            if (api.ENERGY < 800) {
+                const dx = home.x - myX;
+                const dy = home.y - myY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < 80) {
+                    api.drive(0, 0); // Stop
+                    api.PAUSE(60);   // Recharge
+                    return;
+                }
+                const angleToHome = Math.atan2(dy, dx) * (180 / Math.PI);
+                api.drive(angleToHome, 100);
+                return;
+            }
+
+            // 2. Combat: Check Sonar (Returns Absolute Angle)
+            const target = api.sonar();
+            if (target) {
+                api.cannon(target.angle, target.distance);
+                if (target.distance < 200) api.dropMine();
+                api.drive(target.angle + 90, 80); // Strafe
+                return;
+            }
+
+            // 3. Hunt/Patrol
+            const enemy = api.ENEMY;
+            const distToEnemy = Math.sqrt((myX - enemy.x)**2 + (myY - enemy.y)**2);
+            if (distToEnemy > 600) {
+                 const angle = Math.atan2(enemy.y - myY, enemy.x - myX) * (180 / Math.PI);
+                 api.drive(angle, 60);
+            } else {
+                 api.drive(api.heading() + 2, 40);
+                 // Random potshot
+                 if (Math.random() < 0.05) {
+                     const scanAngle = (api.heading() - 45 + Math.random() * 90) % 360;
+                     const range = api.lidar(scanAngle);
+                     if (range > 0) api.cannon(scanAngle, range);
+                 }
+            }
+        } `;
+
+        const DEFAULT_SCRIPT_2 = `
+        // #Sponsor: RedBot Corp
+        // Red Robot (The Sniper)
+        // Scans with Lidar + Absolute Angles
+        function robotScript(api) {
+            // 1. Recharge
+            if (api.ENERGY < 1000) {
+                const home = api.HOME;
+                const dist = Math.sqrt((home.x - api.loc_x())**2 + (home.y - api.loc_y())**2);
+                if (dist < 80) { api.PAUSE(30); return; }
+                const angle = Math.atan2(home.y - api.loc_y(), home.x - api.loc_x()) * (180 / Math.PI);
+                api.drive(angle, 100);
+                return;
+            }
+
+            // 2. Lidar Scan (Absolute Angles)
+            const h = api.heading();
+            for (let i = -60; i <= 60; i += 10) {
+                const angle = (h + i + 360) % 360;
+                const range = api.lidar(angle);
+                if (range > 0 && range < 700) {
+                    api.cannon(angle, range);
+                    return;
+                }
+            }
+
+            // 3. Move
+            api.drive(h, 50);
+            if (Math.random() < 0.05) api.drive(Math.random() * 360, 50);
+        } `;
+
+
+        const SCRIPT_GUIDE = `=== AI ROBOT WARS SCRIPT GUIDE(v2.6) ===
+
+    // SPONSOR TAG (for Tournaments):
+    // #Sponsor: YourSponsorName
+    // Add at top of script to identify your team!
+
+    // NEW IN V2.3:
+    // - api.PAUSE(ticks): Sleep/Recharge (60 ticks = 1s)
+    // - api.HOME / api.ENEMY: Base coordinates {x,y}
+    // - api.HEALTH / api.ENERGY: Direct variables
+
+    function robotScript(api) {
+        // 1. Recharge if low (Max Energy = 2500)
+        if (api.ENERGY < 750) {
+            api.drive(angleTo(api.HOME), 100);
+            if (distTo(api.HOME) < 80) api.PAUSE(60);
+            return;
+        }
+
+        // 2. Scan & Attack
+        let target = api.sonar();
+        if (target) {
+            api.cannon(target.angle, target.distance);
+        } else {
+            // Patrol...
+        }
+    }
+
+        // Helper functions:
+        // angleTo(target)
+        // distTo(target)
+        `;
+
+        // Custom scripts storage
+        let customScripts = {
+            robot1: DEFAULT_SCRIPT_1,
+            robot2: DEFAULT_SCRIPT_2
+        };
+
+        // Initialize active scripts by compiling defaults (Synchronous)
+        // Helper to safely compile or return a dummy
+        function safeCompile(code, robotKey) {
+            const res = compileScript(code, robotKey);
+            return res.success ? res.fn : function (api) { };
+        }
+
+        let activeScripts = {
+            robot1: safeCompile(DEFAULT_SCRIPT_1, 'robot1'),
+            robot2: safeCompile(DEFAULT_SCRIPT_2, 'robot2')
+        };
+
+        // Load saved scripts from BBS storage
+        async function loadSavedScripts() {
+            try {
+                const savedData = await window.bbs.getData();
+                if (savedData && savedData.scripts) {
+                    debugLog('Loading saved scripts...');
+                    if (savedData.scripts.robot1) {
+                        customScripts.robot1 = savedData.scripts.robot1;
+                        const result = compileScript(savedData.scripts.robot1, 'robot1');
+                        if (result.success) {
+                            activeScripts.robot1 = result.fn;
+                            debugLog('Loaded Blue script: ' + robotSponsors.robot1);
+                        }
+                    }
+                    if (savedData.scripts.robot2) {
+                        customScripts.robot2 = savedData.scripts.robot2;
+                        const result = compileScript(savedData.scripts.robot2, 'robot2');
+                        if (result.success) {
+                            activeScripts.robot2 = result.fn;
+                            debugLog('Loaded Red script: ' + robotSponsors.robot2);
+                        }
+                    }
+                    // Update menu overlay with loaded sponsor names
+                    if (menuMesh) updateMenuOverlay();
+                    debugLog('✅ Scripts loaded from storage');
+                } else {
+                    debugLog('No saved scripts found, using defaults');
+                }
+            } catch (e) {
+                debugLog('Error loading scripts: ' + e.message);
+            }
+        }
+
+        // Save scripts to BBS storage
+        async function saveScriptsToStorage() {
+            try {
+                await window.bbs.saveData({
+                    scripts: {
+                        robot1: customScripts.robot1,
+                        robot2: customScripts.robot2
+                    }
+                });
+                debugLog('✅ Scripts saved to storage');
+            } catch (e) {
+                debugLog('Error saving scripts: ' + e.message);
+            }
+        }
+
+        // Parse sponsor name from script comments
+        function parseSponsorFromScript(scriptCode) {
+            const match = scriptCode.match(/#Sponsor:\s*([^\n\r]+)/i);
+            if (match && match[1]) {
+                return match[1].trim();
+            }
+            return null;
+        }
+
+        function compileScript(scriptCode, robotKey = null) {
+            try {
+                // Parse sponsor from script
+                if (robotKey) {
+                    const sponsor = parseSponsorFromScript(scriptCode);
+                    if (sponsor) {
+                        robotSponsors[robotKey] = sponsor;
+                        debugLog(`Sponsor for ${robotKey}: ${sponsor} `);
+                    }
+                }
+
+                // Create a function from the script text
+                const wrappedCode = scriptCode + '\n; return robotScript;';
+                const factory = new Function(wrappedCode);
+                const scriptFn = factory();
+
+                if (typeof scriptFn !== 'function') {
+                    throw new Error('Script must define robotScript(api) function');
+                }
+
+                return { success: true, fn: scriptFn };
+            } catch (e) {
+                return { success: false, error: e.message };
+            }
+        }
+
+        function showScriptEditor(robotNum) {
+            const scriptKey = 'robot' + robotNum;
+
+            // Create modal overlay
+            const overlay = document.createElement('div');
+            overlay.id = 'script-editor-overlay';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:10000;display:flex;justify-content:center;align-items:center;';
+
+            const modal = document.createElement('div');
+            modal.style.cssText = 'background:#1e293b;border:2px solid #3b82f6;border-radius:10px;padding:20px;width:80%;max-width:800px;max-height:80%;display:flex;flex-direction:column;';
+
+            modal.innerHTML = `
+    < div style = "display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;" >
+                    <h2 style="margin:0;color:${robotNum === 1 ? '#60a5fa' : '#f87171'};">Edit Robot ${robotNum} Script</h2>
+                    <button id="close-editor" style="background:#ef4444;border:none;color:white;padding:8px 16px;border-radius:5px;cursor:pointer;font-weight:bold;">X</button>
+                </div >
+                <div style="display:flex;gap:15px;flex:1;overflow:hidden;">
+                    <div style="flex:1;display:flex;flex-direction:column;">
+                        <label style="color:#9ca3af;margin-bottom:5px;">Script Code:</label>
+                        <textarea id="script-textarea" style="flex:1;background:#0f172a;border:1px solid #334155;color:#e2e8f0;font-family:monospace;font-size:12px;padding:10px;resize:none;border-radius:5px;min-height:300px;"></textarea>
+                    </div>
+                    <div style="width:300px;display:flex;flex-direction:column;">
+                        <label style="color:#9ca3af;margin-bottom:5px;">Reference Guide:</label>
+                        <pre id="script-guide" style="flex:1;background:#0f172a;border:1px solid #334155;color:#22c55e;font-family:monospace;font-size:10px;padding:10px;overflow:auto;border-radius:5px;margin:0;white-space:pre-wrap;"></pre>
+                    </div>
+                </div>
+                <div id="compile-status" style="margin-top:10px;padding:8px;border-radius:5px;font-size:12px;"></div>
+                <div style="display:flex;gap:10px;margin-top:15px;justify-content:flex-end;">
+                    <button id="reset-script" style="background:#6b7280;border:none;color:white;padding:10px 20px;border-radius:5px;cursor:pointer;">Reset to Default</button>
+                    <button id="compile-script" style="background:#22c55e;border:none;color:white;padding:10px 20px;border-radius:5px;cursor:pointer;font-weight:bold;">Save & Compile</button>
+                </div>
+`;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            // Populate content
+            document.getElementById('script-textarea').value = customScripts[scriptKey];
+            document.getElementById('script-guide').textContent = SCRIPT_GUIDE;
+
+            // Event handlers
+            document.getElementById('close-editor').onclick = function () {
+                document.body.removeChild(overlay);
+            };
+
+            document.getElementById('reset-script').onclick = function () {
+                const defaultScript = robotNum === 1 ? DEFAULT_SCRIPT_1 : DEFAULT_SCRIPT_2;
+                document.getElementById('script-textarea').value = defaultScript;
+                document.getElementById('compile-status').innerHTML = '<span style="color:#f59e0b;">Reset to default - click Save & Compile to apply</span>';
+            };
+
+            document.getElementById('compile-script').onclick = function () {
+                const code = document.getElementById('script-textarea').value;
+                const result = compileScript(code, scriptKey);
+                const statusEl = document.getElementById('compile-status');
+
+                if (result.success) {
+                    customScripts[scriptKey] = code;
+                    activeScripts[scriptKey] = result.fn;
+                    const sponsor = robotSponsors[scriptKey];
+                    statusEl.innerHTML = `< span style = "color:#22c55e;" > Compiled & Saved! Sponsor: ${sponsor}</span > `;
+                    statusEl.style.background = 'rgba(34, 197, 94, 0.2)';
+                    // Save to persistent storage
+                    saveScriptsToStorage();
+                    // Update menu to show new sponsor names
+                    if (menuMesh) updateMenuOverlay();
+                } else {
+                    statusEl.innerHTML = '<span style="color:#ef4444;">Compile Error: ' + result.error + '</span>';
+                    statusEl.style.background = 'rgba(239, 68, 68, 0.2)';
+                }
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // Three.js Scene Setup
+        // ═══════════════════════════════════════════════════════
+
+        function initScene() {
+            debugLog('Setting up Three.js scene...');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a2e40);
+
+            // Orthographic camera for 2.5D isometric view (like StarCraft)
+            const aspect = window.innerWidth / window.innerHeight;
+            const viewSize = 60;
+            camera = new THREE.OrthographicCamera(
+                -viewSize * aspect,
+                viewSize * aspect,
+                viewSize,
+                -viewSize,
+                1,
+                1000
+            );
+            // Isometric camera position - angled view from top-right
+            const cameraTarget = new THREE.Vector3(0, 0, 0);
+            const cameraOffset = new THREE.Vector3(40, 60, 40);
+            camera.position.copy(cameraTarget).add(cameraOffset);
+            camera.lookAt(cameraTarget);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            gameContainer.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(20, 50, 20);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+
+            // Arena floor
+            const floorSize = ARENA_SIZE * 0.1;
+            const floorGeometry = new THREE.PlaneGeometry(floorSize, floorSize, 20, 20);
+            const floorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x334155,
+                roughness: 0.9
+            });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // Grid lines
+            const gridHelper = new THREE.GridHelper(floorSize, 20, 0x4a5568, 0x2d3748);
+            scene.add(gridHelper);
+
+            // Bases (v2.0)
+            createBaseMeshes(floorSize);
+
+            // Obstacles (v2.1)
+            createObstacles(floorSize);
+
+            // HUD (v2.4) - Title & Win Screen attached to Camera
+            createHUD();
+
+            // ═══════════════════════════════════════════════════════
+            // INDUSTRIAL ARENA ENVIRONMENT - Cage Walls & Cracked Floor
+            // ═══════════════════════════════════════════════════════
+
+            // --- CRACKED FLOOR with vertex displacement ---
+            const posAttr = floorGeometry.attributes.position;
+            for (let i = 0; i < posAttr.count; i++) {
+                // Random displacement for worn/cracked look
+                const x = posAttr.getX(i);
+                const z = posAttr.getZ(i);
+                // Create cracks via noise-like pattern (simple implementation)
+                const noise = Math.sin(x * 3) * Math.cos(z * 3) * 0.15;
+                const crack = Math.random() < 0.1 ? Math.random() * -0.3 : 0; // Random crack holes
+                posAttr.setZ(i, posAttr.getZ(i) + noise + crack);
+            }
+            posAttr.needsUpdate = true;
+            floorGeometry.computeVertexNormals();
+
+            // Floor material - darker, grimier concrete
+            floor.material = new THREE.MeshStandardMaterial({
+                color: 0x2a2d30, // Dark concrete
+                roughness: 0.95,
+                metalness: 0.05
+            });
+
+            // --- DEBRIS scattered around arena ---
+            const debrisMat = new THREE.MeshStandardMaterial({
+                color: 0x3d3d3d,
+                roughness: 0.85,
+                metalness: 0.2
+            });
+            for (let i = 0; i < 15; i++) {
+                const size = 0.2 + Math.random() * 0.4;
+                const debrisGeo = Math.random() > 0.5
+                    ? new THREE.BoxGeometry(size, size * 0.3, size * 0.8)
+                    : new THREE.DodecahedronGeometry(size * 0.5, 0);
+                const debris = new THREE.Mesh(debrisGeo, debrisMat);
+                debris.position.set(
+                    (Math.random() - 0.5) * floorSize * 0.9,
+                    size * 0.15,
+                    (Math.random() - 0.5) * floorSize * 0.9
+                );
+                debris.rotation.set(
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI
+                );
+                scene.add(debris);
+            }
+
+            // --- CAGE FENCE SYSTEM ---
+            const fenceHeight = 5;
+            const postSpacing = 10; // Distance between posts
+            const postRadius = 0.3;
+            const numPostsPerSide = Math.floor(floorSize / postSpacing) + 1;
+
+            // Fence materials
+            const postMat = new THREE.MeshStandardMaterial({
+                color: 0x2c2c2c, // Dark steel
+                roughness: 0.4,
+                metalness: 0.8
+            });
+            const wireMat = new THREE.MeshStandardMaterial({
+                color: 0x555555,
+                roughness: 0.6,
+                metalness: 0.7,
+                transparent: true,
+                opacity: 0.7
+            });
+            const barbedWireMat = new THREE.MeshStandardMaterial({
+                color: 0x555555,
+                roughness: 0.3,
+                metalness: 0.9,
+                emissive: 0x1a4a8a, // Electric blue glow
+                emissiveIntensity: 0.3
+            });
+
+            // Create fence posts and wire panels for all 4 sides
+            const sides = [
+                { start: [-floorSize / 2, -floorSize / 2], dir: [1, 0], len: floorSize },  // North (along X)
+                { start: [-floorSize / 2, floorSize / 2], dir: [1, 0], len: floorSize },   // South
+                { start: [-floorSize / 2, -floorSize / 2], dir: [0, 1], len: floorSize },  // West (along Z)
+                { start: [floorSize / 2, -floorSize / 2], dir: [0, 1], len: floorSize }    // East
+            ];
+
+            sides.forEach(side => {
+                const postGeo = new THREE.CylinderGeometry(postRadius, postRadius * 1.2, fenceHeight, 8);
+
+                for (let i = 0; i < numPostsPerSide; i++) {
+                    const t = i / (numPostsPerSide - 1);
+                    const x = side.start[0] + side.dir[0] * side.len * t;
+                    const z = side.start[1] + side.dir[1] * side.len * t;
+
+                    // Fence post
+                    const post = new THREE.Mesh(postGeo, postMat);
+                    post.position.set(x, fenceHeight / 2, z);
+                    post.castShadow = true;
+                    scene.add(post);
+
+                    // Wire panel between this post and next (except last)
+                    if (i < numPostsPerSide - 1) {
+                        const panelWidth = side.len / (numPostsPerSide - 1);
+                        const panelGeo = new THREE.PlaneGeometry(panelWidth, fenceHeight - 0.5);
+                        const panel = new THREE.Mesh(panelGeo, wireMat);
+
+                        // Position between posts
+                        const nextT = (i + 1) / (numPostsPerSide - 1);
+                        const nextX = side.start[0] + side.dir[0] * side.len * nextT;
+                        const nextZ = side.start[1] + side.dir[1] * side.len * nextT;
+                        panel.position.set((x + nextX) / 2, fenceHeight / 2, (z + nextZ) / 2);
+
+                        // Rotate to face inward
+                        if (side.dir[0] === 1) { // North/South walls
+                            // Already facing correctly
+                        } else { // East/West walls
+                            panel.rotation.y = Math.PI / 2;
+                        }
+                        scene.add(panel);
+                    }
+                }
+
+                // --- BARBED WIRE COILS on top ---
+                const wireRadius = 0.4;
+                const wireLoops = 12; // Number of loops per segment
+                const wireGeo = new THREE.TorusGeometry(wireRadius, 0.05, 6, wireLoops);
+
+                for (let i = 0; i < numPostsPerSide - 1; i++) {
+                    const t = (i + 0.5) / (numPostsPerSide - 1);
+                    const x = side.start[0] + side.dir[0] * side.len * t;
+                    const z = side.start[1] + side.dir[1] * side.len * t;
+
+                    // Create helical wire effect with multiple offset torus shapes
+                    for (let j = 0; j < 3; j++) {
+                        const wire = new THREE.Mesh(wireGeo, barbedWireMat);
+                        wire.position.set(
+                            x + (j - 1) * (side.dir[0] === 0 ? 0.5 : 0),
+                            fenceHeight + 0.3 + j * 0.15,
+                            z + (j - 1) * (side.dir[1] === 0 ? 0.5 : 0)
+                        );
+                        wire.rotation.x = (side.dir[0] === 1) ? Math.PI / 2 : 0;
+                        wire.rotation.z = (side.dir[1] === 1) ? Math.PI / 2 : 0;
+                        scene.add(wire);
+                    }
+                }
+            });
+
+            // --- CORNER POSTS (taller) ---
+            const cornerGeo = new THREE.CylinderGeometry(postRadius * 1.3, postRadius * 1.5, fenceHeight + 1, 8);
+            const cornerPositions = [
+                [-floorSize / 2, -floorSize / 2],
+                [-floorSize / 2, floorSize / 2],
+                [floorSize / 2, -floorSize / 2],
+                [floorSize / 2, floorSize / 2]
+            ];
+            cornerPositions.forEach(pos => {
+                const cornerPost = new THREE.Mesh(cornerGeo, postMat);
+                cornerPost.position.set(pos[0], (fenceHeight + 1) / 2, pos[1]);
+                cornerPost.castShadow = true;
+                scene.add(cornerPost);
+            });
+
+            debugLog('✅ Three.js scene ready');
+        }
+
+        function createBaseMeshes(floorSize) {
+            const scale = 0.1;
+            BASES.forEach((base, index) => {
+                // Base Group
+                const baseGroup = new THREE.Group();
+                baseGroup.position.set(
+                    (base.x - ARENA_SIZE / 2) * scale,
+                    0,
+                    (base.y - ARENA_SIZE / 2) * scale
+                );
+                scene.add(baseGroup);
+
+                // 1. Tech Platform (Hexagon/Cylinder)
+                const platformGeo = new THREE.CylinderGeometry(BASE_RADIUS * scale, BASE_RADIUS * scale * 1.1, 0.4, 6);
+                const platformMat = new THREE.MeshStandardMaterial({
+                    color: 0x222222,
+                    roughness: 0.3,
+                    metalness: 0.8
+                });
+                const platform = new THREE.Mesh(platformGeo, platformMat);
+                platform.position.y = 0.2;
+                platform.receiveShadow = true;
+                baseGroup.add(platform);
+
+                // 2. Glowing Energy Ring
+                const ringGeo = new THREE.TorusGeometry(BASE_RADIUS * scale * 0.9, 0.2, 8, 32);
+                const ringMat = new THREE.MeshBasicMaterial({ color: base.color });
+                const ring = new THREE.Mesh(ringGeo, ringMat);
+                ring.rotation.x = Math.PI / 2;
+                ring.position.y = 0.45;
+                baseGroup.add(ring);
+
+                // 3. Inner Pulsing Core
+                const coreGeo = new THREE.CylinderGeometry(BASE_RADIUS * scale * 0.4, BASE_RADIUS * scale * 0.4, 0.1, 32);
+                const coreMat = new THREE.MeshBasicMaterial({ color: base.color, transparent: true, opacity: 0.6 });
+                const core = new THREE.Mesh(coreGeo, coreMat);
+                core.position.y = 0.46;
+                baseGroup.add(core);
+
+                // Labels
+                // ENERGY text label
+                const labelCanvas = document.createElement('canvas');
+                labelCanvas.width = 128;
+                labelCanvas.height = 32;
+                const ctx = labelCanvas.getContext('2d');
+                ctx.fillStyle = index === 0 ? '#60a5fa' : '#f87171';
+                ctx.font = 'bold 20px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(index === 0 ? 'BLUE BASE' : 'RED BASE', 64, 16);
+
+                const labelTex = new THREE.CanvasTexture(labelCanvas);
+                const labelMat = new THREE.SpriteMaterial({ map: labelTex, transparent: true });
+                const labelSprite = new THREE.Sprite(labelMat);
+                labelSprite.scale.set(8, 2, 1);
+                labelSprite.position.set(0, 3.5, 0); // Relative to group
+                baseGroup.add(labelSprite);
+            });
+        }
+
+        function createObstacles(floorSize) {
+            obstacles = []; // Reset
+            const obstacleCount = Math.floor(Math.random() * 3) + 1; // 1 to 3 tetrapods (reduced from 4-5)
+
+            // Concrete tetrapod material (weathered concrete color)
+            const concreteMat = new THREE.MeshStandardMaterial({
+                color: 0x8a8a82,
+                roughness: 0.95,
+                metalness: 0.05
+            });
+
+            // Helper function to create tetrapod with proper tetrahedral geometry
+            // Uses nested groups: outer for Y spin, inner for X tilt
+            function createTetrapod(size) {
+                const tetrapod = new THREE.Group();
+
+                const legRadius = size * 0.35;
+                const legLength = size * 2.2;
+
+                // Create leg mesh - cylinder extending from origin
+                function createLeg() {
+                    const geo = new THREE.CylinderGeometry(legRadius * 0.6, legRadius, legLength, 10);
+                    geo.translate(0, legLength / 2, 0);
+                    const mesh = new THREE.Mesh(geo, concreteMat);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    return mesh;
+                }
+
+                // Tetrahedral angle: ~109.47 degrees from vertical
+                const tiltAngle = Math.acos(-1 / 3); // ~1.91 radians
+
+                // Leg 1: pointing straight UP
+                const leg1 = createLeg();
+                tetrapod.add(leg1);
+
+                // Leg 2: tilted down, no spin (front)
+                const outer2 = new THREE.Group();
+                const inner2 = new THREE.Group();
+                inner2.add(createLeg());
+                inner2.rotation.x = tiltAngle; // Tilt down
+                outer2.add(inner2);
+                outer2.rotation.y = 0; // Front
+                tetrapod.add(outer2);
+
+                // Leg 3: tilted down, spun 120 degrees
+                const outer3 = new THREE.Group();
+                const inner3 = new THREE.Group();
+                inner3.add(createLeg());
+                inner3.rotation.x = tiltAngle;
+                outer3.add(inner3);
+                outer3.rotation.y = Math.PI * 2 / 3; // 120 degrees
+                tetrapod.add(outer3);
+
+                // Leg 4: tilted down, spun 240 degrees
+                const outer4 = new THREE.Group();
+                const inner4 = new THREE.Group();
+                inner4.add(createLeg());
+                inner4.rotation.x = tiltAngle;
+                outer4.add(inner4);
+                outer4.rotation.y = Math.PI * 4 / 3; // 240 degrees
+                tetrapod.add(outer4);
+
+                // Central sphere
+                const jointGeo = new THREE.SphereGeometry(legRadius * 1.4, 14, 14);
+                const joint = new THREE.Mesh(jointGeo, concreteMat);
+                joint.castShadow = true;
+                tetrapod.add(joint);
+
+                return tetrapod;
+            }
+
+            for (let i = 0; i < obstacleCount; i++) {
+                let valid = false;
+                let x, y, size;
+                let attempts = 0;
+
+                while (!valid && attempts < 50) {
+                    attempts++;
+                    // Random Position (keep away from edges and bases)
+                    x = Math.random() * 600 + 200; // 200 to 800
+                    y = Math.random() * 600 + 200;
+                    size = Math.random() * 20 + 60; // 60 to 80 (collision radius)
+
+                    // Check Base Collision (CRITICAL)
+                    const distBlue = Math.sqrt((x - 100) ** 2 + (y - 100) ** 2);
+                    const distRed = Math.sqrt((x - 900) ** 2 + (y - 900) ** 2);
+
+                    if (distBlue > 200 && distRed > 200) {
+                        valid = true;
+                    }
+                }
+
+                if (valid) {
+                    const scale = 0.1;
+                    const tetrapodSize = 2.0; // Size multiplier for visual
+
+                    const mesh = createTetrapod(tetrapodSize);
+                    mesh.position.set(
+                        (x - ARENA_SIZE / 2) * scale,
+                        2.5, // Elevated so legs touch ground
+                        (y - ARENA_SIZE / 2) * scale
+                    );
+                    // Random rotation for variety
+                    mesh.rotation.y = Math.random() * Math.PI * 2;
+                    // Slight random tilt for natural look
+                    mesh.rotation.x = (Math.random() - 0.5) * 0.2;
+                    mesh.rotation.z = (Math.random() - 0.5) * 0.2;
+
+                    scene.add(mesh);
+                    obstacles.push({ x, y, size, shape: 'tetrapod', mesh });
+                }
+            }
+            debugLog(`Generated ${obstacles.length} concrete tetrapods`);
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // Missile & Explosion System
+        // ═══════════════════════════════════════════════════════
+
+        function updateMissiles() {
+            for (let i = missiles.length - 1; i >= 0; i--) {
+                const missile = missiles[i];
+
+                // Move missile
+                const dx = missile.targetX - missile.x;
+                const dy = missile.targetY - missile.y;
+                const remainingDist = Math.sqrt(dx * dx + dy * dy);
+
+                // Check Obstacles (v2.1) - En route collision
+                let hitObstacle = false;
+                for (const obs of obstacles) {
+                    const dist = Math.sqrt((missile.x - obs.x) ** 2 + (missile.y - obs.y) ** 2);
+                    if (dist < obs.size * 0.6) {
+                        createExplosion(missile.x, missile.y, missile.ownerId);
+                        scene.remove(missile.mesh);
+                        missiles.splice(i, 1);
+                        hitObstacle = true;
+                        break;
+                    }
+                }
+                if (hitObstacle) continue; // Skip rest of loop for this missile
+
+                // Reached Target?
+                if (remainingDist < MISSILE_SPEED || missile.traveledDistance >= missile.totalDistance) {
+                    // Explode!
+                    createExplosion(missile.x, missile.y, missile.ownerId);
+
+                    // Check for hits
+                    for (const robot of robots) {
+                        const hitDist = Math.sqrt(
+                            (robot.x - missile.x) ** 2 + (robot.y - missile.y) ** 2
+                        );
+                        if (hitDist < SPLASH_RADIUS) {
+                            const damage = MISSILE_DAMAGE * (1 - hitDist / SPLASH_RADIUS);
+                            robot.damage += damage;
+                            if (robot.id !== missile.ownerId) {
+                                battleStats.shotsHit[missile.ownerId]++;
+                                battleStats.damageDealt[missile.ownerId] += damage;
+                                playDamageSound();
+                            }
+                        }
+                    }
+
+                    // Remove missile
+                    scene.remove(missile.mesh);
+                    missiles.splice(i, 1);
+                } else {
+                    // Continue moving
+                    const moveX = (dx / remainingDist) * MISSILE_SPEED;
+                    const moveY = (dy / remainingDist) * MISSILE_SPEED;
+                    missile.x += moveX;
+                    missile.y += moveY;
+                    missile.traveledDistance += MISSILE_SPEED;
+
+                    // Update mesh position
+                    const scale = 0.1;
+                    missile.mesh.position.x = (missile.x - ARENA_SIZE / 2) * scale;
+                    missile.mesh.position.z = (missile.y - ARENA_SIZE / 2) * scale;
+                    missile.mesh.position.y = missile.height || 2.0; // Use stored height or default
+                }
+            }
+        }
+
+        function createExplosion(x, y, ownerId) {
+            const scale = 0.1;
+            const worldX = (x - ARENA_SIZE / 2) * scale;
+            const worldZ = (y - ARENA_SIZE / 2) * scale;
+
+            // Explosion ring
+            const ringGeometry = new THREE.RingGeometry(0.1, 0.5, 16);
+            const ringMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff6600,
+                transparent: true,
+                opacity: 1,
+                side: THREE.DoubleSide
+            });
+            const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.set(worldX, 0.5, worldZ);
+            scene.add(ring);
+
+            // Play explosion sound
+            playExplosionSound();
+
+            explosions.push({
+                mesh: ring,
+                scale: 0.5,
+                maxScale: SPLASH_RADIUS * scale * 0.1,
+                opacity: 1
+            });
+        }
+
+        function updateExplosions() {
+            for (let i = explosions.length - 1; i >= 0; i--) {
+                const exp = explosions[i];
+                exp.scale += 0.3;
+                exp.opacity -= 0.05;
+
+                exp.mesh.scale.set(exp.scale, exp.scale, 1);
+                exp.mesh.material.opacity = exp.opacity;
+
+                if (exp.opacity <= 0) {
+                    scene.remove(exp.mesh);
+                    explosions.splice(i, 1);
+                }
+            }
+        }
+
+        function updateMines() {
+            const now = Date.now();
+
+            for (let i = mines.length - 1; i >= 0; i--) {
+                const mine = mines[i];
+
+                // Arm the mine after delay
+                if (!mine.armed && now >= mine.armTime) {
+                    mine.armed = true;
+                    // Make it pulse when armed
+                    mine.mesh.material.emissiveIntensity = 0.6;
+                }
+
+                if (!mine.armed) continue;
+
+                // Check for enemy robots (NOT the owner - intelligent mines!)
+                for (const robot of robots) {
+                    if (robot.id === mine.ownerId) continue; // Skip owner
+
+                    const dx = robot.x - mine.x;
+                    const dy = robot.y - mine.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < MINE_TRIGGER_RADIUS) {
+                        // BOOM!
+                        createExplosion(mine.x, mine.y, mine.ownerId);
+                        playExplosionSound();
+
+                        // Damage the enemy robot
+                        robot.damage += MINE_DAMAGE;
+                        battleStats.damageDealt[mine.ownerId] += MINE_DAMAGE;
+                        playDamageSound();
+
+                        // Remove mine
+                        scene.remove(mine.mesh);
+                        mines.splice(i, 1);
+                        debugLog('Mine triggered! Robot ' + robot.id + ' hit for ' + MINE_DAMAGE + ' damage');
+                        break;
+                    }
+                }
+            }
+        }
+
+        function updateDebris() {
+            for (let i = debris.length - 1; i >= 0; i--) {
+                const d = debris[i];
+
+                // Apply velocity
+                d.x += d.vx;
+                d.y += d.vy;
+                d.vz -= 0.02; // Gravity
+                d.z += d.vz;
+
+                // Update mesh position
+                const scale = 0.1;
+                d.mesh.position.x = (d.x - ARENA_SIZE / 2) * scale;
+                d.mesh.position.z = (d.y - ARENA_SIZE / 2) * scale;
+                d.mesh.position.y = d.z;
+
+                // Spin
+                d.mesh.rotation.x += d.spin;
+                d.mesh.rotation.z += d.spin * 0.7;
+
+                // Remove when hits ground
+                if (d.z <= 0) {
+                    scene.remove(d.mesh);
+                    debris.splice(i, 1);
+                }
+            }
+        }
+
+        function createDeathExplosion(robot) {
+            const scale = 0.1;
+            const worldX = robot.x;
+            const worldY = robot.y;
+
+            // Create 15-20 debris pieces
+            const numDebris = 15 + Math.floor(Math.random() * 6);
+
+            for (let i = 0; i < numDebris; i++) {
+                const size = 0.1 + Math.random() * 0.2;
+                const geometry = new THREE.BoxGeometry(size, size, size);
+                const material = new THREE.MeshStandardMaterial({
+                    color: robot.color,
+                    metalness: 0.5,
+                    roughness: 0.5
+                });
+                const mesh = new THREE.Mesh(geometry, material);
+
+                // Random velocity
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 2 + Math.random() * 4;
+
+                debris.push({
+                    x: worldX,
+                    y: worldY,
+                    z: 1 + Math.random() * 2,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    vz: 0.3 + Math.random() * 0.5,
+                    spin: (Math.random() - 0.5) * 0.3,
+                    mesh: mesh
+                });
+
+                mesh.position.x = (worldX - ARENA_SIZE / 2) * scale;
+                mesh.position.z = (worldY - ARENA_SIZE / 2) * scale;
+                mesh.position.y = 1;
+                scene.add(mesh);
+            }
+
+            // Big explosion at death location
+            createExplosion(worldX, worldY, -1);
+            createExplosion(worldX + 20, worldY + 20, -1);
+            createExplosion(worldX - 20, worldY - 20, -1);
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // UI Components
+        // ═══════════════════════════════════════════════════════
+
+        function createUI() {
+            // HTML UI overlay for interactive elements
+            const ui = document.createElement('div');
+            ui.id = 'game-ui';
+            ui.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;font-family:monospace;color:#e2e8f0;';
+            appletContainer.appendChild(ui);
+
+            // Recording indicator
+            const recordingIndicator = document.createElement('div');
+            recordingIndicator.id = 'recording-indicator';
+            recordingIndicator.style.cssText = 'position:absolute;top:80px;left:50%;transform:translateX(-50%);background:rgba(220,38,38,0.9);padding:8px 20px;border-radius:20px;display:none;align-items:center;gap:8px;z-index:100;';
+            recordingIndicator.innerHTML = `
+    <span style="width:12px;height:12px;background:#fff;border-radius:50%;animation:pulse 1s infinite;"></span>
+        <span style="font-size:14px;font-weight:bold;">REC</span>
+`;
+            ui.appendChild(recordingIndicator);
+
+            // Edit Script Buttons (visible on menu screen)
+            const editBtnContainer = document.createElement('div');
+            editBtnContainer.id = 'edit-buttons';
+            editBtnContainer.style.cssText = 'position:absolute;bottom:35%;left:50%;transform:translateX(-50%);display:flex;gap:20px;pointer-events:auto;';
+
+            const editBlueBtn = document.createElement('button');
+            editBlueBtn.textContent = 'Edit Blue Script';
+            editBlueBtn.style.cssText = 'background:#3b82f6;border:none;padding:10px 20px;color:white;border-radius:5px;cursor:pointer;font-family:monospace;font-size:14px;';
+            editBlueBtn.onclick = () => showScriptEditor(1);
+
+            const editRedBtn = document.createElement('button');
+            editRedBtn.textContent = 'Edit Red Script';
+            editRedBtn.style.cssText = 'background:#ef4444;border:none;padding:10px 20px;color:white;border-radius:5px;cursor:pointer;font-family:monospace;font-size:14px;';
+            editRedBtn.onclick = () => showScriptEditor(2);
+
+            editBtnContainer.appendChild(editBlueBtn);
+            editBtnContainer.appendChild(editRedBtn);
+            ui.appendChild(editBtnContainer);
+
+            // Add pulse animation
+            const style = document.createElement('style');
+            style.textContent = '@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }';
+            document.head.appendChild(style);
+        }
+
+        function updateRobotStatus(robotId, robot) {
+            const statusEl = document.getElementById(`robot${robotId + 1} -status`);
+            if (!statusEl) return;
+
+            const healthPercent = Math.max(0, 100 - robot.damage);
+            const healthColor = healthPercent > 60 ? '#22c55e' : healthPercent > 30 ? '#f59e0b' : '#ef4444';
+
+            const energyPercent = Math.max(0, (robot.energy / MAX_ENERGY) * 100);
+            const energyColor = energyPercent > 50 ? '#3b82f6' : energyPercent > 20 ? '#f59e0b' : '#ef4444';
+
+            statusEl.innerHTML = `
+    < h3 style = "margin:0 0 10px;color:${robotId === 0 ? '#60a5fa' : '#f87171'};" > Robot ${robotId + 1}</h3 >
+        <div style="margin-bottom:6px;">
+          <span style="color:#9ca3af;font-size:10px;">Health:</span>
+          <div style="background:#374151;height:10px;border-radius:3px;margin-top:2px;overflow:hidden;">
+            <div style="width:${healthPercent}%;height:100%;background:${healthColor};transition:width 0.2s;"></div>
+          </div>
+          <span style="font-size:10px;color:${healthColor};">${healthPercent.toFixed(0)}%</span>
+        </div>
+        <div style="margin-bottom:6px;">
+          <span style="color:#9ca3af;font-size:10px;">Energy:</span>
+          <div style="background:#374151;height:10px;border-radius:3px;margin-top:2px;overflow:hidden;">
+            <div style="width:${energyPercent}%;height:100%;background:${energyColor};transition:width 0.2s;"></div>
+          </div>
+          <span style="font-size:10px;color:${energyColor};">${energyPercent.toFixed(0)}%</span>
+        </div>
+        <div style="font-size:10px;color:#9ca3af;">
+          <div>Pos: (${Math.floor(robot.x)}, ${Math.floor(robot.y)})</div>
+          <div>Speed: ${Math.floor(robot.speed)} | Hdg: ${Math.floor(robot.heading)}deg</div>
+        </div>
+`;
+        }
+
+        function updateControlPanel() {
+            const panel = document.getElementById('control-panel');
+            if (!panel) return;
+
+            if (currentState === GameState.MENU) {
+                panel.innerHTML = `
+    < div style = "margin-bottom:15px;" >
+            <button id="edit-robot1" style="background:#3b82f6;border:none;padding:8px 16px;font-size:12px;color:white;border-radius:5px;cursor:pointer;margin-right:10px;">[Edit Blue Script]</button>
+            <button id="edit-robot2" style="background:#ef4444;border:none;padding:8px 16px;font-size:12px;color:white;border-radius:5px;cursor:pointer;">[Edit Red Script]</button>
+          </div >
+          <button id="start-btn" style="background:#22c55e;border:none;padding:15px 40px;font-size:18px;color:white;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:bold;">
+            START (7 Rounds)
+          </button>
+          <p style="margin:8px 0 0;font-size:11px;color:#6b7280;">${robotSponsors.robot1} (Blue) vs ${robotSponsors.robot2} (Red)</p>
+`;
+                document.getElementById('start-btn').onclick = startGame;
+                document.getElementById('edit-robot1').onclick = function () { showScriptEditor(1); };
+                document.getElementById('edit-robot2').onclick = function () { showScriptEditor(2); };
+            } else if (currentState === GameState.PLAYING) {
+                panel.innerHTML = `
+    < div style = "display:flex;gap:30px;" >
+            <div style="text-align:left;">
+              <div style="color:#60a5fa;font-weight:bold;">Blue (Hunter)</div>
+              <div style="font-size:11px;">Shots: ${battleStats.shotsFired[0]} | Hits: ${battleStats.shotsHit[0]}</div>
+              <div style="font-size:11px;">Damage: ${battleStats.damageDealt[0].toFixed(1)}</div>
+            </div>
+            <div style="text-align:left;">
+              <div style="color:#f87171;font-weight:bold;">Red (Sniper)</div>
+              <div style="font-size:11px;">Shots: ${battleStats.shotsFired[1]} | Hits: ${battleStats.shotsHit[1]}</div>
+              <div style="font-size:11px;">Damage: ${battleStats.damageDealt[1].toFixed(1)}</div>
+            </div>
+          </div >
+    `;
+            } else if (currentState === GameState.GAME_OVER) {
+                // Determine winner
+                let winner = -1;
+
+                // 1. Check destruction
+                if (robots[0].damage >= 100) winner = 1;
+                else if (robots[1].damage >= 100) winner = 0;
+
+                // 2. Check energy limits (most health wins)
+                else if (robots[0].energy <= 0 && robots[1].energy <= 0) {
+                    if (robots[0].damage < robots[1].damage) winner = 0;
+                    else if (robots[1].damage < robots[0].damage) winner = 1;
+                }
+
+                // If winner is still -1, it's a draw (handled by battleStats.isDraw)
+
+                const winnerName = winner === 0 ? 'Blue' : 'Red';
+                const winnerColor = winner === 0 ? '#60a5fa' : '#f87171';
+
+                const headerHtml = battleStats.isDraw ?
+                    `< h2 style = "margin:0 0 15px;color:#fbbf24;" > [DRAW] BATTERIES DEPLETED!</h2 > ` :
+                    `< h2 style = "margin:0 0 15px;color:${winnerColor};" > [VICTORY] ${winnerName} WINS!</h2 > `;
+
+                panel.innerHTML = `
+          ${headerHtml}
+          
+          <div style="background:rgba(255,255,255,0.1);padding:10px;border-radius:5px;margin-bottom:15px;display:flex;justify-content:space-around;font-weight:bold;">
+             <span style="color:#60a5fa;">Blue Wins: ${sessionStats.blueWins}</span>
+             <span style="color:#fbbf24;font-size:0.9em;opacity:0.8;">(Draws: ${sessionStats.draws})</span>
+             <span style="color:#f87171;">Red Wins: ${sessionStats.redWins}</span>
+          </div>
+
+          <div style="display:flex;gap:40px;margin-bottom:15px;">
+            <div style="text-align:left;">
+              <div style="color:#60a5fa;font-weight:bold;">Blue Stats</div>
+              <div style="font-size:11px;">Accuracy: ${battleStats.shotsFired[0] > 0 ? ((battleStats.shotsHit[0] / battleStats.shotsFired[0]) * 100).toFixed(1) : 0}%</div>
+              <div style="font-size:11px;">Damage: ${battleStats.damageDealt[0].toFixed(1)}</div>
+            </div>
+            <div style="text-align:left;">
+              <div style="color:#f87171;font-weight:bold;">Red Stats</div>
+              <div style="font-size:11px;">Accuracy: ${battleStats.shotsFired[1] > 0 ? ((battleStats.shotsHit[1] / battleStats.shotsFired[1]) * 100).toFixed(1) : 0}%</div>
+              <div style="font-size:11px;">Damage: ${battleStats.damageDealt[1].toFixed(1)}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:15px;justify-content:center;">
+            <button id="restart-btn" style="background:#22c55e;border:none;padding:12px 30px;font-size:16px;color:white;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:bold;">
+              [REMATCH]
+            </button>
+            <button id="download-btn" style="background:#1d9bf0;border:none;padding:12px 30px;font-size:16px;color:white;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:bold;">
+              [Download for X]
+            </button>
+          </div>
+`;
+                document.getElementById('restart-btn').onclick = startGame;
+                document.getElementById('download-btn').onclick = downloadRecording;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // Game Loop
+        // ═══════════════════════════════════════════════════════
+
+        function startGame() {
+            // First call initializes the 7-round session
+            if (!tournamentMode) {
+                debugLog('Starting 7-Round Battle...');
+                tournamentMode = true;
+                tournamentRound = 0;
+                tournamentScores = { blue: 0, red: 0 };
+
+                // Start recording once for entire session
+                initAudio();
+                startRecording();
+                debugLog('🔴 Recording started (7 rounds)');
+            }
+
+            debugLog(`Round ${tournamentRound + 1}/${TOURNAMENT_ROUNDS}...`);
+
+            // Hide 3D overlays and HTML edit buttons
+            if (winOverlay) winOverlay.visible = false;
+            if (menuOverlay) menuOverlay.visible = false;
+            const editBtns = document.getElementById('edit-buttons');
+            if (editBtns) editBtns.style.display = 'none';
+
+            // Reset state
+            currentState = GameState.PLAYING;
+            battleStats = {
+                shotsFired: [0, 0],
+                shotsHit: [0, 0],
+                damageDealt: [0, 0],
+                distanceTraveled: [0, 0],
+                minesDropped: [0, 0]
+            };
+
+            // Clear existing entities
+            for (const robot of robots) {
+                robot.destroy();
+            }
+            for (const missile of missiles) {
+                scene.remove(missile.mesh);
+            }
+            for (const exp of explosions) {
+                scene.remove(exp.mesh);
+            }
+            for (const mine of mines) {
+                scene.remove(mine.mesh);
+            }
+            for (const d of debris) {
+                scene.remove(d.mesh);
+            }
+            robots = [];
+            missiles = [];
+            explosions = [];
+            mines = [];
+            debris = [];
+
+            // Random spawn positions (corners and edges)
+            const spawnPoints = [
+                { x: 150, y: 150 },   // Top-left
+                { x: 850, y: 150 },   // Top-right
+                { x: 150, y: 850 },   // Bottom-left
+                { x: 850, y: 850 },   // Bottom-right
+                { x: 500, y: 100 },   // Top-center
+                { x: 500, y: 900 },   // Bottom-center
+                { x: 100, y: 500 },   // Left-center
+                { x: 900, y: 500 }    // Right-center
+            ];
+
+            // Pick two random different spawn points
+            const spawn1Idx = Math.floor(Math.random() * spawnPoints.length);
+            let spawn2Idx = Math.floor(Math.random() * spawnPoints.length);
+            while (spawn2Idx === spawn1Idx) {
+                spawn2Idx = Math.floor(Math.random() * spawnPoints.length);
+            }
+
+            const spawn1 = spawnPoints[spawn1Idx];
+            const spawn2 = spawnPoints[spawn2Idx];
+
+            // Create robots at random positions
+            robots.push(new Robot(0, spawn1.x, spawn1.y, ROBOT_COLORS[0], activeScripts.robot1));
+            robots.push(new Robot(1, spawn2.x, spawn2.y, ROBOT_COLORS[1], activeScripts.robot2));
+
+            updateControlPanel();
+
+            // Audio already initialized in first call
+            if (tournamentRound === 0) {
+                initAudio();
+            }
+            startEngineSound(0);
+            startEngineSound(1);
+
+            // Start game loop
+            if (gameLoop) clearInterval(gameLoop);
+            gameLoop = setInterval(tick, TICK_INTERVAL);
+
+            debugLog('Game started!');
+        }
+
+        function tick() {
+            if (currentState !== GameState.PLAYING) return;
+
+            // Execute AI for each robot
+            for (const robot of robots) {
+                robot.executeAI();
+            }
+
+            // Update physics
+            for (const robot of robots) {
+                robot.update();
+                robot.updateUI(); // Fix: Update 3D health bars (v2.4)
+                updateRobotStatus(robot.id, robot);
+            }
+
+            updateMissiles();
+            updateExplosions();
+            updateMines();
+            updateDebris();
+            update3DHealthBars(); // Update 3D HUD for recording (v2.4.7)
+
+            // Check victory condition
+            let gameOver = false;
+            let draw = false;
+
+            // 1. Destruction Check (Instant Win) - damage >= 100
+            for (const robot of robots) {
+                if (robot.damage >= 100) {
+                    gameOver = true;
+                    break;
+                }
+            }
+
+            // 2. Dominant Victory - robot has MORE energy AND MORE health AND opponent out of energy
+            if (!gameOver) {
+                for (let i = 0; i < 2; i++) {
+                    const other = 1 - i;
+                    const hasMoreEnergy = robots[i].energy > robots[other].energy;
+                    const hasMoreHealth = robots[i].damage < robots[other].damage;
+                    const opponentOutOfEnergy = robots[other].energy <= 0;
+
+                    if (hasMoreEnergy && hasMoreHealth && opponentOutOfEnergy) {
+                        gameOver = true;
+                        break;
+                    }
+                }
+            }
+
+            // 3. Both out of energy - compare health (robot with more health wins)
+            if (!gameOver && robots[0].energy <= 0 && robots[1].energy <= 0) {
+                gameOver = true;
+                if (Math.abs(robots[0].damage - robots[1].damage) < 0.1) {
+                    draw = true;
+                }
+            }
+
+            if (gameOver) {
+                endGame(draw);
+                return;
+            }
+
+            // Update stats display
+            updateControlPanel();
+
+            // Render
+            renderer.render(scene, camera);
+        }
+
+        function endGame(isDraw = false) {
+            currentState = GameState.GAME_OVER;
+            // Store draw state globally so UI can access it
+            battleStats.isDraw = isDraw;
+
+            if (gameLoop) {
+                clearInterval(gameLoop);
+                gameLoop = null;
+            }
+
+            // Determine winner
+            // Win conditions:
+            // 1. Opponent destroyed (damage >= 100)
+            // 2. Both out of energy - more health wins
+            let winner = -1; // -1 = draw/undetermined
+            if (!isDraw) {
+                if (robots[0].damage >= 100) {
+                    winner = 1; // Red wins (Blue destroyed)
+                    sessionStats.redWins++;
+                    if (tournamentMode) tournamentScores.red++;
+                } else if (robots[1].damage >= 100) {
+                    winner = 0; // Blue wins (Red destroyed)
+                    sessionStats.blueWins++;
+                    if (tournamentMode) tournamentScores.blue++;
+                } else if (robots[0].damage < robots[1].damage) {
+                    winner = 0; // Blue has more health (both out of energy)
+                    sessionStats.blueWins++;
+                    if (tournamentMode) tournamentScores.blue++;
+                } else {
+                    winner = 1; // Red has more health or equal
+                    sessionStats.redWins++;
+                    if (tournamentMode) tournamentScores.red++;
+                }
+                // Store winner sponsor for recording filename
+                battleStats.winner = winner;
+                battleStats.winnerSponsor = winner === 0 ? robotSponsors.robot1 : robotSponsors.robot2;
+            } else {
+                sessionStats.draws++;
+            }
+
+            // Create death explosion only for destroyed robots
+            for (const robot of robots) {
+                if (robot.damage >= 100) {
+                    createDeathExplosion(robot);
+                    robot.destroy();
+                }
+            }
+
+            // Stop engine sounds
+            stopAllEngineSounds();
+
+            if (!isDraw) {
+                playVictorySound();
+            }
+
+            // Update 3D Win Screen (v2.4)
+            if (winOverlay) {
+                updateWinOverlay(isDraw, winner === 0 ? 'Blue' : 'Red');
+                winOverlay.visible = true;
+            }
+
+            // Render the win screen first so it gets captured in the recording
+            renderer.render(scene, camera);
+
+            // Keep rendering the win screen for 2 seconds before proceeding
+            let endScreenFrames = 0;
+            const endScreenInterval = setInterval(() => {
+                renderer.render(scene, camera);
+                endScreenFrames++;
+                if (endScreenFrames >= 120) { // ~2 seconds at 60fps
+                    clearInterval(endScreenInterval);
+
+                    // Tournament Mode: Auto-continue if rounds remaining
+                    if (tournamentMode) {
+                        tournamentRound++;
+                        if (tournamentRound < TOURNAMENT_ROUNDS) {
+                            debugLog(`Tournament Round ${tournamentRound + 1}/${TOURNAMENT_ROUNDS}`);
+                            // Auto-start next match after 1 second (shorter pause)
+                            setTimeout(() => {
+                                startGame();
+                            }, 1000);
+                        } else {
+                            // Tournament Complete! Stop recording now
+                            const tournamentWinner = tournamentScores.blue > tournamentScores.red ? 'Blue' : 'Red';
+                            const tournamentWinnerSponsor = tournamentScores.blue > tournamentScores.red ? robotSponsors.robot1 : robotSponsors.robot2;
+
+                            // Store tournament winner for filename
+                            battleStats.winnerSponsor = tournamentWinnerSponsor;
+
+                            debugLog(`TOURNAMENT COMPLETE! Winner: ${tournamentWinnerSponsor} (${tournamentScores.blue}-${tournamentScores.red})`);
+
+                            // Now stop recording (covers all 7 matches)
+                            stopRecording();
+                            tournamentMode = false;
+
+                            alert(`BATTLE COMPLETE!\n\nWinner: ${tournamentWinnerSponsor}\nFinal Score: ${tournamentScores.blue} - ${tournamentScores.red}`);
+                        }
+                    }
+                }
+            }, 1000 / 60);
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // HUD System (v2.4) - Full 3D UI for Recording
+        // ═══════════════════════════════════════════════════════
+
+        let winOverlay = null;
+        let winMesh = null;
+        let hudBars = [null, null]; // 3D health bar meshes for recording
+        let menuOverlay = null; // 3D menu for start screen
+        let menuMesh = null;
+        let hudClickables = []; // Clickable 3D UI elements
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // Click handler for 3D UI
+        function onCanvasClick(event) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(hudClickables);
+
+            if (intersects.length > 0) {
+                const clicked = intersects[0].object;
+                if (clicked.userData.action === 'start') {
+                    startGame();
+                } else if (clicked.userData.action === 'edit1') {
+                    showScriptEditor(1);
+                } else if (clicked.userData.action === 'edit2') {
+                    showScriptEditor(2);
+                } else if (clicked.userData.action === 'rematch') {
+                    startGame();
+                } else if (clicked.userData.action === 'download') {
+                    downloadRecording();
+                }
+            }
+        }
+
+        function createHUD() {
+            // Title Bar
+            const titleCanvas = document.createElement('canvas');
+            titleCanvas.width = 512;
+            titleCanvas.height = 64;
+            const ctx = titleCanvas.getContext('2d');
+
+            // Background
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.8)'; // Dark Blue
+            ctx.fillRect(0, 0, 512, 64);
+
+            // Text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 32px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('AI ROBOT WARS ' + APPLET_VERSION, 256, 32);
+
+            const titleTex = new THREE.CanvasTexture(titleCanvas);
+            const titleMat = new THREE.MeshBasicMaterial({
+                map: titleTex,
+                transparent: true
+            });
+            const titlePlane = new THREE.PlaneGeometry(60, 7.5); // Aspect ratio match
+            const titleMesh = new THREE.Mesh(titlePlane, titleMat);
+
+            // Attach to camera (HUD)
+            // Ortho camera: (0,0) is center. Top is +viewSize (60).
+            // Position near top
+            titleMesh.position.set(0, 52, -10);
+            camera.add(titleMesh);
+
+            // 3D Health Bars (for recording capture)
+            for (let i = 0; i < 2; i++) {
+                const barCanvas = document.createElement('canvas');
+                barCanvas.width = 200;
+                barCanvas.height = 120;
+
+                const barTex = new THREE.CanvasTexture(barCanvas);
+                const barMat = new THREE.MeshBasicMaterial({
+                    map: barTex,
+                    transparent: true
+                });
+                const barPlane = new THREE.PlaneGeometry(25, 15);
+                const barMesh = new THREE.Mesh(barPlane, barMat);
+
+                // Position: left side for robot 0, right side for robot 1
+                const xPos = i === 0 ? -85 : 85;
+                barMesh.position.set(xPos, 35, -10);
+                camera.add(barMesh);
+
+                hudBars[i] = {
+                    canvas: barCanvas,
+                    ctx: barCanvas.getContext('2d'),
+                    texture: barTex,
+                    mesh: barMesh
+                };
+            }
+
+            // Win Overlay (Hidden initially) - Larger for full stats
+            const winCanvas = document.createElement('canvas');
+            winCanvas.width = 512;
+            winCanvas.height = 256; // Larger for stats
+            winMesh = { canvas: winCanvas, ctx: winCanvas.getContext('2d'), texture: null };
+
+            // Initial render (will be overwritten)
+            winMesh.texture = new THREE.CanvasTexture(winCanvas);
+            const winMat = new THREE.MeshBasicMaterial({
+                map: winMesh.texture,
+                transparent: true
+            });
+
+            const winPlane = new THREE.PlaneGeometry(80, 40); // Taller for stats
+            winOverlay = new THREE.Mesh(winPlane, winMat);
+            winOverlay.position.set(0, 0, -10); // Center
+            winOverlay.visible = false;
+            winOverlay.userData.action = 'rematch'; // Make clickable for rematch
+            hudClickables.push(winOverlay);
+            camera.add(winOverlay);
+
+            // 3D Menu Overlay (Start Screen)
+            const menuCanvas = document.createElement('canvas');
+            menuCanvas.width = 512;
+            menuCanvas.height = 300;
+            menuMesh = { canvas: menuCanvas, ctx: menuCanvas.getContext('2d'), texture: null };
+
+            menuMesh.texture = new THREE.CanvasTexture(menuCanvas);
+            const menuMat = new THREE.MeshBasicMaterial({
+                map: menuMesh.texture,
+                transparent: true
+            });
+
+            const menuPlane = new THREE.PlaneGeometry(70, 42);
+            menuOverlay = new THREE.Mesh(menuPlane, menuMat);
+            menuOverlay.position.set(0, -10, -10);
+            menuOverlay.visible = true; // Starts visible
+            menuOverlay.userData.action = 'start';
+            hudClickables.push(menuOverlay);
+            camera.add(menuOverlay);
+
+            // Initial render of menu
+            updateMenuOverlay();
+
+            scene.add(camera); // Ensure camera is in scene for children to render
+
+            // Add click listener to canvas
+            renderer.domElement.addEventListener('click', onCanvasClick);
+        }
+
+        function updateMenuOverlay() {
+            if (!menuMesh) return;
+            const ctx = menuMesh.ctx;
+            const w = 512, h = 300;
+
+            ctx.clearRect(0, 0, w, h);
+
+            // Background
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+            ctx.fillRect(0, 0, w, h);
+
+            // Border
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(4, 4, w - 8, h - 8);
+
+            // Title
+            ctx.fillStyle = '#60a5fa';
+            ctx.font = 'bold 28px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText('AI ROBOT WARS', w / 2, 20);
+
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '14px monospace';
+            ctx.fillText(APPLET_VERSION, w / 2, 55);
+
+            // Start Button
+            ctx.fillStyle = '#22c55e';
+            ctx.fillRect(w / 2 - 100, 90, 200, 50);
+            ctx.strokeStyle = '#16a34a';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(w / 2 - 100, 90, 200, 50);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 18px monospace';
+            ctx.fillText('START (7 Rounds)', w / 2, 120);
+
+            // Instructions (edit buttons are HTML overlay)
+            ctx.fillStyle = '#6b7280';
+            ctx.font = '12px monospace';
+            ctx.fillText('Last robot standing wins!', w / 2, 170);
+
+            // Sponsor names
+            ctx.fillStyle = '#60a5fa';
+            ctx.textAlign = 'left';
+            ctx.fillText('Blue: ' + robotSponsors.robot1, 30, 200);
+            ctx.fillStyle = '#f87171';
+            ctx.textAlign = 'right';
+            ctx.fillText('Red: ' + robotSponsors.robot2, w - 30, 200);
+
+            ctx.fillStyle = '#f59e0b';
+            ctx.textAlign = 'center';
+            ctx.fillText('Tournament Mode: 7 Rounds', w / 2, 230);
+
+            menuMesh.texture.needsUpdate = true;
+        }
+
+        function update3DHealthBars() {
+            if (!hudBars[0] || !robots.length) return;
+
+            for (let i = 0; i < 2; i++) {
+                const bar = hudBars[i];
+                const robot = robots[i];
+                if (!bar || !robot) continue;
+
+                const ctx = bar.ctx;
+                ctx.clearRect(0, 0, 200, 120);
+
+                // Background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, 200, 120);
+
+                // Border
+                ctx.strokeStyle = i === 0 ? '#60a5fa' : '#f87171';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(2, 2, 196, 116);
+
+                // Title
+                ctx.fillStyle = i === 0 ? '#60a5fa' : '#f87171';
+                ctx.font = 'bold 16px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(i === 0 ? 'BLUE' : 'RED', 100, 20);
+
+                // Health Bar
+                const healthPercent = Math.max(0, 100 - robot.damage) / 100;
+                const healthColor = healthPercent > 0.6 ? '#22c55e' : healthPercent > 0.3 ? '#f59e0b' : '#ef4444';
+
+                ctx.fillStyle = '#374151';
+                ctx.fillRect(15, 35, 170, 15);
+                ctx.fillStyle = healthColor;
+                ctx.fillRect(15, 35, 170 * healthPercent, 15);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '12px monospace';
+                ctx.textAlign = 'left';
+                ctx.fillText('HP: ' + Math.floor(healthPercent * 100) + '%', 15, 65);
+
+                // Energy Bar
+                const energyPercent = Math.max(0, robot.energy / MAX_ENERGY);
+                const energyColor = energyPercent > 0.5 ? '#3b82f6' : energyPercent > 0.2 ? '#f59e0b' : '#ef4444';
+
+                ctx.fillStyle = '#374151';
+                ctx.fillRect(15, 75, 170, 15);
+                ctx.fillStyle = energyColor;
+                ctx.fillRect(15, 75, 170 * energyPercent, 15);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText('EN: ' + Math.floor(energyPercent * 100) + '%', 15, 105);
+
+                bar.texture.needsUpdate = true;
+            }
+        }
+
+        function updateWinOverlay(isDraw, winnerName) {
+            const ctx = winMesh.ctx;
+            const w = 512, h = 256; // Larger canvas for stats
+
+            // Resize canvas if needed
+            if (winMesh.canvas.height !== h) {
+                winMesh.canvas.width = w;
+                winMesh.canvas.height = h;
+            }
+
+            ctx.clearRect(0, 0, w, h);
+
+            // Background
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+            ctx.fillRect(0, 0, w, h);
+
+            // Border with winner color
+            ctx.strokeStyle = isDraw ? '#fbbf24' : (winnerName === 'Blue' ? '#60a5fa' : '#f87171');
+            ctx.lineWidth = 4;
+            ctx.strokeRect(4, 4, w - 8, h - 8);
+
+            // Victory Header - show sponsor name for winner
+            ctx.fillStyle = isDraw ? '#fbbf24' : (winnerName === 'Blue' ? '#60a5fa' : '#f87171');
+            ctx.font = 'bold 28px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const winnerSponsor = winnerName === 'Blue' ? robotSponsors.robot1 : robotSponsors.robot2;
+            const headerText = isDraw ? "DRAW!" : `${winnerSponsor} WINS!`;
+            ctx.fillText(headerText, w / 2, 12);
+
+            // Tournament progress if active
+            if (tournamentMode) {
+                ctx.fillStyle = '#f59e0b';
+                ctx.font = '12px monospace';
+                ctx.fillText(`Round ${tournamentRound + 1}/${TOURNAMENT_ROUNDS}`, w / 2, 42);
+            }
+
+            // Session Stats Bar
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.fillRect(20, 55, w - 40, 25);
+
+            ctx.font = 'bold 14px monospace';
+            ctx.fillStyle = '#60a5fa';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Blue: ${sessionStats.blueWins}`, 30, 72);
+
+            ctx.fillStyle = '#fbbf24';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Draws: ${sessionStats.draws}`, w / 2, 72);
+
+            ctx.fillStyle = '#f87171';
+            ctx.textAlign = 'right';
+            ctx.fillText(`Red: ${sessionStats.redWins}`, w - 30, 72);
+
+            // Battle Stats - Blue
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'left';
+
+            ctx.fillStyle = '#60a5fa';
+            ctx.font = 'bold 14px monospace';
+            ctx.fillText('BLUE', 30, 100);
+
+            ctx.font = '12px monospace';
+            ctx.fillStyle = '#ffffff';
+            const blueAcc = battleStats.shotsFired[0] > 0 ? ((battleStats.shotsHit[0] / battleStats.shotsFired[0]) * 100).toFixed(0) : 0;
+            ctx.fillText(`Accuracy: ${blueAcc}%`, 30, 120);
+            ctx.fillText(`Damage: ${battleStats.damageDealt[0].toFixed(1)}`, 30, 140);
+            ctx.fillText(`Shots: ${battleStats.shotsFired[0]}`, 30, 160);
+
+            // Battle Stats - Red
+            ctx.textAlign = 'right';
+
+            ctx.fillStyle = '#f87171';
+            ctx.font = 'bold 14px monospace';
+            ctx.fillText('RED', w - 30, 100);
+
+            ctx.font = '12px monospace';
+            ctx.fillStyle = '#ffffff';
+            const redAcc = battleStats.shotsFired[1] > 0 ? ((battleStats.shotsHit[1] / battleStats.shotsFired[1]) * 100).toFixed(0) : 0;
+            ctx.fillText(`Accuracy: ${redAcc}%`, w - 30, 120);
+            ctx.fillText(`Damage: ${battleStats.damageDealt[1].toFixed(1)}`, w - 30, 140);
+            ctx.fillText(`Shots: ${battleStats.shotsFired[1]}`, w - 30, 160);
+
+            // Footer
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '11px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('AI ROBOT WARS - Download for X.com!', w / 2, h - 20);
+
+            winMesh.texture.needsUpdate = true;
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // Window Resize Handler
+        // ═══════════════════════════════════════════════════════
+
+        function onWindowResize() {
+            const aspect = window.innerWidth / window.innerHeight;
+            const viewSize = 60;
+            camera.left = -viewSize * aspect;
+            camera.right = viewSize * aspect;
+            camera.top = viewSize;
+            camera.bottom = -viewSize;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', onWindowResize);
+
+        // ═══════════════════════════════════════════════════════
+        // Initialize
+        // ═══════════════════════════════════════════════════════
+
+        debugLog('Initializing game...');
+        initScene();
+        createUI(); // Initialize HTML UI overlay (health bars, control panel)
+
+        // Load saved scripts from storage
+        await loadSavedScripts();
+
+        // Initial render
+        renderer.render(scene, camera);
+
+        debugLog('✅ AI Robot Wars ready!');
+        console.log('═══════════════════════════════════════════════════');
+        console.log('🤖 Ready to battle! Click START to begin.');
+        console.log('═══════════════════════════════════════════════════');
+
+    } catch (err) {
+        console.error('AI Robot Wars Error:', err);
+        const container = document.getElementById('applet-root');
+        if (container) {
+            container.innerHTML = `
+            <div style = "padding:30px;color:#ff4444;font-family:monospace;background:#1a2e40;min-height:100vh;" >
+            <h1>Error Loading AI Robot Wars</h1>
+            <pre style="background:#0a1929;padding:20px;border-radius:5px;overflow:auto;">${err.message}\n\n${err.stack}</pre>
+          </div>
+            `;
+        }
+    }
+})();

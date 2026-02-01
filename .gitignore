@@ -84,6 +84,12 @@ avatardesign.md
 claude.md
 gemini.md
 
+# Design specifications (keep private until ready for release)
+docs/MobileSpecs.md
+docs/*Specs.md
+docs/*Design.md
+docs/ANDROID_*.md
+
 # Avatar design files
 docs/AvatarA7Shield*.png
 docs/AvatarStrategicAI.png

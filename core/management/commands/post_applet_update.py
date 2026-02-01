@@ -200,24 +200,70 @@ class Command(BaseCommand):
         ))
 
         # Update the applet's code manifest to use the new FileAttachment
+        # Try multiple strategies to find the applet
+        applet = None
+        matched_by = None
+        
+        # Strategy 1: Exact name match
         try:
             applet = Applet.objects.get(name=applet_name)
-
+            matched_by = "exact name"
+        except Applet.DoesNotExist:
+            pass
+        
+        # Strategy 2: Match by filename (e.g., AiRobotWars.js -> AiRobotWars)
+        if not applet:
+            filename_without_ext = os.path.splitext(filename)[0]
+            try:
+                applet = Applet.objects.get(name=filename_without_ext)
+                matched_by = f"filename '{filename_without_ext}'"
+            except Applet.DoesNotExist:
+                pass
+        
+        # Strategy 3: Case-insensitive name match
+        if not applet:
+            try:
+                applet = Applet.objects.get(name__iexact=applet_name)
+                matched_by = f"case-insensitive match '{applet.name}'"
+            except Applet.DoesNotExist:
+                pass
+            except Applet.MultipleObjectsReturned:
+                self.stdout.write(self.style.WARNING(
+                    f'\n⚠ Multiple applets match "{applet_name}" (case-insensitive). Skipping update.'
+                ))
+        
+        # Strategy 4: Partial name match (contains)
+        if not applet:
+            matches = Applet.objects.filter(name__icontains=applet_name.replace(' ', ''))
+            if matches.count() == 1:
+                applet = matches.first()
+                matched_by = f"partial match '{applet.name}'"
+            elif matches.count() > 1:
+                self.stdout.write(self.style.WARNING(
+                    f'\n⚠ Multiple applets partially match "{applet_name}": {[a.name for a in matches]}'
+                ))
+        
+        if applet:
             # The code_manifest needs to reference the FileAttachment's metadata_manifest
             # which is stored as a BitSync manifest
             applet.code_manifest = attachment.metadata_manifest
             applet.save()
 
             self.stdout.write(self.style.SUCCESS(
-                f'\n✓ Updated {applet_name} applet code manifest'
+                f'\n✓ Updated "{applet.name}" applet code manifest (matched by {matched_by})'
             ))
             self.stdout.write(self.style.SUCCESS(
                 f'  Applet ID: {applet.id}'
             ))
-        except Applet.DoesNotExist:
+        else:
+            # List available applets to help user find the right name
+            available_applets = list(Applet.objects.values_list('name', flat=True))
             self.stdout.write(self.style.WARNING(
                 f'\n⚠ Applet "{applet_name}" not found in database. Skipping applet update.'
             ))
             self.stdout.write(self.style.WARNING(
-                f'  You can manually create it in the admin console.'
+                f'  Available applets: {available_applets}'
+            ))
+            self.stdout.write(self.style.WARNING(
+                f'  You can manually create it in the admin console or use one of the above names.'
             ))

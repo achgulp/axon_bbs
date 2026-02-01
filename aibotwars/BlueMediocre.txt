@@ -1,0 +1,49 @@
+        // #Sponsor: BlueBot Industries
+        // Blue Robot (The Hunter)
+        // Uses Sonar for close combat and PAUSE to recharge
+        function robotScript(api) {
+            const myX = api.loc_x();
+            const myY = api.loc_y();
+            const home = api.HOME;
+
+            // 1. Survival: Go Home if low energy
+            if (api.ENERGY < 800) {
+                const dx = home.x - myX;
+                const dy = home.y - myY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < 80) {
+                    api.drive(0, 0); // Stop
+                    api.PAUSE(60);   // Recharge
+                    return;
+                }
+                const angleToHome = Math.atan2(dy, dx) * (180 / Math.PI);
+                api.drive(angleToHome, 100);
+                return;
+            }
+
+            // 2. Combat: Check Sonar (Returns Absolute Angle)
+            const target = api.sonar();
+            if (target) {
+                api.cannon(target.angle, target.distance);
+                if (target.distance < 200) api.dropMine();
+                api.drive(target.angle + 90, 80); // Strafe
+                return;
+            }
+
+            // 3. Hunt/Patrol
+            const enemy = api.ENEMY;
+            const distToEnemy = Math.sqrt((myX - enemy.x)**2 + (myY - enemy.y)**2);
+            if (distToEnemy > 600) {
+                 const angle = Math.atan2(enemy.y - myY, enemy.x - myX) * (180 / Math.PI);
+                 api.drive(angle, 60);
+            } else {
+                 api.drive(api.heading() + 2, 40);
+                 // Random potshot
+                 if (Math.random() < 0.05) {
+                     const scanAngle = (api.heading() - 45 + Math.random() * 90) % 360;
+                     const range = api.lidar(scanAngle);
+                     if (range > 0) api.cannon(scanAngle, range);
+                 }
+            }
+        } 

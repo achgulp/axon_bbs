@@ -47,7 +47,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 // --- Main Applet Execution ---
 (async function () {
     try {
-        const APPLET_VERSION = 'v2.8.5';
+        const APPLET_VERSION = 'v2.9.30';
 
         // ═══════════════════════════════════════════════════════
         // Debug Console
@@ -116,7 +116,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         // ═══════════════════════════════════════════════════════
 
         const ARENA_SIZE = 1000;
-        const ROBOT_SIZE = 15; // Collision radius
+        const ROBOT_SIZE = 80; // Collision radius (Increased for tank models)
         const GAME_SPEED = 60; // FPS (approx)
 
         // Game Balance Constants (v2.0)
@@ -132,8 +132,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         const BASE_RECHARGE_RATE = 60; // Energy per tick (Buffed v2.2.1)
         const BASE_REPAIR_RATE = 1.0; // Health per tick (Buffed v2.2.1)
         const BASES = [
-            { x: 100, y: 100, color: 0x60a5fa }, // Blue Base (Top-Left)
-            { x: 900, y: 900, color: 0xf87171 }  // Red Base (Bottom-Right)
+            { x: 200, y: 200, color: 0x60a5fa }, // Blue Base (Safe Zone)
+            { x: 800, y: 800, color: 0xf87171 }  // Red Base (Safe Zone)
         ];
 
         const TICK_RATE = 60;             // 60 ticks per second
@@ -197,6 +197,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         let obstacles = []; // v2.1 Obstacles
         let explosions = [];
         let battleStats = {
+            startTime: Date.now(),
             shotsFired: [0, 0],
             shotsHit: [0, 0],
             damageDealt: [0, 0],
@@ -206,6 +207,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             winner: null,
             winnerSponsor: null
         };
+        let battleLog = []; // Reset log
 
         // Initialize Session Stats (Persistent across matches)
         const sessionStats = {
@@ -228,6 +230,25 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         let mines = [];      // Active mines on the field
         let debris = [];     // Death explosion debris particles
+        // let battleLog = [];  // (v2.9.25) Detailed event log for AI analysis
+
+        // ═══════════════════════════════════════════════════════
+        // Commander Console State (LLM Integration v4.0 - Real-time Commands)
+        // ═══════════════════════════════════════════════════════
+        let commanderIntent = '';        // Human guidance text
+        let evolveQueryId = null;        // Current LLM query ID
+        let isEvolving = false;          // Flag: waiting for LLM response
+        let processedQueryIds = new Set(); // Track processed responses
+        let pendingAICommand = null;     // Command waiting to be executed
+        let lastSitrepTime = 0;          // For periodic battle state logging
+        let lastLoggedDrive = { deg: -1, spd: -1 }; // For deduplicating DRIVE logs
+
+        // ═══════════════════════════════════════════════════════
+        // Battle Recording System (for post-match script evolution)
+        // ═══════════════════════════════════════════════════════
+        let battleHistory = [];          // Array of battle snapshots
+        let battleStartTime = 0;         // When match started
+        let postMatchEvolutionEnabled = false; // User authorization for AI script rewrite
 
         // ═══════════════════════════════════════════════════════
         // Sound Effects System (Web Audio API)
@@ -570,62 +591,204 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             }
 
             createMesh() {
-                // Robot body - SAUCER (Cylinder)
-                const bodyGeometry = new THREE.CylinderGeometry(
-                    ROBOT_SIZE * 0.05 * ROBOT_SCALE, // Top Radius
-                    ROBOT_SIZE * 0.05 * ROBOT_SCALE, // Bottom Radius
-                    ROBOT_SIZE * 0.02 * ROBOT_SCALE, // Height
-                    32 // Radial Segments (smooth)
-                );
+                // ═══════════════════════════════════════════════════════
+                // NEW TRACKED TANK DESIGN - Industrial Battle Robot
+                // ═══════════════════════════════════════════════════════
 
-                // Silver Metal Material
-                const bodyMaterial = new THREE.MeshStandardMaterial({
-                    color: 0xcccccc, // Silver
-                    roughness: 0.2,  // Shiny
-                    metalness: 0.8  // Metallic
+                // Scale factors for the tank parts
+                const S = ROBOT_SCALE * 0.8; // Overall scale
+
+                // === MATERIALS ===
+                const chassisMat = new THREE.MeshStandardMaterial({
+                    color: 0x3d4852, // Dark gunmetal
+                    roughness: 0.4,
+                    metalness: 0.7
+                });
+                const trackMat = new THREE.MeshStandardMaterial({
+                    color: 0x1a1a1a, // Very dark (rubber/metal tracks)
+                    roughness: 0.8,
+                    metalness: 0.3
+                });
+                const turretMat = new THREE.MeshStandardMaterial({
+                    color: 0x4a5568, // Slightly lighter gunmetal
+                    roughness: 0.3,
+                    metalness: 0.8
+                });
+                const teamGlowMat = new THREE.MeshStandardMaterial({
+                    color: this.color,
+                    emissive: this.color,
+                    emissiveIntensity: 0.6,
+                    roughness: 0.3,
+                    metalness: 0.5
+                });
+                const barrelMat = new THREE.MeshStandardMaterial({
+                    color: 0x2d2d2d,
+                    roughness: 0.2,
+                    metalness: 0.9
                 });
 
-                // Mix in team color (emissive ring or top?)
-                // Let's make the robot silver, but add a colored glowing ring on top
-
-                this.mesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+                // === ROOT GROUP (main mesh) ===
+                this.mesh = new THREE.Group();
                 this.mesh.castShadow = true;
 
-                // Identification Ring (Team Color)
-                const ringGeo = new THREE.RingGeometry(ROBOT_SIZE * 0.02 * ROBOT_SCALE, ROBOT_SIZE * 0.04 * ROBOT_SCALE, 32);
-                const ringMat = new THREE.MeshBasicMaterial({ color: this.color, side: THREE.DoubleSide });
-                const ring = new THREE.Mesh(ringGeo, ringMat);
-                ring.rotation.x = -Math.PI / 2;
-                ring.position.y = ROBOT_SIZE * 0.011 * ROBOT_SCALE; // Just above surface
-                this.mesh.add(ring);
+                // === CHASSIS (Main body - rectangular box) ===
+                const chassisW = 1.8 * S; // width
+                const chassisH = 0.5 * S; // height
+                const chassisD = 2.5 * S; // depth (length)
+                const chassisGeo = new THREE.BoxGeometry(chassisW, chassisH, chassisD);
+                const chassis = new THREE.Mesh(chassisGeo, chassisMat);
+                chassis.position.y = 0.3 * S;
+                chassis.castShadow = true;
+                this.mesh.add(chassis);
 
-                // Cannon (Small opening or blaster on front)
-                const blasterGeo = new THREE.BoxGeometry(
-                    ROBOT_SIZE * 0.01 * ROBOT_SCALE,
-                    ROBOT_SIZE * 0.01 * ROBOT_SCALE,
-                    ROBOT_SIZE * 0.02 * ROBOT_SCALE
-                );
-                const blasterMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-                const blaster = new THREE.Mesh(blasterGeo, blasterMat);
-                blaster.position.set(0, 0, ROBOT_SIZE * 0.04 * ROBOT_SCALE); // Front edge
-                this.mesh.add(blaster);
+                // === TRACK ASSEMBLIES (left and right side) ===
+                const trackW = 0.4 * S;
+                const trackH = 0.6 * S;
+                const trackD = chassisD * 1.1;
+                const trackGeo = new THREE.BoxGeometry(trackW, trackH, trackD);
 
-                // Scan cone
+                // Left track
+                const leftTrack = new THREE.Mesh(trackGeo, trackMat);
+                leftTrack.position.set(-chassisW / 2 - trackW / 2 + 0.1 * S, 0.15 * S, 0);
+                leftTrack.castShadow = true;
+                this.mesh.add(leftTrack);
+
+                // Right track
+                const rightTrack = new THREE.Mesh(trackGeo, trackMat);
+                rightTrack.position.set(chassisW / 2 + trackW / 2 - 0.1 * S, 0.15 * S, 0);
+                rightTrack.castShadow = true;
+                this.mesh.add(rightTrack);
+
+                // Track wheels (front and back on each side)
+                const wheelRadius = 0.25 * S;
+                const wheelWidth = trackW * 0.9;
+                const wheelGeo = new THREE.CylinderGeometry(wheelRadius, wheelRadius, wheelWidth, 12);
+                wheelGeo.rotateZ(Math.PI / 2); // Orient horizontally
+                const wheelMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.6, metalness: 0.4 });
+
+                const wheelPositions = [
+                    [-chassisW / 2 - trackW / 2 + 0.1 * S, 0.1 * S, trackD / 2 - wheelRadius * 1.5],  // Left front
+                    [-chassisW / 2 - trackW / 2 + 0.1 * S, 0.1 * S, -trackD / 2 + wheelRadius * 1.5], // Left back
+                    [chassisW / 2 + trackW / 2 - 0.1 * S, 0.1 * S, trackD / 2 - wheelRadius * 1.5],   // Right front
+                    [chassisW / 2 + trackW / 2 - 0.1 * S, 0.1 * S, -trackD / 2 + wheelRadius * 1.5],  // Right back
+                ];
+                wheelPositions.forEach(pos => {
+                    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+                    wheel.position.set(...pos);
+                    this.mesh.add(wheel);
+                });
+
+                // === TEAM COLOR STRIPE (on chassis sides) ===
+                const stripeGeo = new THREE.BoxGeometry(0.1 * S, 0.15 * S, chassisD * 0.8);
+                const leftStripe = new THREE.Mesh(stripeGeo, teamGlowMat);
+                leftStripe.position.set(-chassisW / 2 - 0.05 * S, 0.35 * S, 0);
+                this.mesh.add(leftStripe);
+                const rightStripe = new THREE.Mesh(stripeGeo, teamGlowMat);
+                rightStripe.position.set(chassisW / 2 + 0.05 * S, 0.35 * S, 0);
+                this.mesh.add(rightStripe);
+
+                // === TURRET GROUP (rotates independently) ===
+                this.turretGroup = new THREE.Group();
+                this.turretGroup.position.y = chassisH + 0.1 * S; // On top of chassis
+                this.mesh.add(this.turretGroup);
+
+                // Turret platform (cylinder)
+                const turretRadius = 0.7 * S;
+                const turretHeight = 0.4 * S;
+                const turretGeo = new THREE.CylinderGeometry(turretRadius, turretRadius * 1.1, turretHeight, 16);
+                const turret = new THREE.Mesh(turretGeo, turretMat);
+                turret.castShadow = true;
+                this.turretGroup.add(turret);
+
+                // Turret top ring (team color glow)
+                const turretRingGeo = new THREE.TorusGeometry(turretRadius * 0.85, 0.06 * S, 8, 24);
+                const turretRing = new THREE.Mesh(turretRingGeo, teamGlowMat);
+                turretRing.rotation.x = Math.PI / 2;
+                turretRing.position.y = turretHeight / 2 + 0.02 * S;
+                this.turretGroup.add(turretRing);
+
+                // === CANNON BARREL ===
+                const barrelRadius = 0.12 * S;
+                const barrelLength = 2.0 * S;
+                const barrelGeo = new THREE.CylinderGeometry(barrelRadius, barrelRadius * 1.1, barrelLength, 12);
+                barrelGeo.rotateX(Math.PI / 2); // Point forward
+                const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+                barrel.position.set(0, 0, turretRadius + barrelLength / 2 - 0.2 * S);
+                barrel.castShadow = true;
+                this.turretGroup.add(barrel);
+
+                // Barrel muzzle (team color ring) - store reference for firing
+                const muzzleGeo = new THREE.TorusGeometry(barrelRadius * 1.3, 0.04 * S, 6, 16);
+                this.muzzleMesh = new THREE.Mesh(muzzleGeo, teamGlowMat);
+                this.muzzleMesh.position.set(0, 0, turretRadius + barrelLength - 0.15 * S);
+                this.turretGroup.add(this.muzzleMesh);
+
+                // === SCANNER DISH (on chassis, independent of turret) ===
+                this.scannerGroup = new THREE.Group();
+                // Position on back-left of chassis, above the turret level
+                this.scannerGroup.position.set(-chassisW * 0.3, chassisH + turretHeight + 0.3 * S, -chassisD * 0.2);
+                this.mesh.add(this.scannerGroup); // Add to chassis, not turret!
+
+                // Scanner mount post (taller)
+                const scanPostGeo = new THREE.CylinderGeometry(0.04 * S, 0.06 * S, 0.4 * S, 8);
+                const scanPost = new THREE.Mesh(scanPostGeo, chassisMat);
+                this.scannerGroup.add(scanPost);
+
+                // Scanner dish (satellite dish style - parabolic shape)
+                const dishRadius = 0.25 * S;
+                const dishGeo = new THREE.SphereGeometry(dishRadius, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+                const dishMat = new THREE.MeshStandardMaterial({
+                    color: 0xaabbcc,
+                    roughness: 0.2,
+                    metalness: 0.9,
+                    side: THREE.DoubleSide
+                });
+                const dish = new THREE.Mesh(dishGeo, dishMat);
+                dish.rotation.x = Math.PI / 2 + 0.3; // Tilt slightly forward
+                dish.position.y = 0.25 * S;
+                this.scannerGroup.add(dish);
+
+                // Scanner feed horn (small cone in center of dish)
+                const feedGeo = new THREE.ConeGeometry(0.04 * S, 0.15 * S, 6);
+                const feed = new THREE.Mesh(feedGeo, teamGlowMat);
+                feed.rotation.x = -Math.PI / 2 - 0.3;
+                feed.position.set(0, 0.25 * S, dishRadius * 0.5);
+                this.scannerGroup.add(feed);
+
+                // Scanner active indicator (glowing sphere, hidden by default)
+                const indicatorGeo = new THREE.SphereGeometry(0.06 * S, 8, 8);
+                const indicatorMat = new THREE.MeshBasicMaterial({
+                    color: this.color,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                this.scannerIndicator = new THREE.Mesh(indicatorGeo, indicatorMat);
+                this.scannerIndicator.position.y = 0.45 * S;
+                this.scannerIndicator.visible = false;
+                this.scannerGroup.add(this.scannerIndicator);
+
+                // === SCAN CONE (small, attached to scanner) ===
                 const scanGeometry = new THREE.ConeGeometry(
-                    ARENA_SIZE * 0.03,
-                    ARENA_SIZE * 0.5,
+                    4,   // Radius at base (wide end)
+                    15,  // Length
                     8
                 );
                 const scanMaterial = new THREE.MeshBasicMaterial({
                     color: this.color,
                     transparent: true,
-                    opacity: 0.15,
+                    opacity: 0.2,
                     side: THREE.DoubleSide
                 });
                 this.scanMesh = new THREE.Mesh(scanGeometry, scanMaterial);
                 this.scanMesh.visible = false;
-                this.scanMesh.rotation.x = Math.PI / 2;
-                this.mesh.add(this.scanMesh);
+                // Rotate so cone points horizontally with WIDE end outward
+                this.scanMesh.rotation.x = -Math.PI / 2; // Flipped to put wide end outward
+                this.scanMesh.position.z = 8; // Offset forward from scanner
+                this.scannerGroup.add(this.scanMesh); // Add to scanner, not turret
+
+                // Scanner animation state
+                this.isScanning = false;
+                this.scanAnimationTime = 0;
 
                 this.updatePosition();
 
@@ -709,9 +872,26 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     this.targetHeading = 0;
                 }
 
-                // Clamp to arena bounds (safety net)
-                this.x = Math.max(ROBOT_SIZE, Math.min(ARENA_SIZE - ROBOT_SIZE, this.x));
-                this.y = Math.max(ROBOT_SIZE, Math.min(ARENA_SIZE - ROBOT_SIZE, this.y));
+                // Clamp to arena bounds with wall collision (safety net)
+                const wallMargin = ROBOT_SIZE + 10; // Extra margin to prevent wall clipping
+                this.x = Math.max(wallMargin, Math.min(ARENA_SIZE - wallMargin, this.x));
+                this.y = Math.max(wallMargin, Math.min(ARENA_SIZE - wallMargin, this.y));
+
+                // Check obstacle collisions and push robot out
+                for (const obs of obstacles) {
+                    const dx = this.x - obs.x;
+                    const dy = this.y - obs.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const minDist = ROBOT_SIZE + obs.size * 0.8; // Bigger collision radius // Robot radius + obstacle radius
+
+                    if (dist < minDist && dist > 0) {
+                        // Push robot away from obstacle
+                        const pushX = (dx / dist) * (minDist - dist + 1);
+                        const pushY = (dy / dist) * (minDist - dist + 1);
+                        this.x += pushX;
+                        this.y += pushY;
+                    }
+                }
 
                 // Convert game coordinates to 3D world coordinates
                 // Arena center is at (0,0), scale to world units
@@ -719,7 +899,11 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 this.mesh.position.x = (this.x - ARENA_SIZE / 2) * scale;
                 this.mesh.position.z = (this.y - ARENA_SIZE / 2) * scale;
                 this.mesh.position.y = 0.5;
-                this.mesh.rotation.y = -this.heading * (Math.PI / 180);
+                // Update mesh rotation (Y-axis is vertical)
+                // 3D Rot Y is Counter-Clockwise. Game Heading is Clockwise.
+                // 0 heading (Right) -> 90 deg rotation (Right) from +Z (Forward)
+                // So RotY = -Heading + 90 degrees
+                this.mesh.rotation.y = (-this.heading * (Math.PI / 180)) + (Math.PI / 2);
 
                 // Ensure mesh is visible and in scene
                 if (!this.mesh.visible) {
@@ -738,8 +922,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 this.energy -= ENERGY_DRAIN_SCAN;
 
                 resolution = Math.max(1, Math.min(40, resolution));
-                const startAngle = (this.heading + degree - resolution / 2) % 360;
-                const endAngle = (this.heading + degree + resolution / 2) % 360;
+                // API uses absolute angles
+                const startAngle = (degree - resolution / 2 + 360) % 360;
+                const endAngle = (degree + resolution / 2 + 360) % 360;
 
                 // Update scan visualization
                 this.lastScanAngle = degree;
@@ -780,7 +965,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
             // LIDAR: Narrow beam (2 degrees), long range (600)
             lidar(degree) {
-                const scanAngle = (this.heading + degree + 360) % 360;
+                const scanAngle = (degree + 360) % 360; // Absolute angle
 
                 // Visualize the beam (narrow)
                 this.showScan(degree, 2);
@@ -804,7 +989,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                         const dObs = Math.sqrt((obs.x - this.x) ** 2 + (obs.y - this.y) ** 2);
                         if (dObs < distance && dObs < LIDAR_RANGE) {
                             // Check if angle to obstacle is close to angle to robot
-                            const angleToObs = Math.atan2(obs.y - this.y, obs.x - this.x) * (180 / Math.PI);
+                            const angleToObs = Math.atan2(obs.y - this.y, obs.x - obs.x) * (180 / Math.PI);
                             const angleToBot = Math.atan2(dy, dx) * (180 / Math.PI);
                             let diff = Math.abs(angleToObs - angleToBot);
                             if (diff > 180) diff = 360 - diff;
@@ -883,26 +1068,71 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     return false; // Not enough energy
                 }
 
-                // Set turret to aim at target (Visual only, aiming is instant for Saucers now)
-                this.targetTurretAngle = degree;
+                // Set turret to aim at target and immediately rotate turret visually
+                // Store the absolute world fire angle for locking
+                const fireAngleRad = degree * (Math.PI / 180);
+                this.lastFireAngle = fireAngleRad;
 
-                // SAUCER MOD: No turret wait. We assume the "gun" inside the saucer rotates instantly or the saucer rotates.
-                // For gameplay flow, we'll allow instant firing at the requested angle relative to heading.
+                // Immediately rotate turret to firing direction
+                if (this.turretGroup) {
+                    // Calculate required local rotation to face fireAngleRad in world space
+                    // The robot's mesh.rotation.y is (-heading + PI/2)
+                    // So, the robot's current world heading is (PI/2 - mesh.rotation.y)
+                    const robotWorldHeading = Math.PI / 2 - this.mesh.rotation.y;
+                    // The turret's local rotation should be the difference between the desired fire angle and the robot's world heading
+                    let targetLocal = fireAngleRad - robotWorldHeading;
+
+                    // Normalize to -PI..PI
+                    targetLocal = Math.atan2(Math.sin(targetLocal), Math.cos(targetLocal));
+
+                    this.turretGroup.rotation.y = targetLocal;
+
+                    // Force update of matrices so getWorldPosition works correctly immediately
+                    this.turretGroup.updateMatrixWorld(true);
+                }
 
                 // Drain energy and fire
                 this.energy -= ENERGY_DRAIN_FIRE;
                 this.lastCannonTime = now;
                 battleStats.shotsFired[this.id]++;
 
-                // Fire from requested angle relative to heading
-                const fireAngle = (this.heading + degree) * (Math.PI / 180);
+                // Log Blue robot's cannon commands
+                if (this.id === 0) {
+                    debugLog(`[FIRE] Blue -> ${Math.round(degree)} deg, ${Math.round(distance)}m`);
+                }
+
+                // Fire from requested angle (Absolute)
+                const fireAngle = degree * (Math.PI / 180);
                 const targetX = this.x + Math.cos(fireAngle) * distance;
                 const targetY = this.y + Math.sin(fireAngle) * distance;
 
+                // Get actual barrel tip world position from the muzzle mesh
+                let spawnX, spawnY, spawnHeight;
+                if (this.muzzleMesh) {
+                    // Use actual 3D world position of muzzle
+                    const worldPos = new THREE.Vector3();
+                    this.muzzleMesh.getWorldPosition(worldPos);
+                    // Convert 3D world coords back to game coords
+                    spawnX = (worldPos.x / 0.1) + ARENA_SIZE / 2;
+                    spawnY = (worldPos.z / 0.1) + ARENA_SIZE / 2;
+                    spawnHeight = worldPos.y; // Correct visual height
+                } else {
+                    // Fallback
+                    const S = ROBOT_SCALE * 0.8;
+                    const turretRadius = 0.7 * S;
+                    const barrelLength = 2.0 * S;
+                    const barrelTipWorld = turretRadius + barrelLength - 0.15 * S;
+                    const barrelOffset = barrelTipWorld * 10 + 15;
+                    spawnX = this.x + Math.cos(fireAngle) * barrelOffset;
+                    spawnY = this.y + Math.sin(fireAngle) * barrelOffset;
+                    spawnHeight = 2.0; // Fallback height
+                }
+
                 missiles.push({
                     ownerId: this.id,
-                    x: this.x,
-                    y: this.y,
+                    x: spawnX,
+                    y: spawnY,
+                    height: spawnHeight, // Store correct height
                     targetX: Math.max(0, Math.min(ARENA_SIZE, targetX)),
                     targetY: Math.max(0, Math.min(ARENA_SIZE, targetY)),
                     angle: fireAngle,
@@ -941,6 +1171,17 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 }
                 this.targetHeading = (degree + 360) % 360;
                 this.targetSpeed = Math.max(0, Math.min(MAX_SPEED, speed));
+
+                // Log Blue robot's drive commands (only when command changes)
+                if (this.id === 0 && speed > 10) {
+                    const deg = Math.round(degree);
+                    const spd = Math.round(speed);
+                    // Only log if significantly different from last logged values
+                    if (Math.abs(deg - lastLoggedDrive.deg) >= 15 || Math.abs(spd - lastLoggedDrive.spd) >= 10) {
+                        debugLog(`[DRIVE] Blue -> ${deg} deg, spd=${spd}`);
+                        lastLoggedDrive = { deg, spd };
+                    }
+                }
             }
 
             // Status methods
@@ -951,18 +1192,45 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             getSpeed() { return this.speed; }
 
             showScan(degree, resolution) {
+                if (!this.scanMesh) return;
+
                 this.scanMesh.visible = true;
-                const angle = degree * (Math.PI / 180);
-                this.scanMesh.rotation.y = -angle;
+
+                // Calculate local rotation to face absolute degree
+                // The robot's mesh.rotation.y is (-heading + PI/2)
+                // So, the robot's current world heading is (PI/2 - mesh.rotation.y)
+                const robotWorldHeading = Math.PI / 2 - this.mesh.rotation.y;
+                // The turret's local rotation should be the difference between the desired scan angle and the robot's world heading
+                let targetLocal = degree * (Math.PI / 180) - robotWorldHeading;
+
+                // Normalize to -PI..PI
+                targetLocal = Math.atan2(Math.sin(targetLocal), Math.cos(targetLocal));
+
+                // Rotate the turret to face scan direction
+                if (this.turretGroup) {
+                    this.turretGroup.rotation.y = targetLocal;
+                }
+
+                // Position scan cone on turret
+                this.scanMesh.rotation.y = 0; // Turret already rotated
 
                 // Scale cone based on resolution
                 const scale = resolution / 20;
                 this.scanMesh.scale.x = scale;
 
-                // Hide after short delay
+                // Activate scanner indicator and dish animation
+                this.isScanning = true;
+                this.scanAnimationTime = Date.now();
+                if (this.scannerIndicator) {
+                    this.scannerIndicator.visible = true;
+                }
+
+                // Hide scan cone and indicator after short delay
                 setTimeout(() => {
-                    this.scanMesh.visible = false;
-                }, 100);
+                    if (this.scanMesh) this.scanMesh.visible = false;
+                    this.isScanning = false;
+                    if (this.scannerIndicator) this.scannerIndicator.visible = false;
+                }, 150);
             }
 
             dropMine() {
@@ -988,12 +1256,13 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 battleStats.minesDropped[this.id]++;
 
                 // Create mine mesh
-                const scale = 0.1;
-                const geometry = new THREE.CylinderGeometry(0.3, 0.4, 0.15, 8);
+                // Create mine mesh (VISIBILITY UPDATE v2.9.21)
+                const scale = 0.1; // Standard world scale
+                const geometry = new THREE.CylinderGeometry(0.3, 0.4, 0.2, 16); // Big enough to see
                 const material = new THREE.MeshStandardMaterial({
-                    color: this.color,
-                    emissive: this.color,
-                    emissiveIntensity: 0.3
+                    color: BASES[this.id].color, // Use Owner Color (Blue/Red)
+                    emissive: BASES[this.id].color,
+                    emissiveIntensity: 0.8 // Glowing
                 });
                 const mesh = new THREE.Mesh(geometry, material);
                 mesh.position.x = (this.x - ARENA_SIZE / 2) * scale;
@@ -1052,9 +1321,45 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 // Update health/energy UI (3D)
                 if (this.uiMesh) this.updateUI();
 
-                // Update turret mesh rotation
-                if (this.turretMesh) {
-                    this.turretMesh.rotation.y = -this.turretAngle * (Math.PI / 180);
+                // Turret behavior: point forward by default, only aim when firing
+                if (this.turretGroup) {
+                    // Check if we recently fired (within last 30 ticks = 0.5 seconds)
+                    const now = performance.now();
+                    const recentlyFired = (now - this.lastCannonTime) < 2000; // 2 second pause after firing
+
+                    if (recentlyFired && this.lastFireAngle !== undefined) {
+                        // Lock turret to world aim direction (compensate for tank turning)
+                        // The robot's mesh.rotation.y is (-heading + PI/2)
+                        // So, the robot's current world heading is (PI/2 - mesh.rotation.y)
+                        const robotWorldHeading = Math.PI / 2 - this.mesh.rotation.y;
+                        let targetLocal = this.lastFireAngle - robotWorldHeading;
+
+                        // Normalize
+                        targetLocal = Math.atan2(Math.sin(targetLocal), Math.cos(targetLocal));
+
+                        // Smooth rotation toward target
+                        const currentAngle = this.turretGroup.rotation.y;
+                        let diff = targetLocal - currentAngle;
+                        // Normalize diff
+                        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+
+                        const maxRotation = 0.25; // Very fast turret rotation for locking
+                        // Instant lock to target (prevents aim drift/slinging visual)
+                        this.turretGroup.rotation.y = targetLocal;
+                    } else {
+                        // Return turret to forward facing (0 rotation)
+                        const currentAngle = this.turretGroup.rotation.y;
+                        if (Math.abs(currentAngle) > 0.05) {
+                            this.turretGroup.rotation.y -= Math.sign(currentAngle) * 0.08; // Slow return
+                        } else {
+                            this.turretGroup.rotation.y = 0;
+                        }
+                    }
+                }
+
+                // Scanner dish animation - slow rotation when scanning
+                if (this.scannerGroup && this.isScanning) {
+                    this.scannerGroup.rotation.y += 0.05; // Slow spin effect (was 0.3)
                 }
 
                 // Gradually adjust speed
@@ -1075,11 +1380,12 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
                     battleStats.distanceTraveled[this.id] += Math.sqrt(dx * dx + dy * dy);
 
-                    // Wall collision (just blocks, minimal damage)
-                    if (this.x < ROBOT_SIZE) { this.x = ROBOT_SIZE; this.damage += 0.1; }
-                    if (this.x > ARENA_SIZE - ROBOT_SIZE) { this.x = ARENA_SIZE - ROBOT_SIZE; this.damage += 0.1; }
-                    if (this.y < ROBOT_SIZE) { this.y = ROBOT_SIZE; this.damage += 0.1; }
-                    if (this.y > ARENA_SIZE - ROBOT_SIZE) { this.y = ARENA_SIZE - ROBOT_SIZE; this.damage += 0.1; }
+                    // Wall collision (large margin to prevent clipping)
+                    const wallMargin = ROBOT_SIZE + 35;
+                    if (this.x < wallMargin) { this.x = wallMargin; this.damage += 0.1; this.speed *= 0.3; }
+                    if (this.x > ARENA_SIZE - wallMargin) { this.x = ARENA_SIZE - wallMargin; this.damage += 0.1; this.speed *= 0.3; }
+                    if (this.y < wallMargin) { this.y = wallMargin; this.damage += 0.1; this.speed *= 0.3; }
+                    if (this.y > ARENA_SIZE - wallMargin) { this.y = ARENA_SIZE - wallMargin; this.damage += 0.1; this.speed *= 0.3; }
                 }
 
                 // Obstacle Collision (v2.1)
@@ -1089,7 +1395,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     const dist = Math.sqrt(dx * dx + dy * dy);
                     // Approximate collision (Circle vs Circle/Box)
                     // Treat obstacles as circles of radius size/1.5 for simplicity
-                    const minDist = ROBOT_SIZE + obs.size * 0.6;
+                    const minDist = ROBOT_SIZE + obs.size * 0.8; // Bigger collision radius
 
                     if (dist < minDist && dist > 0.1) { // Prevent div-by-zero
                         // Bounce/Slide
@@ -1182,8 +1488,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     drive: (deg, spd) => this.drive(deg, spd),
                     damage: () => this.getDamage(),
                     energy: () => this.getEnergy(),
-                    loc_x: () => this.getLocX(),
-                    loc_y: () => this.getLocY(),
+                    loc_x: () => this.x,
+                    loc_y: () => this.y,
                     speed: () => this.getSpeed(),
                     heading: () => this.heading, // Expose heading
                     log: (msg) => debugLog(`🤖 Bot ${this.id + 1}: ${msg}`), // Expose logging
@@ -1250,6 +1556,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             const damage = api.damage();
 
             // Stay near center but move unpredictably
+            // If near wall, turn away
+            const margin = 150; // Increased to match engine wallMargin (115+)
             const centerX = 500;
             const centerY = 500;
             const distFromCenter = Math.sqrt((myX - centerX) ** 2 + (myY - centerY) ** 2);
@@ -1285,8 +1593,6 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
         // ═══════════════════════════════════════════════════════
         // Custom Script System
-        // ═══════════════════════════════════════════════════════
-
         // Default script templates
 
         const DEFAULT_SCRIPT_1 = `
@@ -1298,95 +1604,114 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             const myY = api.loc_y();
             const home = api.HOME;
 
-            // 1. Survival: Go Home if low energy or high damage
-            // Max Energy is 2500, so < 500 is very low (~20%)
-            if (api.ENERGY < 500 || api.HEALTH < 40) {
+            // 1. Survival: Go Home if low energy
+            if (api.ENERGY < 800) {
                 const dx = home.x - myX;
                 const dy = home.y - myY;
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
                 if (dist < 80) {
                     api.drive(0, 0); // Stop
-                    api.PAUSE(60);   // Power Nap (1 sec)
+                    api.PAUSE(60);   // Recharge
                     return;
                 }
-
                 const angleToHome = Math.atan2(dy, dx) * (180 / Math.PI);
                 api.drive(angleToHome, 100);
                 return;
             }
 
-            // 2. Combat: Check Sonar (Cheap & Fast)
+            // 2. Combat: Check Sonar (Returns Absolute Angle)
             const target = api.sonar();
             if (target) {
                 api.cannon(target.angle, target.distance);
                 if (target.distance < 200) api.dropMine();
-                // Strafe
-                api.drive(target.angle + 90, 80);
+                api.drive(target.angle + 90, 80); // Strafe
                 return;
             }
 
-            // 3. Hunt: Move towards enemy base but keep distance
-            const enemyBase = api.ENEMY;
-            const distToEnemy = Math.sqrt((myX - enemyBase.x) ** 2 + (myY - enemyBase.y) ** 2);
-
+            // 3. Hunt/Patrol
+            const enemy = api.ENEMY;
+            const distToEnemy = Math.sqrt((myX - enemy.x)**2 + (myY - enemy.y)**2);
             if (distToEnemy > 600) {
-                const angle = Math.atan2(enemyBase.y - myY, enemyBase.x - myX) * (180 / Math.PI);
-                api.drive(angle, 60);
+                 const angle = Math.atan2(enemy.y - myY, enemy.x - myX) * (180 / Math.PI);
+                 api.drive(angle, 60);
             } else {
-                // Circle behavior
-                api.drive(api.heading() + 2, 40);
-                // Random Lidar Potshots
-                if (Math.random() < 0.1) {
-                    const scanAngle = (api.heading() - 45 + Math.random() * 90) % 360;
-                    const range = api.lidar(scanAngle);
-                    if (range > 0) api.cannon(scanAngle, range);
-                }
+                 api.drive(api.heading() + 2, 40);
+                 // Random potshot
+                 if (Math.random() < 0.05) {
+                     const scanAngle = (api.heading() - 45 + Math.random() * 90) % 360;
+                     const range = api.lidar(scanAngle);
+                     if (range > 0) api.cannon(scanAngle, range);
+                 }
             }
         } `;
 
         const DEFAULT_SCRIPT_2 = `
         // #Sponsor: RedBot Corp
-        // Red Robot (The Sniper)
-        // Camps near walls and uses Lidar. Recharges aggressively.
+        // Red Robot (The Sniper v3)
+        // Scans with Lidar + Absolute Angles + Wall Avoidance
         function robotScript(api) {
-            // 1. Check Energy First
-            if (api.ENERGY < 800) {
+            // 1. Recharge Logic (Threshold lowered to 500)
+            if (api.ENERGY < 500) {
                 const home = api.HOME;
-                const dx = home.x - api.loc_x();
-                const dy = home.y - api.loc_y();
-                if (Math.sqrt(dx * dx + dy * dy) < 80) {
-                    api.PAUSE(30); // Quick recharge
-                    return;
-                }
-                const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                const dist = Math.sqrt((home.x - api.loc_x()) ** 2 + (home.y - api.loc_y()) ** 2);
+
+                // If safely at base, pause to recharge
+                if (dist < 80) { api.PAUSE(30); return; }
+
+                // Move towards home
+                const angle = Math.atan2(home.y - api.loc_y(), home.x - api.loc_x()) * (180 / Math.PI);
                 api.drive(angle, 100);
+
+                // Defensive fire while retreating!
+                const enemy = api.ENEMY;
+                const distToEnemy = Math.sqrt((api.loc_x() - enemy.x) ** 2 + (api.loc_y() - enemy.y) ** 2);
+                if (distToEnemy < 600) {
+                    const fireAngle = Math.atan2(enemy.y - api.loc_y(), enemy.x - api.loc_x()) * (180 / Math.PI);
+                    // Only fire if we have enough energy reserve
+                    if (api.ENERGY > 100) api.cannon(fireAngle, distToEnemy);
+                }
                 return;
             }
 
-            // 2. Long Range Scan (Lidar)
-            // Scan a 60 degree arc in front
-            const heading = api.heading();
-            for (let i = -30; i <= 30; i += 5) {
-                const angle = (heading + i + 360) % 360;
+            // 2. Lidar Scan (Absolute Angles)
+            const h = api.heading();
+            for (let i = -60; i <= 60; i += 10) {
+                const angle = (h + i + 360) % 360;
                 const range = api.lidar(angle);
-                if (range > 0 && range < 600) {
+                if (range > 0 && range < 700) {
                     api.cannon(angle, range);
+                    if (range < 350) api.dropMine(); // Defensive mining (Restored v2.9.28)
+                    // Combat Movement: Maintain distance!
+                    if (range < 200) {
+                        api.drive(angle + 180, 80); // Back up fast
+                    } else {
+                        api.drive(angle, 40); // Close distance slowly
+                    }
                     return;
                 }
             }
 
-            // 3. Move unpredictably
-            if (Math.random() < 0.05) {
-                // Change direction
-                const dest = {
-                    x: 100 + Math.random() * 800,
-                    y: 100 + Math.random() * 800
-                };
-                const angle = Math.atan2(dest.y - api.loc_y(), dest.x - api.loc_x()) * (180 / Math.PI);
-                api.drive(angle, 40);
+            // 3. Smart Movement (Wall Avoidance)
+            // If near wall, turn away
+            const margin = 150; 
+            const x = api.loc_x();
+            const y = api.loc_y();
+
+            if (x < margin || x > 1000 - margin || y < margin || y > 1000 - margin) {
+                // Steer towards center (500, 500)
+                const centerAngle = Math.atan2(500 - y, 500 - x) * (180 / Math.PI);
+                api.drive(centerAngle, 60);
+            } else {
+                // Normal patrol
+                if (Math.random() < 0.05) {
+                    api.drive(h + (Math.random() * 90 - 45), 50);
+                } else {
+                    api.drive(h, 50);
+                }
             }
         } `;
+
 
         const SCRIPT_GUIDE = `=== AI ROBOT WARS SCRIPT GUIDE(v2.6) ===
 
@@ -1503,7 +1828,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     const sponsor = parseSponsorFromScript(scriptCode);
                     if (sponsor) {
                         robotSponsors[robotKey] = sponsor;
-                        debugLog(`Sponsor for ${robotKey}: ${sponsor}`);
+                        debugLog(`Sponsor for ${robotKey}: ${sponsor} `);
                     }
                 }
 
@@ -1534,10 +1859,10 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             modal.style.cssText = 'background:#1e293b;border:2px solid #3b82f6;border-radius:10px;padding:20px;width:80%;max-width:800px;max-height:80%;display:flex;flex-direction:column;';
 
             modal.innerHTML = `
-            <div style = "display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;" >
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
                     <h2 style="margin:0;color:${robotNum === 1 ? '#60a5fa' : '#f87171'};">Edit Robot ${robotNum} Script</h2>
                     <button id="close-editor" style="background:#ef4444;border:none;color:white;padding:8px 16px;border-radius:5px;cursor:pointer;font-weight:bold;">X</button>
-                </div>
+                </div >
                 <div style="display:flex;gap:15px;flex:1;overflow:hidden;">
                     <div style="flex:1;display:flex;flex-direction:column;">
                         <label style="color:#9ca3af;margin-bottom:5px;">Script Code:</label>
@@ -1582,7 +1907,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     customScripts[scriptKey] = code;
                     activeScripts[scriptKey] = result.fn;
                     const sponsor = robotSponsors[scriptKey];
-                    statusEl.innerHTML = `<span style="color:#22c55e;">Compiled & Saved! Sponsor: ${sponsor}</span>`;
+                    statusEl.innerHTML = `< span style = "color:#22c55e;" > Compiled & Saved! Sponsor: ${sponsor}</span > `;
                     statusEl.style.background = 'rgba(34, 197, 94, 0.2)';
                     // Save to persistent storage
                     saveScriptsToStorage();
@@ -1605,7 +1930,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1a2e40);
 
-            // Orthographic camera for birds-eye view
+            // Orthographic camera for 2.5D isometric view (like StarCraft)
             const aspect = window.innerWidth / window.innerHeight;
             const viewSize = 60;
             camera = new THREE.OrthographicCamera(
@@ -1616,8 +1941,11 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 1,
                 1000
             );
-            camera.position.set(0, 80, 0);
-            camera.lookAt(0, 0, 0);
+            // Isometric camera position - angled view from top-right
+            const cameraTarget = new THREE.Vector3(0, 0, 0);
+            const cameraOffset = new THREE.Vector3(40, 60, 40);
+            camera.position.copy(cameraTarget).add(cameraOffset);
+            camera.lookAt(cameraTarget);
 
             // Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -1659,46 +1987,166 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             // HUD (v2.4) - Title & Win Screen attached to Camera
             createHUD();
 
-            // Arena walls (visual only)
-            const wallMaterial = new THREE.MeshStandardMaterial({
-                color: 0x4a5568,
-                transparent: true,
-                opacity: 0.3
+            // ═══════════════════════════════════════════════════════
+            // INDUSTRIAL ARENA ENVIRONMENT - Cage Walls & Cracked Floor
+            // ═══════════════════════════════════════════════════════
+
+            // --- CRACKED FLOOR with vertex displacement ---
+            const posAttr = floorGeometry.attributes.position;
+            for (let i = 0; i < posAttr.count; i++) {
+                // Random displacement for worn/cracked look
+                const x = posAttr.getX(i);
+                const z = posAttr.getZ(i);
+                // Create cracks via noise-like pattern (simple implementation)
+                const noise = Math.sin(x * 3) * Math.cos(z * 3) * 0.15;
+                const crack = Math.random() < 0.1 ? Math.random() * -0.3 : 0; // Random crack holes
+                posAttr.setZ(i, posAttr.getZ(i) + noise + crack);
+            }
+            posAttr.needsUpdate = true;
+            floorGeometry.computeVertexNormals();
+
+            // Floor material - darker, grimier concrete
+            floor.material = new THREE.MeshStandardMaterial({
+                color: 0x2a2d30, // Dark concrete
+                roughness: 0.95,
+                metalness: 0.05
             });
-            const wallHeight = 3;
-            const wallThickness = 0.5;
 
-            // North wall
-            const northWall = new THREE.Mesh(
-                new THREE.BoxGeometry(floorSize, wallHeight, wallThickness),
-                wallMaterial
-            );
-            northWall.position.set(0, wallHeight / 2, -floorSize / 2);
-            scene.add(northWall);
+            // --- DEBRIS scattered around arena ---
+            const debrisMat = new THREE.MeshStandardMaterial({
+                color: 0x3d3d3d,
+                roughness: 0.85,
+                metalness: 0.2
+            });
+            for (let i = 0; i < 15; i++) {
+                const size = 0.2 + Math.random() * 0.4;
+                const debrisGeo = Math.random() > 0.5
+                    ? new THREE.BoxGeometry(size, size * 0.3, size * 0.8)
+                    : new THREE.DodecahedronGeometry(size * 0.5, 0);
+                const debris = new THREE.Mesh(debrisGeo, debrisMat);
+                debris.position.set(
+                    (Math.random() - 0.5) * floorSize * 0.9,
+                    size * 0.15,
+                    (Math.random() - 0.5) * floorSize * 0.9
+                );
+                debris.rotation.set(
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI
+                );
+                scene.add(debris);
+            }
 
-            // South wall
-            const southWall = new THREE.Mesh(
-                new THREE.BoxGeometry(floorSize, wallHeight, wallThickness),
-                wallMaterial
-            );
-            southWall.position.set(0, wallHeight / 2, floorSize / 2);
-            scene.add(southWall);
+            // --- CAGE FENCE SYSTEM ---
+            const fenceHeight = 5;
+            const postSpacing = 10; // Distance between posts
+            const postRadius = 0.3;
+            const numPostsPerSide = Math.floor(floorSize / postSpacing) + 1;
 
-            // East wall
-            const eastWall = new THREE.Mesh(
-                new THREE.BoxGeometry(wallThickness, wallHeight, floorSize),
-                wallMaterial
-            );
-            eastWall.position.set(floorSize / 2, wallHeight / 2, 0);
-            scene.add(eastWall);
+            // Fence materials
+            const postMat = new THREE.MeshStandardMaterial({
+                color: 0x2c2c2c, // Dark steel
+                roughness: 0.4,
+                metalness: 0.8
+            });
+            const wireMat = new THREE.MeshStandardMaterial({
+                color: 0x555555,
+                roughness: 0.6,
+                metalness: 0.7,
+                transparent: true,
+                opacity: 0.7
+            });
+            const barbedWireMat = new THREE.MeshStandardMaterial({
+                color: 0x555555,
+                roughness: 0.3,
+                metalness: 0.9,
+                emissive: 0x1a4a8a, // Electric blue glow
+                emissiveIntensity: 0.3
+            });
 
-            // West wall
-            const westWall = new THREE.Mesh(
-                new THREE.BoxGeometry(wallThickness, wallHeight, floorSize),
-                wallMaterial
-            );
-            westWall.position.set(-floorSize / 2, wallHeight / 2, 0);
-            scene.add(westWall);
+            // Create fence posts and wire panels for all 4 sides
+            const sides = [
+                { start: [-floorSize / 2, -floorSize / 2], dir: [1, 0], len: floorSize },  // North (along X)
+                { start: [-floorSize / 2, floorSize / 2], dir: [1, 0], len: floorSize },   // South
+                { start: [-floorSize / 2, -floorSize / 2], dir: [0, 1], len: floorSize },  // West (along Z)
+                { start: [floorSize / 2, -floorSize / 2], dir: [0, 1], len: floorSize }    // East
+            ];
+
+            sides.forEach(side => {
+                const postGeo = new THREE.CylinderGeometry(postRadius, postRadius * 1.2, fenceHeight, 8);
+
+                for (let i = 0; i < numPostsPerSide; i++) {
+                    const t = i / (numPostsPerSide - 1);
+                    const x = side.start[0] + side.dir[0] * side.len * t;
+                    const z = side.start[1] + side.dir[1] * side.len * t;
+
+                    // Fence post
+                    const post = new THREE.Mesh(postGeo, postMat);
+                    post.position.set(x, fenceHeight / 2, z);
+                    post.castShadow = true;
+                    scene.add(post);
+
+                    // Wire panel between this post and next (except last)
+                    if (i < numPostsPerSide - 1) {
+                        const panelWidth = side.len / (numPostsPerSide - 1);
+                        const panelGeo = new THREE.PlaneGeometry(panelWidth, fenceHeight - 0.5);
+                        const panel = new THREE.Mesh(panelGeo, wireMat);
+
+                        // Position between posts
+                        const nextT = (i + 1) / (numPostsPerSide - 1);
+                        const nextX = side.start[0] + side.dir[0] * side.len * nextT;
+                        const nextZ = side.start[1] + side.dir[1] * side.len * nextT;
+                        panel.position.set((x + nextX) / 2, fenceHeight / 2, (z + nextZ) / 2);
+
+                        // Rotate to face inward
+                        if (side.dir[0] === 1) { // North/South walls
+                            // Already facing correctly
+                        } else { // East/West walls
+                            panel.rotation.y = Math.PI / 2;
+                        }
+                        scene.add(panel);
+                    }
+                }
+
+                // --- BARBED WIRE COILS on top ---
+                const wireRadius = 0.4;
+                const wireLoops = 12; // Number of loops per segment
+                const wireGeo = new THREE.TorusGeometry(wireRadius, 0.05, 6, wireLoops);
+
+                for (let i = 0; i < numPostsPerSide - 1; i++) {
+                    const t = (i + 0.5) / (numPostsPerSide - 1);
+                    const x = side.start[0] + side.dir[0] * side.len * t;
+                    const z = side.start[1] + side.dir[1] * side.len * t;
+
+                    // Create helical wire effect with multiple offset torus shapes
+                    for (let j = 0; j < 3; j++) {
+                        const wire = new THREE.Mesh(wireGeo, barbedWireMat);
+                        wire.position.set(
+                            x + (j - 1) * (side.dir[0] === 0 ? 0.5 : 0),
+                            fenceHeight + 0.3 + j * 0.15,
+                            z + (j - 1) * (side.dir[1] === 0 ? 0.5 : 0)
+                        );
+                        wire.rotation.x = (side.dir[0] === 1) ? Math.PI / 2 : 0;
+                        wire.rotation.z = (side.dir[1] === 1) ? Math.PI / 2 : 0;
+                        scene.add(wire);
+                    }
+                }
+            });
+
+            // --- CORNER POSTS (taller) ---
+            const cornerGeo = new THREE.CylinderGeometry(postRadius * 1.3, postRadius * 1.5, fenceHeight + 1, 8);
+            const cornerPositions = [
+                [-floorSize / 2, -floorSize / 2],
+                [-floorSize / 2, floorSize / 2],
+                [floorSize / 2, -floorSize / 2],
+                [floorSize / 2, floorSize / 2]
+            ];
+            cornerPositions.forEach(pos => {
+                const cornerPost = new THREE.Mesh(cornerGeo, postMat);
+                cornerPost.position.set(pos[0], (fenceHeight + 1) / 2, pos[1]);
+                cornerPost.castShadow = true;
+                scene.add(cornerPost);
+            });
 
             debugLog('✅ Three.js scene ready');
         }
@@ -1706,23 +2154,43 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
         function createBaseMeshes(floorSize) {
             const scale = 0.1;
             BASES.forEach((base, index) => {
-                // Base circle
-                const geometry = new THREE.CircleGeometry(BASE_RADIUS * scale, 32);
-                const material = new THREE.MeshBasicMaterial({
-                    color: base.color,
-                    transparent: true,
-                    opacity: 0.3,
-                    side: THREE.DoubleSide
-                });
-                const circle = new THREE.Mesh(geometry, material);
-                circle.rotation.x = -Math.PI / 2;
-                circle.position.set(
+                // Base Group
+                const baseGroup = new THREE.Group();
+                baseGroup.position.set(
                     (base.x - ARENA_SIZE / 2) * scale,
-                    0.02, // Just above floor
+                    0,
                     (base.y - ARENA_SIZE / 2) * scale
                 );
-                scene.add(circle);
+                scene.add(baseGroup);
 
+                // 1. Tech Platform (Hexagon/Cylinder)
+                const platformGeo = new THREE.CylinderGeometry(BASE_RADIUS * scale, BASE_RADIUS * scale * 1.1, 0.4, 6);
+                const platformMat = new THREE.MeshStandardMaterial({
+                    color: 0x222222,
+                    roughness: 0.3,
+                    metalness: 0.8
+                });
+                const platform = new THREE.Mesh(platformGeo, platformMat);
+                platform.position.y = 0.2;
+                platform.receiveShadow = true;
+                baseGroup.add(platform);
+
+                // 2. Glowing Energy Ring
+                const ringGeo = new THREE.TorusGeometry(BASE_RADIUS * scale * 0.9, 0.2, 8, 32);
+                const ringMat = new THREE.MeshBasicMaterial({ color: base.color });
+                const ring = new THREE.Mesh(ringGeo, ringMat);
+                ring.rotation.x = Math.PI / 2;
+                ring.position.y = 0.45;
+                baseGroup.add(ring);
+
+                // 3. Inner Pulsing Core
+                const coreGeo = new THREE.CylinderGeometry(BASE_RADIUS * scale * 0.4, BASE_RADIUS * scale * 0.4, 0.1, 32);
+                const coreMat = new THREE.MeshBasicMaterial({ color: base.color, transparent: true, opacity: 0.6 });
+                const core = new THREE.Mesh(coreGeo, coreMat);
+                core.position.y = 0.46;
+                baseGroup.add(core);
+
+                // Labels
                 // ENERGY text label
                 const labelCanvas = document.createElement('canvas');
                 labelCanvas.width = 128;
@@ -1732,84 +2200,131 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 ctx.font = 'bold 20px monospace';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText('ENERGY', 64, 16);
+                ctx.fillText(index === 0 ? 'BLUE BASE' : 'RED BASE', 64, 16);
 
                 const labelTex = new THREE.CanvasTexture(labelCanvas);
                 const labelMat = new THREE.SpriteMaterial({ map: labelTex, transparent: true });
                 const labelSprite = new THREE.Sprite(labelMat);
                 labelSprite.scale.set(8, 2, 1);
-                labelSprite.position.set(
-                    (base.x - ARENA_SIZE / 2) * scale,
-                    1.5, // Float above base
-                    (base.y - ARENA_SIZE / 2) * scale
-                );
-                scene.add(labelSprite);
+                labelSprite.position.set(0, 3.5, 0); // Relative to group
+                baseGroup.add(labelSprite);
             });
         }
 
         function createObstacles(floorSize) {
             obstacles = []; // Reset
-            const obstacleCount = Math.floor(Math.random() * 3) + 3; // 3 to 5 obstacles
+            const obstacleCount = Math.floor(Math.random() * 3) + 1; // 1 to 3 tetrapods (reduced from 4-5)
 
-            const material = new THREE.MeshStandardMaterial({
-                color: 0x64748b,
-                roughness: 0.7,
-                metalness: 0.4
+            // Concrete tetrapod material (weathered concrete color)
+            const concreteMat = new THREE.MeshStandardMaterial({
+                color: 0x8a8a82,
+                roughness: 0.95,
+                metalness: 0.05
             });
+
+            // Helper function to create tetrapod with proper tetrahedral geometry
+            // Uses nested groups: outer for Y spin, inner for X tilt
+            function createTetrapod(size) {
+                const tetrapod = new THREE.Group();
+
+                const legRadius = size * 0.35;
+                const legLength = size * 2.2;
+
+                // Create leg mesh - cylinder extending from origin
+                function createLeg() {
+                    const geo = new THREE.CylinderGeometry(legRadius * 0.6, legRadius, legLength, 10);
+                    geo.translate(0, legLength / 2, 0);
+                    const mesh = new THREE.Mesh(geo, concreteMat);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    return mesh;
+                }
+
+                // Tetrahedral angle: ~109.47 degrees from vertical
+                const tiltAngle = Math.acos(-1 / 3); // ~1.91 radians
+
+                // Leg 1: pointing straight UP
+                const leg1 = createLeg();
+                tetrapod.add(leg1);
+
+                // Leg 2: tilted down, no spin (front)
+                const outer2 = new THREE.Group();
+                const inner2 = new THREE.Group();
+                inner2.add(createLeg());
+                inner2.rotation.x = tiltAngle; // Tilt down
+                outer2.add(inner2);
+                outer2.rotation.y = 0; // Front
+                tetrapod.add(outer2);
+
+                // Leg 3: tilted down, spun 120 degrees
+                const outer3 = new THREE.Group();
+                const inner3 = new THREE.Group();
+                inner3.add(createLeg());
+                inner3.rotation.x = tiltAngle;
+                outer3.add(inner3);
+                outer3.rotation.y = Math.PI * 2 / 3; // 120 degrees
+                tetrapod.add(outer3);
+
+                // Leg 4: tilted down, spun 240 degrees
+                const outer4 = new THREE.Group();
+                const inner4 = new THREE.Group();
+                inner4.add(createLeg());
+                inner4.rotation.x = tiltAngle;
+                outer4.add(inner4);
+                outer4.rotation.y = Math.PI * 4 / 3; // 240 degrees
+                tetrapod.add(outer4);
+
+                // Central sphere
+                const jointGeo = new THREE.SphereGeometry(legRadius * 1.4, 14, 14);
+                const joint = new THREE.Mesh(jointGeo, concreteMat);
+                joint.castShadow = true;
+                tetrapod.add(joint);
+
+                return tetrapod;
+            }
 
             for (let i = 0; i < obstacleCount; i++) {
                 let valid = false;
-                let mesh, shape;
                 let x, y, size;
                 let attempts = 0;
 
                 while (!valid && attempts < 50) {
                     attempts++;
-                    // Random Position (keep away from edges slightly)
-                    x = Math.random() * 800 + 100; // 100 to 900
-                    y = Math.random() * 800 + 100;
-                    size = Math.random() * 40 + 30; // 30 to 70 size
+                    // Random Position (keep away from edges and bases)
+                    x = Math.random() * 600 + 200; // 200 to 800
+                    y = Math.random() * 600 + 200;
+                    size = Math.random() * 20 + 60; // 60 to 80 (collision radius)
 
                     // Check Base Collision (CRITICAL)
                     const distBlue = Math.sqrt((x - 100) ** 2 + (y - 100) ** 2);
                     const distRed = Math.sqrt((x - 900) ** 2 + (y - 900) ** 2);
 
-                    if (distBlue > 120 && distRed > 120) {
-                        valid = true; // Far enough from bases
-                        // Note: We allow clipping with walls/other obstacles for "ruined" look
+                    if (distBlue > 200 && distRed > 200) {
+                        valid = true;
                     }
                 }
 
                 if (valid) {
                     const scale = 0.1;
-                    const height = 40 * scale; // 4 units high
+                    const tetrapodSize = 2.0; // Size multiplier for visual
 
-                    if (Math.random() > 0.5) {
-                        // Box (Crate)
-                        const geometry = new THREE.BoxGeometry(size * scale, height, size * scale);
-                        mesh = new THREE.Mesh(geometry, material);
-                        shape = 'box';
-                    } else {
-                        // Cylinder (Pillar)
-                        const geometry = new THREE.CylinderGeometry((size / 2) * scale, (size / 2) * scale, height, 16);
-                        mesh = new THREE.Mesh(geometry, material);
-                        shape = 'cylinder';
-                    }
-
+                    const mesh = createTetrapod(tetrapodSize);
                     mesh.position.set(
                         (x - ARENA_SIZE / 2) * scale,
-                        height / 2,
+                        2.5, // Elevated so legs touch ground
                         (y - ARENA_SIZE / 2) * scale
                     );
+                    // Random rotation for variety
+                    mesh.rotation.y = Math.random() * Math.PI * 2;
+                    // Slight random tilt for natural look
+                    mesh.rotation.x = (Math.random() - 0.5) * 0.2;
+                    mesh.rotation.z = (Math.random() - 0.5) * 0.2;
 
-                    mesh.castShadow = true;
-                    mesh.receiveShadow = true;
                     scene.add(mesh);
-
-                    obstacles.push({ x, y, size, shape, mesh }); // Store for physics
+                    obstacles.push({ x, y, size, shape: 'tetrapod', mesh });
                 }
             }
-            debugLog(`Generated ${obstacles.length} obstacles`);
+            debugLog(`Generated ${obstacles.length} concrete tetrapods`);
         }
 
         // ═══════════════════════════════════════════════════════
@@ -1851,6 +2366,13 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                         );
                         if (hitDist < SPLASH_RADIUS) {
                             const damage = MISSILE_DAMAGE * (1 - hitDist / SPLASH_RADIUS);
+                            createExplosion(missile.x, missile.y, missile.ownerId); // Effect
+
+                            // Log for AI (v2.9.25)
+                            const attacker = robots[missile.ownerId];
+                            const victimName = robot.id === 0 ? 'Blue' : 'Red';
+                            const shooterName = missile.ownerId === 0 ? 'Blue' : 'Red';
+                            battleLog.push(`[T${battleStats.totalSnapshots || 0}] HIT: ${victimName} hit by ${shooterName} missile at ${Math.round(robot.x)},${Math.round(robot.y)}. Shooter at ${Math.round(attacker.x)},${Math.round(attacker.y)}.`);
                             robot.damage += damage;
                             if (robot.id !== missile.ownerId) {
                                 battleStats.shotsHit[missile.ownerId]++;
@@ -1875,7 +2397,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                     const scale = 0.1;
                     missile.mesh.position.x = (missile.x - ARENA_SIZE / 2) * scale;
                     missile.mesh.position.z = (missile.y - ARENA_SIZE / 2) * scale;
-                    missile.mesh.position.y = 1;
+                    missile.mesh.position.y = missile.height || 2.0; // Use stored height or default
                 }
             }
         }
@@ -1956,6 +2478,10 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                         // Damage the enemy robot
                         robot.damage += MINE_DAMAGE;
                         battleStats.damageDealt[mine.ownerId] += MINE_DAMAGE;
+
+                        // Log for AI (v2.9.25)
+                        const victimName = robot.id === 0 ? 'Blue' : 'Red';
+                        battleLog.push(`[T${battleStats.totalSnapshots || 0}] MINE: ${victimName} hit mine at ${Math.round(robot.x)},${Math.round(robot.y)}. Damage: ${MINE_DAMAGE}.`);
                         playDamageSound();
 
                         // Remove mine
@@ -2057,9 +2583,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             recordingIndicator.id = 'recording-indicator';
             recordingIndicator.style.cssText = 'position:absolute;top:80px;left:50%;transform:translateX(-50%);background:rgba(220,38,38,0.9);padding:8px 20px;border-radius:20px;display:none;align-items:center;gap:8px;z-index:100;';
             recordingIndicator.innerHTML = `
-                <span style="width:12px;height:12px;background:#fff;border-radius:50%;animation:pulse 1s infinite;"></span>
-                <span style="font-size:14px;font-weight:bold;">REC</span>
-            `;
+            <span style="width:12px;height:12px;background:#fff;border-radius:50%;animation:pulse 1s infinite;"></span>
+            <span style="font-size:14px;font-weight:bold;">REC</span>
+        `;
             ui.appendChild(recordingIndicator);
 
             // Edit Script Buttons (visible on menu screen)
@@ -2081,14 +2607,891 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             editBtnContainer.appendChild(editRedBtn);
             ui.appendChild(editBtnContainer);
 
+            // ═══════════════════════════════════════════════════════
+            // Commander Console (LLM Integration v4.0 - Real-time Commands)
+            // ═══════════════════════════════════════════════════════
+            const commanderPanel = document.createElement('div');
+            commanderPanel.id = 'commander-panel';
+            commanderPanel.style.cssText = 'position:absolute;bottom:10px;left:10px;width:380px;background:rgba(15,23,42,0.95);border:2px solid #3b82f6;border-radius:10px;padding:12px;pointer-events:auto;font-size:12px;display:none;';
+            commanderPanel.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <span style="color:#60a5fa;font-weight:bold;">🤖 Commander Console</span>
+                    <span id="commander-status" style="color:#6b7280;font-size:10px;">Ready</span>
+                </div >
+                <input type="text" id="commander-intent" 
+                    placeholder="Command Blue AI (e.g., 'Attack!', 'Go home', 'Evade')"
+                    style="width:100%;padding:8px;border:1px solid #374151;border-radius:5px;background:#1e293b;color:#e2e8f0;font-size:12px;box-sizing:border-box;margin-bottom:8px;"
+                />
+                <button id="evolve-btn" style="width:100%;padding:10px;background:#3b82f6;border:none;border-radius:5px;color:white;font-weight:bold;cursor:pointer;font-size:12px;">
+                    ⚡ Send Command
+                </button>
+                <div style="margin-top:8px;color:#6b7280;font-size:10px;">
+                    💡 Tip: # prefix = direct command (e.g., #drive(0,100))
+                </div>
+                <div id="ai-output" style="margin-top:10px;max-height:80px;overflow-y:auto;background:#0f172a;border:1px solid #374151;border-radius:5px;padding:8px;font-family:monospace;font-size:11px;color:#94a3b8;">
+                    <div style="color:#6b7280;font-style:italic;">AI responses will appear here...</div>
+                </div>
+        `;
+            ui.appendChild(commanderPanel);
+
             // Add pulse animation
             const style = document.createElement('style');
             style.textContent = '@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }';
             document.head.appendChild(style);
         }
 
+        // ═══════════════════════════════════════════════════════
+        // Commander Console - LLM Integration Functions (v3.0)
+        // ═══════════════════════════════════════════════════════
+
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        function generateSITREP(robotId) {
+            // Generate tactical situation report for the LLM
+            const robot = robots[robotId];
+            if (!robot) return null;
+
+            // Find enemy robot
+            const enemyId = robotId === 0 ? 1 : 0;
+            const enemy = robots[enemyId];
+
+            // Calculate enemy relative position
+            let enemyInfo = { distance: 0, angle: 0, signature: 'unknown' };
+            if (enemy) {
+                const dx = enemy.x - robot.x;
+                const dy = enemy.y - robot.y;
+                enemyInfo.distance = Math.sqrt(dx * dx + dy * dy);
+                enemyInfo.angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+                // Determine enemy behavior signature
+                if (enemy.speed > 60) enemyInfo.signature = 'rushing';
+                else if (enemy.speed > 30) enemyInfo.signature = 'strafing';
+                else if (enemy.speed < 10) enemyInfo.signature = 'camping';
+                else enemyInfo.signature = 'patrolling';
+            }
+
+            return {
+                team: robotId === 0 ? 'BLUE' : 'RED',
+                hp: Math.max(0, 100 - robot.damage),
+                energy: Math.round(robot.energy),
+                pos: [Math.round(robot.x), Math.round(robot.y)],
+                heading: Math.round(robot.heading),
+                speed: Math.round(robot.speed),
+                enemy: enemyInfo,
+                commanderIntent: commanderIntent || 'No specific guidance',
+                currentScript: robot.controlScript ? robot.controlScript.toString().slice(0, 500) : 'N/A'
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // AI Command Execution System (v4.0)
+        // ═══════════════════════════════════════════════════════
+
+        function appendAIOutput(message, isCommand = false) {
+            const outputEl = document.getElementById('ai-output');
+            if (!outputEl) return;
+
+            const now = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const color = isCommand ? '#22c55e' : '#94a3b8';
+            const prefix = isCommand ? '⚡' : '💬';
+
+            const line = document.createElement('div');
+            line.style.cssText = `color:${color}; margin-bottom: 4px;`;
+            line.innerHTML = `<span style="color:#6b7280;">[${now}]</span> ${prefix} ${message}`;
+
+            outputEl.appendChild(line);
+            outputEl.scrollTop = outputEl.scrollHeight;
+
+            // Keep only last 20 lines
+            while (outputEl.children.length > 20) {
+                outputEl.removeChild(outputEl.firstChild);
+            }
+        }
+
+        function logBattleState() {
+            const sitrep = generateSITREP(0);
+            if (sitrep) {
+                debugLog('═══ BATTLE STATE ═══');
+                debugLog(JSON.stringify({
+                    blue: { hp: sitrep.hp, energy: sitrep.energy, pos: sitrep.pos, speed: sitrep.speed },
+                    enemy: { dist: Math.round(sitrep.enemy.distance), angle: Math.round(sitrep.enemy.angle), behavior: sitrep.enemy.signature }
+                }));
+            }
+        }
+
+        function showPreEvolutionDialog(blueWon, finalScore) {
+            return new Promise((resolve) => {
+                // Create modal overlay
+                const overlay = document.createElement('div');
+                overlay.id = 'evolution-dialog-overlay';
+                overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10000;display:flex;justify-content:center;align-items:center;';
+
+                const modal = document.createElement('div');
+                modal.style.cssText = 'background:#1e293b;border:2px solid #3b82f6;border-radius:10px;padding:24px;width:500px;max-height:80%;overflow-y:auto;font-family:monospace;';
+
+                const resultColor = blueWon ? '#22c55e' : '#ef4444';
+                const resultText = blueWon ? '🏆 BLUE WON!' : '💀 BLUE LOST';
+
+                modal.innerHTML = `
+            < h2 style = "color:${resultColor};margin:0 0 16px 0;font-size:20px;text-align:center;" >
+                ${resultText} (${finalScore})
+                    </h2 >
+                    <p style="color:#94a3b8;margin:0 0 16px 0;font-size:13px;line-height:1.5;">
+                        Before evolving the script, tell the AI what worked and what didn't work.
+                        Be specific about tactics, positioning, or behaviors you observed.
+                    </p>
+                    <label style="color:#60a5fa;font-size:12px;">What worked well?</label>
+                    <textarea id="evo-worked" style="width:100%;padding:8px;border:1px solid #374151;border-radius:5px;background:#0f172a;color:#22c55e;font-size:12px;box-sizing:border-box;margin:4px 0 12px 0;height:60px;resize:vertical;font-family:monospace;"
+                        placeholder="e.g., Aggressive attacking, good aim, energy management..."></textarea>
+                    
+                    <label style="color:#60a5fa;font-size:12px;">What didn't work?</label>
+                    <textarea id="evo-failed" style="width:100%;padding:8px;border:1px solid #374151;border-radius:5px;background:#0f172a;color:#ef4444;font-size:12px;box-sizing:border-box;margin:4px 0 12px 0;height:60px;resize:vertical;font-family:monospace;"
+                        placeholder="e.g., Got stuck in corners, wasted energy, didn't dodge..."></textarea>
+                    
+                    <label style="color:#60a5fa;font-size:12px;">Any specific strategy requests?</label>
+                    <textarea id="evo-strategy" style="width:100%;padding:8px;border:1px solid #374151;border-radius:5px;background:#0f172a;color:#e2e8f0;font-size:12px;box-sizing:border-box;margin:4px 0 16px 0;height:60px;resize:vertical;font-family:monospace;"
+                        placeholder="e.g., Be more defensive, prioritize scanning, stay mobile..."></textarea>
+                    
+                    <div style="display:flex;gap:12px;justify-content:center;">
+                        <button id="evo-cancel" style="padding:10px 24px;background:#6b7280;border:none;border-radius:5px;color:white;cursor:pointer;font-weight:bold;">
+                            Cancel
+                        </button>
+                        <button id="evo-submit" style="padding:10px 24px;background:#3b82f6;border:none;border-radius:5px;color:white;cursor:pointer;font-weight:bold;">
+                            Evolve Script
+                        </button>
+                    </div>
+        `;
+
+                overlay.appendChild(modal);
+                document.body.appendChild(overlay);
+
+                // Wait a tick to prevent the keydown from the game carrying over
+                setTimeout(() => {
+                    document.getElementById('evo-worked').focus();
+                }, 50);
+
+                document.getElementById('evo-cancel').onclick = () => {
+                    overlay.remove();
+                    resolve(null);
+                };
+
+                document.getElementById('evo-submit').onclick = () => {
+                    const worked = document.getElementById('evo-worked').value.trim();
+                    const failed = document.getElementById('evo-failed').value.trim();
+                    const strategy = document.getElementById('evo-strategy').value.trim();
+                    overlay.remove();
+                    resolve({ worked, failed, strategy });
+                };
+
+                // Allow Enter in submit button
+                document.getElementById('evo-submit').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') document.getElementById('evo-submit').click();
+                });
+            });
+        }
+
+        async function requestPostMatchEvolution(blueWon, finalScore) {
+            // Check if user authorized post-match evolution
+            // Always show the evolution dialog after tournament
+            // User can click Cancel if they don't want to evolve
+
+            // Show pre-evolution dialog to get human feedback
+            const userFeedback = await showPreEvolutionDialog(blueWon, finalScore);
+            if (userFeedback === null) {
+                debugLog('User cancelled evolution');
+                appendAIOutput('Evolution cancelled', false);
+                battleHistory = []; // Clear history
+                return;
+            }
+
+            debugLog('═══ POST-MATCH EVOLUTION STARTING ═══');
+            appendAIOutput('Analyzing battle replay...', false);
+
+            // Summarize battle history
+            const historyStats = battleHistory.length > 0 ? {
+                totalSnapshots: battleHistory.length,
+                startHp: battleHistory[0]?.blue?.hp || 100,
+                endHp: battleHistory[battleHistory.length - 1]?.blue?.hp || 0,
+                avgEnergy: Math.round(battleHistory.reduce((s, h) => s + (h.blue?.energy || 0), 0) / battleHistory.length),
+                positions: battleHistory.slice(-5).map(h => h.blue ? `(${h.blue.x}, ${h.blue.y})` : '?').join(' → ')
+            } : { totalSnapshots: 0 };
+
+            // Get current script
+            const currentScript = activeScripts.robot1 || defaultRobotScript;
+
+            // Generate query ID
+            const queryId = generateUUID();
+
+            const prompt = `You are an expert robot battle AI programmer.Analyze this match and write an IMPROVED robot script.
+
+BATTLE RESULT: ${blueWon ? 'BLUE WON' : 'BLUE LOST'} (${finalScore})
+
+BATTLE STATISTICS:
+        - Total data points: ${historyStats.totalSnapshots}
+        - HP: Started ${historyStats.startHp}%, Ended ${historyStats.endHp}%
+            - Average Energy: ${historyStats.avgEnergy}
+        - Final positions: ${historyStats.positions}
+
+HUMAN COMMANDER FEEDBACK:
+        - What worked well: ${userFeedback.worked || 'Not specified'}
+        - What didn't work: ${userFeedback.failed || 'Not specified'}
+            - Strategy request: ${userFeedback.strategy || 'Not specified'}
+
+BATTLE EVENT LOG (Critical events):
+${battleLog.slice(-50).join('\n')}
+
+CURRENT SCRIPT(that ${blueWon ? 'won' : 'lost'}):
+        \`\`\`javascript
+${currentScript.slice(0, 1000)}
+\`\`\`
+
+API METHODS:
+- api.scan(deg, res): Radar scan (400 range). Returns distance or 0.
+- api.lidar(deg): Laser scan (600 range). Returns distance or 0.
+- api.cannon(deg, dist): Fire missile. Cooldown 500ms. Cost 5 Energy.
+- api.drive(deg, speed): Move at angle with speed (0-100).
+- api.HEALTH, api.ENERGY: Current status.
+
+IMPORTANT: ${blueWon ? 'Improve on the winning strategy using the feedback.' : 'Fix the problems that caused the loss based on the feedback.'}
+
+Output ONLY the JavaScript function. No explanations.`;
+
+            // UI Indicator - Create IMMEDIATELY before any network calls
+            const indicator = document.createElement('div');
+            indicator.id = 'evolution-status';
+            indicator.style.cssText = 'position:fixed;top:150px;left:50%;transform:translateX(-50%);background:#2563eb;color:white;padding:15px 30px;border-radius:30px;font-weight:bold;z-index:20000;box-shadow:0 8px 24px rgba(0,0,0,0.6);font-family:sans-serif;border:3px solid #60a5fa;font-size:18px;text-align:center;';
+            indicator.innerHTML = '🧬 Evolving Script...<br><span style="font-size:0.7em;opacity:0.9;">Connecting to AI...</span>';
+            document.body.appendChild(indicator);
+
+            try {
+                await window.bbs.postEvent({
+                    subject: 'RouterQuery',
+                    body: JSON.stringify({
+                        query_id: queryId,
+                        query: prompt,
+                        mode: 'direct',       // Use direct mode for Gemini
+                        model: 'gemini-fast'  // Gemini Flash - fast, cheap, writes good JS
+                    })
+                });
+
+                debugLog('Posted post-match evolution query: ' + queryId.slice(0, 8));
+                appendAIOutput('Evolution query sent...', false);
+
+                // Update text to show we are generating
+                if (indicator) {
+                    indicator.innerHTML = '🧬 Evolving Script...<br><span style="font-size:0.7em;opacity:0.9;">Request sent! Waiting for strategy...</span>';
+                }
+
+                // Poll for response (separate from command polling)
+                let elapsed = 0;
+                const EVOLUTION_TIMEOUT = 180; // 3 minutes for complex script
+                const pollInterval = setInterval(async () => {
+                    elapsed += 2;
+
+                    // Show progress every 2 seconds
+                    const remaining = EVOLUTION_TIMEOUT - elapsed;
+                    const ind = document.getElementById('evolution-status');
+                    if (ind) {
+                        const dots = '.'.repeat((elapsed / 2) % 4);
+                        ind.innerHTML = `🧬 Evolving Script${dots}<br><span style="font-size:0.7em;opacity:0.9;">Generating strategy... ${remaining}s</span>`;
+                    }
+
+                    try {
+                        const events = await window.bbs.readEvents();
+                        const eventList = Array.isArray(events) ? events : [];
+
+                        for (const event of eventList) {
+                            if (event.subject === 'RouterResponse') {
+                                try {
+                                    const response = JSON.parse(event.body);
+                                    if (response.query_id === queryId) {
+                                        clearInterval(pollInterval);
+
+                                        // Show DONE message
+                                        if (ind) {
+                                            ind.style.background = '#22c55e';
+                                            ind.style.borderColor = '#86efac';
+                                            ind.innerHTML = '✅ Done!<br><span style="font-size:0.7em;">Script Created.</span>';
+                                            setTimeout(() => ind.remove(), 2500);
+                                        }
+
+                                        handlePostMatchEvolutionResponse(response);
+                                        return;
+                                    }
+                                } catch (e) { /* ignore parse errors */ }
+                            }
+                        }
+
+                        if (elapsed > EVOLUTION_TIMEOUT) {
+                            debugLog('Post-match evolution timed out after ' + EVOLUTION_TIMEOUT + 's');
+                            appendAIOutput('⏱️ Evolution timed out - LLM took too long', false);
+
+                            if (ind) {
+                                ind.style.background = '#ef4444';
+                                ind.innerHTML = '⚠️ Timed Out<br><span style="font-size:0.7em;"AI unavailable.</span>';
+                                setTimeout(() => ind.remove(), 4000);
+                            }
+
+                            alert('⚠️ Script Evolution Timed Out\n\nThe AI took too long to generate a new script.\nThis may happen if the LLM is slow or busy.\n\nTry again after the next match.');
+                            battleHistory = [];
+                            clearInterval(pollInterval);
+                        }
+                    } catch (e) {
+                        debugLog('Poll error: ' + e.message);
+                    }
+                }, 2000);
+
+            } catch (error) {
+                debugLog('Failed to post evolution query: ' + error.message);
+                appendAIOutput('Evolution failed: ' + error.message, false);
+            }
+        }
+
+        async function handlePostMatchEvolutionResponse(response) {
+            debugLog('Received post-match evolution response');
+
+            if (response.status === 'success' && response.answer) {
+                let newCode = response.answer;
+
+                // Extract code block if present
+                const codeMatch = newCode.match(/```(?:javascript|js)?\s*([\s\S]*?)```/);
+                if (codeMatch) {
+                    newCode = codeMatch[1].trim();
+                }
+
+                // Validate script
+                const result = compileScript(newCode);
+                if (result.success) {
+                    // Update Blue robot's script
+                    customScripts.robot1 = newCode;
+                    activeScripts.robot1 = result.fn;
+                    await saveScriptsToStorage();
+
+                    debugLog('✅ Post-match evolution complete! New script saved.');
+                    appendAIOutput('✅ Script evolved! Ready for next battle.', true);
+
+                    // Show confirmation dialog with the new script
+                    showEvolutionResultDialog(newCode);
+                } else {
+                    debugLog('Evolution script validation failed: ' + result.error);
+                    appendAIOutput('Script error: ' + result.error.slice(0, 50), false);
+                    // Show error dialog
+                    alert('⚠️ AI-generated script had errors:\n\n' + result.error + '\n\nScript not applied.');
+                }
+            } else {
+                debugLog('Evolution failed: ' + (response.error || 'Unknown'));
+                appendAIOutput('Evolution error', false);
+            }
+
+            // Clear battle history for next match
+            battleHistory = [];
+        }
+
+        function showEvolutionResultDialog(newCode) {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:10000;display:flex;justify-content:center;align-items:center;';
+
+            const modal = document.createElement('div');
+            modal.style.cssText = 'background:#1e293b;border:2px solid #22c55e;border-radius:10px;padding:24px;width:600px;max-height:80%;overflow-y:auto;font-family:monospace;';
+
+            modal.innerHTML = `
+                <h2 style="color:#22c55e;margin:0 0 16px 0;font-size:20px;text-align:center;">
+                    ✅ Script Evolved Successfully!
+                </h2>
+                <p style="color:#94a3b8;margin:0 0 12px 0;font-size:12px;">
+                    Blue's new AI script has been saved. Here's what the AI wrote:
+                </p>
+                <pre style="background:#0f172a;border:1px solid #374151;border-radius:5px;padding:12px;color:#60a5fa;font-size:11px;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;">${escapeHtml(newCode.slice(0, 2000))}</pre>
+                <div style="display:flex;gap:12px;justify-content:center;margin-top:16px;">
+                    <button id="evo-result-ok" style="padding:10px 32px;background:#22c55e;border:none;border-radius:5px;color:white;cursor:pointer;font-weight:bold;font-size:14px;">
+                        OK - Ready for Next Battle!
+                    </button>
+                </div>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            document.getElementById('evo-result-ok').onclick = () => {
+                overlay.remove();
+            };
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function executeAICommand(robot, commandStr) {
+            // Parse commands like:
+            // "MOVE 45 80" -> drive(45, 80)
+            // "FIRE 180 200" -> cannon(180, 200)
+            // "SCAN 90 20" -> scan(90, 20)
+            // "GOTO BASE" -> drive toward robots[0].HOME
+            // "EVADE" -> random dodge maneuver
+            // "HOLD" -> stop movement
+
+            const parts = commandStr.trim().toUpperCase().split(/\s+/);
+            const cmd = parts[0];
+
+            debugLog('Executing AI command: ' + commandStr);
+
+            switch (cmd) {
+                case 'MOVE':
+                case 'DRIVE': {
+                    const degree = parseFloat(parts[1]) || 0;
+                    let speed = parseFloat(parts[2]) || 50;
+                    // Ensure minimum speed of 30 to actually move
+                    if (speed < 30) speed = 50;
+                    robot.drive(degree, speed);
+                    return true;
+                }
+
+                case 'FIRE':
+                case 'CANNON': {
+                    const degree = parseFloat(parts[1]) || 0;
+                    const distance = parseFloat(parts[2]) || 200;
+                    return robot.cannon(degree, distance);
+                }
+
+                case 'SCAN': {
+                    const degree = parseFloat(parts[1]) || 0;
+                    const resolution = parseFloat(parts[2]) || 10;
+                    return robot.scan(degree, resolution);
+                }
+
+                case 'LIDAR': {
+                    const degree = parseFloat(parts[1]) || 0;
+                    return robot.lidar(degree);
+                }
+
+                case 'GOTO': {
+                    const target = parts[1];
+                    if (target === 'BASE' || target === 'HOME') {
+                        // Blue's home is 100, 100
+                        const dx = 100 - robot.x;
+                        const dy = 100 - robot.y;
+                        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                        robot.drive(angle, 80);
+                        appendAIOutput('Returning to base...', true);
+                    } else if (target === 'CENTER') {
+                        const dx = 500 - robot.x;
+                        const dy = 500 - robot.y;
+                        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                        robot.drive(angle, 60);
+                    } else if (target === 'ENEMY') {
+                        // Drive toward enemy
+                        const enemy = robots[1];
+                        if (enemy) {
+                            const dx = enemy.x - robot.x;
+                            const dy = enemy.y - robot.y;
+                            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                            robot.drive(angle, 70);
+                        }
+                    }
+                    return true;
+                }
+
+                case 'EVADE': {
+                    // Random evasive maneuver
+                    const randomAngle = Math.random() * 360;
+                    robot.drive(randomAngle, 100);
+                    appendAIOutput('Evasive maneuver!', true);
+                    return true;
+                }
+
+                case 'HOLD':
+                case 'STOP': {
+                    robot.drive(robot.heading, 0);
+                    return true;
+                }
+
+                case 'ATTACK': {
+                    // Attack enemy - scan and fire
+                    const enemy = robots[1];
+                    if (enemy) {
+                        const dx = enemy.x - robot.x;
+                        const dy = enemy.y - robot.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                        robot.cannon(angle, distance);
+                        appendAIOutput('Attacking enemy!', true);
+                    }
+                    return true;
+                }
+
+                case 'MINE': {
+                    robot.dropMine();
+                    return true;
+                }
+
+                default:
+                    debugLog('Unknown AI command: ' + cmd);
+                    return false;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // Direct Passthrough Commands (v2.9.3)
+        // Prefix with # to bypass AI and send directly to robot
+        // Example: #drive(45, 80), #cannon(180, 200), #scan(90, 10)
+        // ═══════════════════════════════════════════════════════
+
+        function executePassthroughCommand(input) {
+            const robot = robots[0];
+            if (!robot) {
+                appendAIOutput('No robot available', false);
+                return false;
+            }
+
+            // Remove # prefix and parse
+            const cmd = input.slice(1).trim();
+            debugLog('Passthrough command: ' + cmd);
+
+            try {
+                // Parse function call: name(arg1, arg2, ...)
+                const match = cmd.match(/^(\w+)\s*\(([^)]*)\)$/);
+                if (match) {
+                    const funcName = match[1].toLowerCase();
+                    const argsStr = match[2];
+                    const args = argsStr.split(',').map(a => {
+                        const trimmed = a.trim();
+                        const num = parseFloat(trimmed);
+                        return isNaN(num) ? trimmed : num;
+                    }).filter(a => a !== '');
+
+                    debugLog(`Executing: robot.${funcName}(${args.join(', ')})`);
+
+                    switch (funcName) {
+                        case 'drive':
+                            robot.drive(args[0] || 0, args[1] || 50);
+                            appendAIOutput(`# drive(${args[0]}, ${args[1]})`, true);
+                            return true;
+                        case 'cannon':
+                        case 'fire':
+                            robot.cannon(args[0] || 0, args[1] || 200);
+                            appendAIOutput(`# cannon(${args[0]}, ${args[1]})`, true);
+                            return true;
+                        case 'scan':
+                            const result = robot.scan(args[0] || 0, args[1] || 10);
+                            appendAIOutput(`# scan(${args[0]}, ${args[1]}) → ${result}`, true);
+                            return true;
+                        case 'lidar':
+                            const lidarResult = robot.lidar(args[0] || 0);
+                            appendAIOutput(`# lidar(${args[0]}) → ${lidarResult}`, true);
+                            return true;
+                        case 'sonar':
+                            const sonarResult = robot.sonar();
+                            appendAIOutput(`# sonar() → angle:${sonarResult.angle}, dist:${sonarResult.distance}`, true);
+                            return true;
+                        case 'dropmine':
+                        case 'mine':
+                            robot.dropMine();
+                            appendAIOutput('# dropMine()', true);
+                            return true;
+                        case 'aimturret':
+                        case 'aim':
+                            robot.aimTurret(args[0] || 0);
+                            appendAIOutput(`# aimTurret(${args[0]})`, true);
+                            return true;
+                        default:
+                            appendAIOutput(`Unknown: ${funcName}`, false);
+                            return false;
+                    }
+                } else {
+                    // Simple command without parens: #stop, #evade
+                    const simpleCmd = cmd.toUpperCase();
+                    return executeAICommand(robot, simpleCmd);
+                }
+            } catch (e) {
+                debugLog('Passthrough error: ' + e.message);
+                appendAIOutput('Error: ' + e.message, false);
+                return false;
+            }
+        }
+
+        function handleCommanderInput() {
+            const intentInput = document.getElementById('commander-intent');
+            if (!intentInput) return;
+
+            const input = intentInput.value.trim();
+            if (!input) return;
+
+            // Check for passthrough command (# prefix)
+            if (input.startsWith('#')) {
+                executePassthroughCommand(input);
+                intentInput.value = ''; // Clear input
+                return;
+            }
+
+            // Otherwise, send to AI
+            requestEvolution();
+        }
+
+        async function requestEvolution() {
+            if (isEvolving) {
+                debugLog('Command already in progress...');
+                return;
+            }
+
+            // Get Blue robot (id=0)
+            const sitrep = generateSITREP(0);
+            if (!sitrep) {
+                debugLog('Cannot command: Blue robot not found');
+                return;
+            }
+
+            // Update commander intent from input field
+            const intentInput = document.getElementById('commander-intent');
+            if (intentInput) {
+                commanderIntent = intentInput.value.trim();
+                sitrep.commanderIntent = commanderIntent || 'Fight autonomously';
+            }
+
+            // Log battle state to debug
+            logBattleState();
+
+            // Generate query ID
+            evolveQueryId = generateUUID();
+            isEvolving = true;
+
+            // Update UI status
+            const statusEl = document.getElementById('commander-status');
+            const evolveBtn = document.getElementById('evolve-btn');
+            if (statusEl) statusEl.textContent = 'Thinking...';
+            if (statusEl) statusEl.style.color = '#fbbf24';
+            if (evolveBtn) {
+                evolveBtn.disabled = true;
+                evolveBtn.style.background = '#6b7280';
+                evolveBtn.textContent = '⏳ Sending...';
+            }
+
+            debugLog('Requesting command: ' + evolveQueryId.slice(0, 8));
+            appendAIOutput('Commander: ' + (commanderIntent || 'No orders'));
+
+            // Create the prompt for the LLM - ULTRA SIMPLE
+            const enemyAngle = sitrep.enemy.angle.toFixed(0);
+            const enemyDist = sitrep.enemy.distance.toFixed(0);
+            const prompt = `Robot battle. Enemy at ${enemyAngle}° ${enemyDist}m. Orders: "${sitrep.commanderIntent}"
+Pick: MOVE angle speed, FIRE angle dist, ATTACK, EVADE, GOTO ENEMY
+Output only the command.`;
+
+            try {
+                // DIRECT LLM CALL - bypasses BBS for much faster response!
+                const startTime = Date.now();
+                const response = await fetch('http://localhost:8081/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: [{ role: 'user', content: prompt }],
+                        max_tokens: 30,
+                        temperature: 0,
+                        stop: ['\n', '|']
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const elapsed = Date.now() - startTime;
+                    debugLog(`Direct LLM response in ${elapsed}ms`);
+
+                    const answer = data.choices?.[0]?.message?.content || '';
+                    handleEvolutionResponse({
+                        status: 'success',
+                        answer: answer,
+                        query_id: evolveQueryId
+                    });
+                } else {
+                    debugLog('Direct LLM failed, falling back to BBS route');
+                    fallbackToBBSRoute(prompt);
+                }
+
+            } catch (error) {
+                debugLog('Direct LLM error: ' + error.message + ', falling back to BBS');
+                fallbackToBBSRoute(prompt);
+            }
+        }
+
+        async function fallbackToBBSRoute(prompt) {
+            // Original BBS-based approach as fallback
+            try {
+                await window.bbs.postEvent({
+                    subject: 'RouterQuery',
+                    body: JSON.stringify({
+                        query_id: evolveQueryId,
+                        query: prompt,
+                        mode: 'local',
+                        model: 'local'
+                    })
+                });
+                debugLog('Posted RouterQuery event (fallback)');
+                startEvolutionPolling();
+            } catch (error) {
+                debugLog('Fallback also failed: ' + error.message);
+                resetEvolutionUI();
+            }
+        }
+
+        function startEvolutionPolling() {
+            let elapsed = 0;
+            const pollInterval = setInterval(async () => {
+                elapsed += 2;
+
+                const statusEl = document.getElementById('commander-status');
+                if (statusEl) statusEl.textContent = `Thinking... (${elapsed}s)`;
+
+                try {
+                    const events = await window.bbs.readEvents();
+                    const eventList = Array.isArray(events) ? events : [];
+
+                    // Look for RouterResponse matching our query
+                    for (const event of eventList) {
+                        if (event.subject === 'RouterResponse') {
+                            try {
+                                const response = JSON.parse(event.body);
+                                if (response.query_id === evolveQueryId && !processedQueryIds.has(evolveQueryId)) {
+                                    processedQueryIds.add(evolveQueryId);
+                                    clearInterval(pollInterval);
+                                    handleEvolutionResponse(response);
+                                    return;
+                                }
+                            } catch (e) {
+                                // Ignore parse errors
+                            }
+                        }
+                    }
+
+                    // Timeout after 30 seconds (commands should be fast)
+                    if (elapsed > 30) {
+                        debugLog('Command timed out');
+                        clearInterval(pollInterval);
+                        appendAIOutput('Timeout - no response');
+                        resetEvolutionUI('Timeout');
+                    }
+
+                } catch (error) {
+                    debugLog('Poll error: ' + error.message);
+                }
+            }, 2000);
+        }
+
+        function handleEvolutionResponse(response) {
+            debugLog('Received command response');
+
+            if (response.status === 'success' && response.answer) {
+                let answer = response.answer.trim();
+                debugLog('Raw answer: ' + answer);
+
+                // Remove router mode prefixes like [MATH mode], [CODE mode], etc.
+                answer = answer.replace(/^\[.*?\]\s*/g, '');
+
+                // Try to extract a command from the response using regex
+                // Look for patterns like: MOVE 45 80, FIRE 180 200, GOTO BASE, etc.
+                const commandPatterns = [
+                    /\b(MOVE|DRIVE)\s+(\d+)\s+(\d+)/i,
+                    /\b(FIRE|CANNON)\s+(\d+)\s+(\d+)/i,
+                    /\b(SCAN)\s+(\d+)\s+(\d+)/i,
+                    /\b(LIDAR)\s+(\d+)/i,
+                    /\b(GOTO)\s+(BASE|HOME|ENEMY|CENTER)/i,
+                    /\b(EVADE)\b/i,
+                    /\b(ATTACK)\b/i,
+                    /\b(HOLD|STOP)\b/i,
+                    /\b(MINE)\b/i
+                ];
+
+                let command = null;
+                let explanation = '';
+
+                // Try each pattern
+                for (const pattern of commandPatterns) {
+                    const match = answer.match(pattern);
+                    if (match) {
+                        command = match[0].toUpperCase();
+                        // Get explanation after the command
+                        const afterMatch = answer.substring(answer.indexOf(match[0]) + match[0].length);
+                        const pipeIdx = afterMatch.indexOf('|');
+                        if (pipeIdx >= 0) {
+                            explanation = afterMatch.substring(pipeIdx + 1).trim();
+                        }
+                        break;
+                    }
+                }
+
+                // Fallback: try to parse first line if no pattern matched
+                if (!command) {
+                    const firstLine = answer.split('\n')[0].trim();
+                    // Check if it starts with a valid command
+                    const firstWord = firstLine.split(/\s+/)[0].toUpperCase();
+                    if (['MOVE', 'DRIVE', 'FIRE', 'CANNON', 'SCAN', 'LIDAR', 'GOTO', 'EVADE', 'ATTACK', 'HOLD', 'STOP', 'MINE'].includes(firstWord)) {
+                        command = firstLine.replace(/```/g, '').replace(/`/g, '').trim();
+                    }
+                }
+
+                // Execute the command on Blue robot
+                const robot = robots[0];
+                if (robot && command) {
+                    debugLog('Extracted command: ' + command);
+                    const success = executeAICommand(robot, command);
+
+                    if (success) {
+                        // Show in AI output
+                        appendAIOutput(command, true);
+                        if (explanation) {
+                            appendAIOutput(explanation);
+                        }
+                        resetEvolutionUI('Executed!', '#22c55e');
+                    } else {
+                        appendAIOutput('Failed: ' + command);
+                        resetEvolutionUI('Failed', '#ef4444');
+                    }
+                } else if (!command) {
+                    debugLog('Could not parse command from: ' + answer.slice(0, 100));
+                    appendAIOutput('No command found in response');
+                    resetEvolutionUI('Parse Error', '#ef4444');
+                } else {
+                    debugLog('Blue robot not found');
+                    resetEvolutionUI('No Robot', '#ef4444');
+                }
+            } else {
+                debugLog('Command failed: ' + (response.error || 'Unknown error'));
+                appendAIOutput('Error: ' + (response.error || 'Unknown'));
+                resetEvolutionUI('Failed', '#ef4444');
+            }
+        }
+
+        function resetEvolutionUI(message = 'Ready', color = '#6b7280') {
+            isEvolving = false;
+            evolveQueryId = null;
+
+            const statusEl = document.getElementById('commander-status');
+            const evolveBtn = document.getElementById('evolve-btn');
+
+            if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.style.color = color;
+            }
+            if (evolveBtn) {
+                evolveBtn.disabled = false;
+                evolveBtn.style.background = '#3b82f6';
+                evolveBtn.textContent = '⚡ Send Command';
+            }
+
+            // Reset status message after 3 seconds
+            setTimeout(() => {
+                if (statusEl && statusEl.textContent === message) {
+                    statusEl.textContent = 'Ready';
+                    statusEl.style.color = '#6b7280';
+                }
+            }, 3000);
+        }
+
         function updateRobotStatus(robotId, robot) {
-            const statusEl = document.getElementById(`robot${robotId + 1}-status`);
+            const statusEl = document.getElementById(`robot${robotId + 1} -status`);
             if (!statusEl) return;
 
             const healthPercent = Math.max(0, 100 - robot.damage);
@@ -2098,7 +3501,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             const energyColor = energyPercent > 50 ? '#3b82f6' : energyPercent > 20 ? '#f59e0b' : '#ef4444';
 
             statusEl.innerHTML = `
-            <h3 style = "margin:0 0 10px;color:${robotId === 0 ? '#60a5fa' : '#f87171'};" > Robot ${robotId + 1}</h3>
+    < h3 style = "margin:0 0 10px;color:${robotId === 0 ? '#60a5fa' : '#f87171'};" > Robot ${robotId + 1}</h3 >
         <div style="margin-bottom:6px;">
           <span style="color:#9ca3af;font-size:10px;">Health:</span>
           <div style="background:#374151;height:10px;border-radius:3px;margin-top:2px;overflow:hidden;">
@@ -2117,7 +3520,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
           <div>Pos: (${Math.floor(robot.x)}, ${Math.floor(robot.y)})</div>
           <div>Speed: ${Math.floor(robot.speed)} | Hdg: ${Math.floor(robot.heading)}deg</div>
         </div>
-        `;
+`;
         }
 
         function updateControlPanel() {
@@ -2126,21 +3529,21 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
 
             if (currentState === GameState.MENU) {
                 panel.innerHTML = `
-            <div style = "margin-bottom:15px;" >
+    <div style="margin-bottom:15px;">
             <button id="edit-robot1" style="background:#3b82f6;border:none;padding:8px 16px;font-size:12px;color:white;border-radius:5px;cursor:pointer;margin-right:10px;">[Edit Blue Script]</button>
             <button id="edit-robot2" style="background:#ef4444;border:none;padding:8px 16px;font-size:12px;color:white;border-radius:5px;cursor:pointer;">[Edit Red Script]</button>
-          </div>
+          </div >
           <button id="start-btn" style="background:#22c55e;border:none;padding:15px 40px;font-size:18px;color:white;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:bold;">
             START (7 Rounds)
           </button>
           <p style="margin:8px 0 0;font-size:11px;color:#6b7280;">${robotSponsors.robot1} (Blue) vs ${robotSponsors.robot2} (Red)</p>
-        `;
+`;
                 document.getElementById('start-btn').onclick = startGame;
                 document.getElementById('edit-robot1').onclick = function () { showScriptEditor(1); };
                 document.getElementById('edit-robot2').onclick = function () { showScriptEditor(2); };
             } else if (currentState === GameState.PLAYING) {
                 panel.innerHTML = `
-            <div style = "display:flex;gap:30px;" >
+    <div style="display:flex;gap:30px;">
             <div style="text-align:left;">
               <div style="color:#60a5fa;font-weight:bold;">Blue (Hunter)</div>
               <div style="font-size:11px;">Shots: ${battleStats.shotsFired[0]} | Hits: ${battleStats.shotsHit[0]}</div>
@@ -2151,8 +3554,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
               <div style="font-size:11px;">Shots: ${battleStats.shotsFired[1]} | Hits: ${battleStats.shotsHit[1]}</div>
               <div style="font-size:11px;">Damage: ${battleStats.damageDealt[1].toFixed(1)}</div>
             </div>
-          </div>
-            `;
+          </div >
+    `;
             } else if (currentState === GameState.GAME_OVER) {
                 // Determine winner
                 let winner = -1;
@@ -2173,8 +3576,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                 const winnerColor = winner === 0 ? '#60a5fa' : '#f87171';
 
                 const headerHtml = battleStats.isDraw ?
-                    `<h2 style = "margin:0 0 15px;color:#fbbf24;" > [DRAW] BATTERIES DEPLETED!</h2> ` :
-                    `<h2 style = "margin:0 0 15px;color:${winnerColor};" > [VICTORY] ${winnerName} WINS!</h2> `;
+                    `< h2 style = "margin:0 0 15px;color:#fbbf24;" > [DRAW] BATTERIES DEPLETED!</h2 > ` :
+                    `< h2 style = "margin:0 0 15px;color:${winnerColor};" > [VICTORY] ${winnerName} WINS!</h2 > `;
 
                 panel.innerHTML = `
           ${headerHtml}
@@ -2205,7 +3608,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
               [Download for X]
             </button>
           </div>
-        `;
+`;
                 document.getElementById('restart-btn').onclick = startGame;
                 document.getElementById('download-btn').onclick = downloadRecording;
             }
@@ -2236,6 +3639,28 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             if (menuOverlay) menuOverlay.visible = false;
             const editBtns = document.getElementById('edit-buttons');
             if (editBtns) editBtns.style.display = 'none';
+
+            // Show Commander Console during gameplay
+            const commanderPanel = document.getElementById('commander-panel');
+            if (commanderPanel) {
+                commanderPanel.style.display = 'block';
+                // Wire up Evolve button and Enter key if not already done
+                const evolveBtn = document.getElementById('evolve-btn');
+                const intentInput = document.getElementById('commander-intent');
+                if (evolveBtn && !evolveBtn._evolveBound) {
+                    evolveBtn.addEventListener('click', handleCommanderInput);
+                    evolveBtn._evolveBound = true;
+                }
+                if (intentInput && !intentInput._enterBound) {
+                    intentInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleCommanderInput();
+                        }
+                    });
+                    intentInput._enterBound = true;
+                }
+            }
 
             // Reset state
             currentState = GameState.PLAYING;
@@ -2300,6 +3725,8 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             // Audio already initialized in first call
             if (tournamentRound === 0) {
                 initAudio();
+                battleStartTime = Date.now(); // Initialize for battle recording
+                battleHistory = []; // Clear history for new tournament
             }
             startEngineSound(0);
             startEngineSound(1);
@@ -2331,6 +3758,35 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             updateMines();
             updateDebris();
             update3DHealthBars(); // Update 3D HUD for recording (v2.4.7)
+
+            // ═══ Battle State Recording (v2.9.2) ═══
+            const now = Date.now();
+            if (now - lastSitrepTime > 2000) { // Every 2 seconds
+                lastSitrepTime = now;
+
+                // Generate and log battle state
+                const snapshot = {
+                    tick: Math.floor((now - battleStartTime) / 1000),
+                    round: tournamentRound + 1,
+                    blue: robots[0] ? {
+                        hp: Math.max(0, 100 - robots[0].damage),
+                        energy: Math.round(robots[0].energy),
+                        x: Math.round(robots[0].x),
+                        y: Math.round(robots[0].y),
+                        speed: Math.round(robots[0].speed)
+                    } : null,
+                    red: robots[1] ? {
+                        hp: Math.max(0, 100 - robots[1].damage),
+                        energy: Math.round(robots[1].energy),
+                        x: Math.round(robots[1].x),
+                        y: Math.round(robots[1].y),
+                        speed: Math.round(robots[1].speed)
+                    } : null
+                };
+
+                battleHistory.push(snapshot);
+                debugLog(`[T${snapshot.tick}] Blue: ${Math.round(snapshot.blue?.hp)}HP ${snapshot.blue?.energy}E | Red: ${Math.round(snapshot.red?.hp)}HP ${snapshot.red?.energy}E`);
+            }
 
             // Check victory condition
             let gameOver = false;
@@ -2383,6 +3839,10 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
             currentState = GameState.GAME_OVER;
             // Store draw state globally so UI can access it
             battleStats.isDraw = isDraw;
+
+            // Hide Commander Console
+            const commanderPanel = document.getElementById('commander-panel');
+            if (commanderPanel) commanderPanel.style.display = 'none';
 
             if (gameLoop) {
                 clearInterval(gameLoop);
@@ -2464,6 +3924,7 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                             // Tournament Complete! Stop recording now
                             const tournamentWinner = tournamentScores.blue > tournamentScores.red ? 'Blue' : 'Red';
                             const tournamentWinnerSponsor = tournamentScores.blue > tournamentScores.red ? robotSponsors.robot1 : robotSponsors.robot2;
+                            const blueWon = tournamentScores.blue > tournamentScores.red;
 
                             // Store tournament winner for filename
                             battleStats.winnerSponsor = tournamentWinnerSponsor;
@@ -2473,6 +3934,9 @@ window.addEventListener('message', (event) => window.bbs._handleMessage(event));
                             // Now stop recording (covers all 7 matches)
                             stopRecording();
                             tournamentMode = false;
+
+                            // === POST-MATCH EVOLUTION (v2.9.2) ===
+                            requestPostMatchEvolution(blueWon, `${tournamentScores.blue}-${tournamentScores.red}`);
 
                             alert(`BATTLE COMPLETE!\n\nWinner: ${tournamentWinnerSponsor}\nFinal Score: ${tournamentScores.blue} - ${tournamentScores.red}`);
                         }

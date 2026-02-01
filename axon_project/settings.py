@@ -149,6 +149,7 @@ CSRF_TRUSTED_ORIGINS = [
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',  # Enable session auth for identity unlock
     )
 }
 
@@ -258,6 +259,11 @@ LOGGING = {
         'applets': {
             'handlers': ['console', 'file'],
             'level': 'WARNING',
+            'propagate': False,
+        },
+        'core.agents': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
             'propagate': False,
         },
     },

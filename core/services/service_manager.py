@@ -32,7 +32,7 @@ class ServiceManager:
         self.bitsync_service = None
         self.sync_service = None
         self.high_score_service = None
-        self.game_agents = {}  # User-based agents (keyed by username)
+        self.game_agents = {}  # User-based agents (keyed by username) - includes router_agent if enabled
         self.realtime_services = {}  # Board-based realtime services (keyed by board_id)
 
     def initialize_services(self):
@@ -42,7 +42,7 @@ class ServiceManager:
 
         logger.info("Initializing BitSync service...")
         self.bitsync_service = BitSyncService()
-        
+
         if TrustedInstance.objects.filter(is_trusted_peer=False).exists():
             logger.info("Initializing and starting SyncService thread...")
             self.sync_service = SyncService()
@@ -54,7 +54,7 @@ class ServiceManager:
         self.high_score_service = HighScoreService()
         self.high_score_service.start()
 
-        self.start_all_game_agents()
+        self.start_all_game_agents()  # This loads router_agent if enabled
         self.start_all_realtime_boards()
 
         logger.debug("All services initialized.")
@@ -257,6 +257,12 @@ class ServiceManager:
         return True
 
     def shutdown(self):
+        # Shutdown all game agents (including router_agent if it's running)
+        for agent_name, agent in self.game_agents.items():
+            if hasattr(agent, 'stop'):
+                logger.info(f"Shutting down {agent_name}...")
+                agent.stop()
+
         if self.tor_service and self.tor_service.is_running():
             logger.info("Shutting down Tor service...")
             self.tor_service.stop()
