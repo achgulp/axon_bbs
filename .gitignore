@@ -103,3 +103,6 @@ SESSION_NOTES*.txt
 SESSION_SUMMARY*.md
 GEMINI_*.md
 GEMINI_*.txt
+
+# Video recordings (too large for git)
+recordings/
